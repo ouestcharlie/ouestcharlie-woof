@@ -4,16 +4,61 @@ This document details the internal design of Woof. For requirements, see [woof_L
 
 ## Architecture Overview
 
-Woof runs as a long-lived process on the user's device. It serves two roles:
+Woof runs as a long-lived background process (launchd agent on macOS) on the user's device. It serves three roles:
 
-1. **UI backend**: serves the photo browsing experience (web, mobile, desktop)
-2. **MCP client**: communicates with agents via the Model Context Protocol
+1. **MCP server**: exposes OuEstCharlie operations as MCP tools to Claude Desktop
+2. **MCP App host**: serves an interactive gallery HTML/JS application rendered inside Claude Desktop's conversation
+3. **Agent controller**: launches and supervises agent child processes via MCP (as MCP client to agents)
 
-Both roles share a single process and in-memory state.
+Claude Desktop is the conversational UI shell. Woof is the security and operational boundary between Claude and the OuEstCharlie ecosystem.
 
-## MCP Client
+```
+Claude Desktop (MCP client)
+  └── Woof MCP server (background daemon)
+        ├── MCP tools: search, browse, index, enrich, status, configure ...
+        ├── MCP App resource: gallery HTML/JS (iframe in Claude Desktop conversation)
+        │     └── calls back to Woof MCP tools (bidirectional via postMessage)
+        ├── Local HTTP server (127.0.0.1, random port): thumbnails and previews
+        ├── Credential vault (OS keychain)
+        ├── Configuration (~/.ouestcharlie/)
+        └── Agent controller (Woof as MCP client to agents)
+              ├── Whitebeard — indexing agent (MCP server, stdio child process)
+              ├── Wally — consumption agent (MCP server, stdio child process)
+              └── [future enrichment agents]
+```
 
-Woof acts as an MCP client. Each agent is an MCP server that exposes its capabilities as tools.
+## MCP Server (Claude-facing)
+
+Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Tool categories:
+
+- **Library management**: `index_backend`, `list_backends`, `get_status`
+- **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference)
+- **Album operations**: `list_albums`, `create_album`, `add_to_album`
+- **Configuration**: `add_backend`, `configure_credentials`
+
+The gallery tool (`browse_gallery`) returns a result that includes a `_meta.ui.resourceUri` pointing to the gallery MCP App resource. Claude Desktop fetches the HTML from Woof and renders it in a sandboxed iframe inside the conversation.
+
+## Gallery MCP App
+
+The gallery is an HTML/JS application (React or Svelte) served by Woof as an MCP App resource. It renders inside Claude Desktop's conversation as a sandboxed iframe.
+
+**Thumbnail delivery**: The gallery fetches thumbnails from Woof's local HTTP server (`http://127.0.0.1:<port>/thumbnails/...`). The iframe Content Security Policy restricts `img-src` to this local origin only. Photo data never passes through Claude's MCP channel.
+
+**Bidirectional flow**:
+- Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
+- Woof → Gallery: push fresh results as search completes, update indexing progress indicators
+
+## Local HTTP Server
+
+Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, serving:
+- Thumbnail AVIF containers (`/thumbnails/<backend>/<partition>/thumbnails.avif`)
+- Preview AVIF containers (`/previews/<backend>/<partition>/previews.avif`)
+
+The port is communicated to the gallery iframe via the `ui/initialize` message at iframe startup. No external network access is permitted — the server binds loopback only.
+
+## MCP Client (Agent-facing)
+
+Woof acts as an MCP client to agents. Each agent is an MCP server that exposes its capabilities as tools.
 
 ### Transport
 
@@ -30,6 +75,15 @@ WOOF_AGENT_TOKEN=<scoped-storage-token>
 ```
 
 Woof then performs the MCP `initialize` handshake over stdio, receiving the agent's tool definitions and capabilities.
+
+## Background Daemon
+
+Woof runs as a launchd agent (macOS) started at login, independently of Claude Desktop. This enables:
+- OS file watching (FSEvents) to detect changes while Claude Desktop is closed
+- Scheduled housekeeping and enrichment passes
+- Agent executions that outlast a Claude Desktop session
+
+When Claude Desktop opens, it connects to the already-running Woof instance via the MCP transport declared in the Desktop Extension manifest.
 
 ## Agent Lifecycle State Machine
 
