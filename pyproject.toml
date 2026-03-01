@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ouestcharlie-woof"
+version = "0.1.0"
+description = "OuEstCharlie Woof — central controller and UI backend"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0",
+    "ouestcharlie-toolkit",
+    "whitebeard",
+    "wally",
+]
+
+[project.scripts]
+woof = "woof.__main__:main"
+
+[tool.uv.sources]
+ouestcharlie-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
+whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
+wally = { path = "../ouestcharlie-wally", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/woof"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+tmp_path_retention_policy = "none"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[dependency-groups]
+dev = [
+    "mcp[cli]>=1.0",
+    "pytest>=9.0",
+    "pytest-asyncio>=1.0",
+]
