@@ -23,13 +23,15 @@ from ouestcharlie_toolkit import setup_logging
 _log_file = setup_logging("woof", log_file_env_var="WOOF_LOG_FILE")
 logging.getLogger(__name__).info("Woof starting — log: %s", _log_file)
 
+from woof.agent_client import AgentClient  # noqa: E402
 from woof.config import WoofConfig  # noqa: E402
 from woof.http_server import start_http_server  # noqa: E402
 from woof.server import WoofServer  # noqa: E402
 
 _config = WoofConfig.load()
-_http_port = start_http_server(_config)
-_server = WoofServer(_config, _http_port)
+_agent = AgentClient()
+_http_port = start_http_server(_config, agent_client=_agent)
+_server = WoofServer(_config, _http_port, agent_client=_agent)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
 

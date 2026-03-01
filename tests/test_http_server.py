@@ -58,3 +58,13 @@ def test_missing_file_returns_404(config: WoofConfig) -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(url)
     assert exc_info.value.code == 404
+
+
+def test_gallery_route_serves_html(config: WoofConfig) -> None:
+    port = start_http_server(config)
+    url = f"http://127.0.0.1:{port}/gallery?backend=testlib"
+    with urllib.request.urlopen(url) as resp:
+        assert resp.status == 200
+        assert "text/html" in resp.headers["Content-Type"]
+        body = resp.read().decode()
+        assert "<html" in body

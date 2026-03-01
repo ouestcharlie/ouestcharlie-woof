@@ -133,9 +133,10 @@ async def test_search_photos_omits_none_params(server: WoofServer) -> None:
 async def test_browse_gallery_returns_resource_uri(server: WoofServer) -> None:
     tool_fn = _get_tool(server, "browse_gallery")
     result = await tool_fn(backend_name="testlib")
-    assert result["_meta"]["ui"]["resourceUri"] == "gallery://ouestcharlie"
+    assert result["_meta"]["ui"]["resourceUri"] == "ui://gallery/ouestcharlie"
     assert result["httpPort"] == 9999
     assert result["backend"] == "testlib"
+    assert result["url"] == "http://127.0.0.1:9999/gallery?backend=testlib"
 
 
 @pytest.mark.asyncio
