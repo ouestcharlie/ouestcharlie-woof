@@ -24,8 +24,7 @@
       />
     {:else}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div class="tile placeholder" onclick={() => onSelect(i)}>
+      <div role="button" tabindex="0" class="tile placeholder" onclick={() => onSelect(i)}>
         {match.filename}
       </div>
     {/if}
