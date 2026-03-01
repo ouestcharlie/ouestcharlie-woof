@@ -57,6 +57,56 @@ If the constraints above prove unacceptable, Woof reverts to a standalone deskto
 
 ---
 
+## Technology Stack
+
+### Decision: Python for the Woof daemon
+
+**Context**: Woof needs to run as an MCP server (Claude-facing) and MCP client (agent-facing) simultaneously, serve a local HTTP server for thumbnails, and manage agent child processes.
+
+**Chosen approach**: Python, using the official MCP Python SDK for both server and client roles.
+
+**Rationale**:
+
+1. **Shared codebase with agents**: Whitebeard and Wally are Python + FastMCP. Using Python for Woof allows sharing data models, storage backends, and utilities from `ouestcharlie-py-toolkit` without duplication.
+
+2. **MCP SDK parity**: The MCP Python SDK supports both server and client roles in the same process. No language boundary between Woof's Claude-facing and agent-facing roles.
+
+3. **Limited stack width**: A single language across the entire backend (Woof + agents) minimises the number of runtimes, dependency managers, and build systems to maintain. The only exception is the Rust CLI for AVIF grid assembly, which remains justified by performance requirements and has no runtime coupling with Woof.
+
+4. **Sufficient performance for the controller role**: Woof is a controller process — it coordinates I/O-bound operations (manifest reads, HTTP requests, child process management). Python's async I/O (`asyncio`, `aiohttp`) handles this comfortably. There is no CPU-intensive work in Woof itself.
+
+**Alternatives not chosen**:
+- **TypeScript/Node.js**: MCP TypeScript SDK is mature but introduces a second language and runtime. The sharing benefit with agents (Python) would be lost.
+- **Rust**: Strongest for performance and packaging, but adds a third language given that agents are Python. Premature for a controller process with no heavy CPU work.
+
+---
+
+### Decision: Svelte for the gallery UI
+
+**Context**: The gallery is served by Woof as a self-contained MCP App (iframe inside Claude Desktop). It must be fully bundled — no CDN access is possible due to the sandbox CSP. The V1 gallery surface is: search form, thumbnail grid, preview panel.
+
+**Chosen approach**: Svelte (compiled to vanilla JS, bundled with Vite).
+
+**Decision criteria and outcome**:
+
+| Criterion | React | Svelte | Weight |
+|---|---|---|---|
+| Bundle size (no CDN, iframe cold start) | ~100–150 KB gzip | ~15–30 KB gzip | High |
+| Runtime dependency | react + react-dom (~45 KB) | None (compiled away) | High |
+| UI complexity fit | Suited for large component trees | Sufficient for simple grid + form | Medium |
+| Stack width | Adds JS + React ecosystem | Adds JS only; no runtime | High |
+| Team familiarity | Broader ecosystem | Simpler for bounded UIs | Low |
+
+**Why Svelte wins**:
+- The gallery is a bounded, simple UI. React's ecosystem overhead (context, reducers, DevTools) brings no benefit at V1 scope.
+- Svelte's zero-runtime model is a direct fit: the MCP App is a self-contained HTML file served from localhost, and smaller bundles mean faster iframe initialization.
+- Consistent with the project's "minimum needed for the current task" principle.
+- Vite build toolchain is identical for both; no tooling advantage to React.
+
+**Known constraint**: Svelte's ecosystem is smaller than React's. If the gallery grows significantly in complexity (multi-panel layout, drag-and-drop, virtual scrolling), React's component library ecosystem would be easier to leverage. This can be revisited at V2.
+
+---
+
 ## References
 
 ### MCP Apps and Claude Desktop

@@ -40,7 +40,7 @@ The gallery tool (`browse_gallery`) returns a result that includes a `_meta.ui.r
 
 ## Gallery MCP App
 
-The gallery is an HTML/JS application (React or Svelte) served by Woof as an MCP App resource. It renders inside Claude Desktop's conversation as a sandboxed iframe.
+The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) served by Woof as an MCP App resource. It renders inside Claude Desktop's conversation as a sandboxed iframe.
 
 **Thumbnail delivery**: The gallery fetches thumbnails from Woof's local HTTP server (`http://127.0.0.1:<port>/thumbnails/...`). The iframe Content Security Policy restricts `img-src` to this local origin only. Photo data never passes through Claude's MCP channel.
 
