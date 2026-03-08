@@ -73,10 +73,8 @@ class AgentClient:
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                if progress_ctx is not None:
-                    session.on_message = _make_progress_forwarder(progress_ctx)
-
-                result = await session.call_tool(tool_name, args)
+                progress_cb = _make_progress_forwarder(progress_ctx) if progress_ctx else None
+                result = await session.call_tool(tool_name, args, progress_callback=progress_cb)
 
         if result.isError:
             content = _extract_text(result.content)
@@ -98,26 +96,19 @@ def _extract_text(content: list[Any]) -> str:
 
 
 def _make_progress_forwarder(ctx: Context) -> Any:
-    """Return an on_message handler that relays progress notifications.
+    """Return a progress_callback that relays agent progress to the caller's context.
 
-    FastMCP's Context.report_progress() is the public API for forwarding;
-    we wrap it in try/except so that a disconnected caller doesn't abort the
-    agent run.
+    The MCP SDK calls this as progress_callback(progress, total, message) when
+    the child agent sends a notifications/progress message.  We forward it via
+    FastMCP's Context.report_progress() so Claude Desktop sees the progress.
     """
-    async def _handler(message: Any) -> None:
+    async def _handler(progress: float, total: float | None, message: str | None) -> None:
         try:
-            params = getattr(message, "params", None)
-            if params is None:
-                return
-            progress = getattr(params, "progress", None)
-            total = getattr(params, "total", None)
-            msg = getattr(params, "message", None)
-            if progress is not None:
-                await ctx.report_progress(
-                    progress=float(progress),
-                    total=float(total) if total is not None else 1.0,
-                    message=msg or "",
-                )
+            await ctx.report_progress(
+                progress=progress,
+                total=total if total is not None else 1.0,
+                message=message or "",
+            )
         except Exception:
             _log.debug("Failed to forward progress notification", exc_info=True)
 

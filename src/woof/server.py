@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -33,10 +34,12 @@ class WoofServer:
         config: WoofConfig,
         http_port: int,
         agent_client: AgentClient | None = None,
+        gallery_sessions: dict[str, Any] | None = None,
     ) -> None:
         self.config = config
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
+        self._gallery_sessions: dict[str, Any] = gallery_sessions if gallery_sessions is not None else {}
         self.mcp = FastMCP("ouestcharlie-woof")
         self._register_tools()
         self._register_gallery_resource()
@@ -178,22 +181,33 @@ class WoofServer:
             return result  # type: ignore[return-value]
 
         @mcp.tool()
-        async def browse_gallery(backend_name: str) -> dict[str, Any]:
-            """Open the photo gallery for a backend.
+        async def browse_gallery(
+            backend_name: str,
+            matches: list[Any],
+        ) -> dict[str, Any]:
+            """Display photos from a search result in the gallery viewer.
 
-            Returns a URL to open in a browser and, when running inside
-            Claude Desktop with MCP App support, an iframe resource reference.
+            Call search_photos first to get matching photos, then pass the
+            matches list here to open the gallery pre-loaded with results.
 
             Args:
-                backend_name: Name of the backend to browse.
+                backend_name: Name of the backend (from list_backends).
+                matches: The matches list returned by search_photos.
             """
             self._require_backend(backend_name)
-            url = f"http://127.0.0.1:{self.http_port}/gallery?backend={backend_name}"
+            token = secrets.token_urlsafe(16)
+            self._gallery_sessions[token] = {
+                "matches": matches,
+                "backend": backend_name,
+                "httpPort": self.http_port,
+            }
+            url = f"http://127.0.0.1:{self.http_port}/gallery/{token}"
             return {
                 "_meta": {"ui": {"resourceUri": _GALLERY_URI}},
                 "url": url,
                 "backend": backend_name,
                 "httpPort": self.http_port,
+                "matchCount": len(matches),
             }
 
     # ------------------------------------------------------------------

@@ -132,18 +132,26 @@ async def test_search_photos_omits_none_params(server: WoofServer) -> None:
 @pytest.mark.asyncio
 async def test_browse_gallery_returns_resource_uri(server: WoofServer) -> None:
     tool_fn = _get_tool(server, "browse_gallery")
-    result = await tool_fn(backend_name="testlib")
+    matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "thumbnailsPath": "x"}]
+    result = await tool_fn(backend_name="testlib", matches=matches)
     assert result["_meta"]["ui"]["resourceUri"] == "ui://gallery/ouestcharlie"
     assert result["httpPort"] == 9999
     assert result["backend"] == "testlib"
-    assert result["url"] == "http://127.0.0.1:9999/gallery?backend=testlib"
+    assert result["matchCount"] == 1
+    # URL should be token-based: /gallery/{token}
+    assert result["url"].startswith("http://127.0.0.1:9999/gallery/")
+    token = result["url"].split("/gallery/")[1]
+    assert len(token) > 0
+    # Session should be stored
+    assert token in server._gallery_sessions
+    assert server._gallery_sessions[token]["matches"] == matches
 
 
 @pytest.mark.asyncio
 async def test_browse_gallery_unknown_backend(server: WoofServer) -> None:
     tool_fn = _get_tool(server, "browse_gallery")
     with pytest.raises(ValueError, match="not found"):
-        await tool_fn(backend_name="nosuchlib")
+        await tool_fn(backend_name="nosuchlib", matches=[])
 
 
 # ------------------------------------------------------------------

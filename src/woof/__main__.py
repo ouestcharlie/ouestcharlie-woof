@@ -30,8 +30,9 @@ from woof.server import WoofServer  # noqa: E402
 
 _config = WoofConfig.load()
 _agent = AgentClient()
-_http_port = start_http_server(_config, agent_client=_agent)
-_server = WoofServer(_config, _http_port, agent_client=_agent)
+_gallery_sessions: dict = {}
+_http_port = start_http_server(_config, gallery_sessions=_gallery_sessions)
+_server = WoofServer(_config, _http_port, agent_client=_agent, gallery_sessions=_gallery_sessions)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
 
