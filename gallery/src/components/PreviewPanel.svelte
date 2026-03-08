@@ -37,6 +37,18 @@
     if (e.key === 'Escape')     { onClose(); }
   }
 
+  // Format ISO datetime string to a locale-aware human-readable form.
+  // e.g. "2024-07-15T14:32:00" → "July 15, 2024 at 2:32 PM"
+  function formatDate(raw) {
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (isNaN(d)) return raw;
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+
   onMount(() => window.addEventListener('keydown', onKeydown));
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
 </script>
@@ -83,7 +95,7 @@
       <div class="filename">{match.filename}</div>
       <div class="counter">{selectedIndex + 1} / {matches.length}</div>
       {#if match.dateTaken}
-        <div class="detail">{match.dateTaken}</div>
+        <div class="detail">{formatDate(match.dateTaken)}</div>
       {/if}
       {#if match.make || match.model}
         <div class="detail">{[match.make, match.model].filter(Boolean).join(' ')}</div>
