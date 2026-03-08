@@ -7,10 +7,11 @@ import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from platformdirs import user_config_dir
+
 _log = logging.getLogger(__name__)
 
-_CONFIG_DIR = Path.home() / ".ouestcharlie"
-_CONFIG_FILE = _CONFIG_DIR / "config.json"
+_DEFAULT_CONFIG_DIR = Path(user_config_dir("ouestcharlie"))
 
 
 @dataclass
@@ -34,31 +35,36 @@ class WoofConfig:
     """Device-local Woof configuration."""
 
     backends: list[BackendConfig] = field(default_factory=list)
+    config_dir: Path = field(default_factory=lambda: _DEFAULT_CONFIG_DIR)
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls) -> "WoofConfig":
+    def load(cls, config_dir: Path | None = None) -> "WoofConfig":
         """Load config from disk, creating an empty one if absent."""
-        if not _CONFIG_FILE.exists():
-            _log.info("No config found at %s — starting empty", _CONFIG_FILE)
-            return cls()
+        if config_dir is None:
+            config_dir = _DEFAULT_CONFIG_DIR
+        config_file = config_dir / "config.json"
+        if not config_file.exists():
+            _log.info("No config found at %s — starting empty", config_file)
+            return cls(config_dir=config_dir)
         try:
-            raw = json.loads(_CONFIG_FILE.read_text())
+            raw = json.loads(config_file.read_text())
             backends = [BackendConfig(**b) for b in raw.get("backends", [])]
-            return cls(backends=backends)
+            return cls(backends=backends, config_dir=config_dir)
         except Exception as exc:
-            _log.warning("Failed to parse config %s: %s — starting empty", _CONFIG_FILE, exc)
-            return cls()
+            _log.warning("Failed to parse config %s: %s — starting empty", config_file, exc)
+            return cls(config_dir=config_dir)
 
     def save(self) -> None:
         """Persist config to disk."""
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        config_file = self.config_dir / "config.json"
         data = {"backends": [asdict(b) for b in self.backends]}
-        _CONFIG_FILE.write_text(json.dumps(data, indent=2))
-        _log.debug("Config saved to %s", _CONFIG_FILE)
+        config_file.write_text(json.dumps(data, indent=2))
+        _log.debug("Config saved to %s", config_file)
 
     # ------------------------------------------------------------------
     # Lookup

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import EmbeddedResource, TextResourceContents
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
@@ -180,12 +182,12 @@ class WoofServer:
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
-        @mcp.tool(meta={"ui": {"resourceUri": _GALLERY_URI}})
+        @mcp.tool()
         async def browse_gallery(
             backend_name: str,
             matches: list[Any],
             query_summary: str = "",
-        ) -> dict[str, Any]:
+        ) -> list[EmbeddedResource]:
             """Display photos from a search result in the gallery viewer.
 
             Call search_photos first to get matching photos, then pass the
@@ -207,13 +209,22 @@ class WoofServer:
                 "querySummary": query_summary,
             }
             url = f"http://127.0.0.1:{self.http_port}/gallery/{token}"
-            return {
-                "_meta": {"ui": {"resourceUri": _GALLERY_URI}},
-                "url": url,
-                "backend": backend_name,
-                "httpPort": self.http_port,
-                "matchCount": len(matches),
-            }
+            return [
+                EmbeddedResource(
+                    type="resource",
+                    resource=TextResourceContents(
+                        uri=_GALLERY_URI, # type: ignore
+                        mimeType="application/json",
+                        text=json.dumps({
+                            "matches": matches,
+                            "backend": backend_name,
+                            "querySummary": query_summary,
+                            "httpPort": self.http_port,
+                        }),
+                    ),
+                    _meta={"ui": {"type": "webview", "url": url, "title": "OuEstCharlie Gallery"}},
+                )
+            ]
 
     # ------------------------------------------------------------------
     # Gallery resource

@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.0",
     "ouestcharlie-toolkit",
+    "platformdirs>=4.0",
     "whitebeard",
     "wally",
 ]

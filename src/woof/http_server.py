@@ -182,6 +182,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Security-Policy", "default-src 'self' http://127.0.0.1:*")
         self.end_headers()
         self.wfile.write(data)
 

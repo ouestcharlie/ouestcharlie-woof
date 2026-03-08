@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.types import EmbeddedResource
 
 from woof.config import BackendConfig, WoofConfig
 from woof.server import WoofServer
@@ -15,7 +17,8 @@ from woof.server import WoofServer
 @pytest.fixture()
 def config(tmp_path: Path) -> WoofConfig:
     return WoofConfig(
-        backends=[BackendConfig(name="testlib", type="local", path=str(tmp_path))]
+        backends=[BackendConfig(name="testlib", type="local", path=str(tmp_path))],
+        config_dir=tmp_path / ".woof",
     )
 
 
@@ -130,19 +133,23 @@ async def test_search_photos_omits_none_params(server: WoofServer) -> None:
 # ------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_browse_gallery_returns_resource_uri(server: WoofServer) -> None:
+async def test_browse_gallery_returns_webview(server: WoofServer) -> None:
     tool_fn = _get_tool(server, "browse_gallery")
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "thumbnailsPath": "x"}]
     result = await tool_fn(backend_name="testlib", matches=matches)
-    assert result["_meta"]["ui"]["resourceUri"] == "ui://gallery/ouestcharlie"
-    assert result["httpPort"] == 9999
-    assert result["backend"] == "testlib"
-    assert result["matchCount"] == 1
-    # URL should be token-based: /gallery/{token}
-    assert result["url"].startswith("http://127.0.0.1:9999/gallery/")
-    token = result["url"].split("/gallery/")[1]
+    assert isinstance(result, list) and len(result) == 1
+    item = result[0]
+    assert isinstance(item, EmbeddedResource)
+    ui = item.meta["ui"]  # type: ignore[index]
+    assert ui["type"] == "webview"
+    assert ui["title"] == "OuEstCharlie Gallery"
+    assert ui["url"].startswith("http://127.0.0.1:9999/gallery/")
+    payload = json.loads(item.resource.text)  # type: ignore[union-attr]
+    assert payload["backend"] == "testlib"
+    assert len(payload["matches"]) == 1
+    # Session should be stored under the token from the URL
+    token = ui["url"].split("/gallery/")[1]
     assert len(token) > 0
-    # Session should be stored
     assert token in server._gallery_sessions
     assert server._gallery_sessions[token]["matches"] == matches
 
