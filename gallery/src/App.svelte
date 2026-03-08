@@ -31,15 +31,25 @@
     }
   });
 
-  function thumbnailUrl(match) {
-    if (!httpPort || !match.thumbnailsPath) return null;
-    return `http://127.0.0.1:${httpPort}/thumbnails/${backendName}/${match.partition}/thumbnails.avif`;
+  /**
+   * Returns tile geometry for clipping an AVIF grid, or null if unavailable.
+   * @param {'thumbnail'|'preview'} kind
+   */
+  function tileGeometry(match, kind) {
+    const path = kind === 'thumbnail' ? match.thumbnailsPath : match.previewsPath;
+    const cols = kind === 'thumbnail' ? match.thumbnailCols : match.previewCols;
+    const tileSize = kind === 'thumbnail' ? match.thumbnailTileSize : match.previewTileSize;
+    if (!httpPort || !path || match.tileIndex == null || !cols || !tileSize) return null;
+    const avifKind = kind === 'thumbnail' ? 'thumbnails' : 'previews';
+    const avifFile = kind === 'thumbnail' ? 'thumbnails.avif' : 'previews.avif';
+    const url = `http://127.0.0.1:${httpPort}/${avifKind}/${backendName}/${match.partition}/${avifFile}`;
+    const col = match.tileIndex % cols;
+    const row = Math.floor(match.tileIndex / cols);
+    return { url, col, row, tileSize, cols };
   }
 
-  function previewUrl(match) {
-    if (!httpPort || !match.previewsPath) return null;
-    return `http://127.0.0.1:${httpPort}/previews/${backendName}/${match.partition}/previews.avif`;
-  }
+  function thumbnailTile(match) { return tileGeometry(match, 'thumbnail'); }
+  function previewTile(match) { return tileGeometry(match, 'preview'); }
 </script>
 
 <div class="app">
@@ -49,7 +59,7 @@
 
   <PhotoGrid
     {matches}
-    {thumbnailUrl}
+    {thumbnailTile}
     onSelect={(i) => (selectedIndex = i)}
   />
 
@@ -58,8 +68,8 @@
   {#if selectedIndex !== null}
     <PreviewPanel
       match={matches[selectedIndex]}
-      {previewUrl}
-      {thumbnailUrl}
+      {previewTile}
+      {thumbnailTile}
       onClose={() => (selectedIndex = null)}
     />
   {/if}

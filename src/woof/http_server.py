@@ -212,11 +212,13 @@ def _gallery_placeholder() -> str:
     header { padding: 1rem; background: #1a1a1a; border-bottom: 1px solid #333; }
     header h1 { margin: 0; font-size: 1.1rem; }
     #grid { flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 4px; padding: 1rem; align-content: flex-start; }
-    .tile { width: 160px; height: 160px; object-fit: cover; cursor: pointer; border-radius: 4px; background: #222; }
+    .tile { width: 160px; height: 160px; overflow: hidden; cursor: pointer; border-radius: 4px; background: #222; flex-shrink: 0; position: relative; }
+    .tile img { display: block; }
     #status { padding: 0.5rem 1rem; font-size: 0.8rem; color: #888; background: #1a1a1a; border-top: 1px solid #333; }
-    #preview { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; }
+    #preview { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; }
     #preview.open { display: flex; }
-    #preview img { max-width: 90vw; max-height: 90vh; object-fit: contain; }
+    .preview-clip { overflow: hidden; border-radius: 4px; }
+    .preview-clip img { display: block; }
     #preview-close { position: absolute; top: 1rem; right: 1rem; background: #333; border: none; color: #eee; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 4px; }
   </style>
 </head>
@@ -228,53 +230,83 @@ def _gallery_placeholder() -> str:
 </div>
 <div id="preview">
   <button id="preview-close">Close</button>
-  <img id="preview-img" src="" alt="Preview" />
+  <div class="preview-clip" id="preview-clip"></div>
 </div>
 
 <script>
+  const DISPLAY_SIZE = 160; // px per thumbnail tile
   let matches = [];
 
-  // Extract token from path: /gallery/{token}
   const token = location.pathname.split('/').pop();
   const httpPort = location.port ? parseInt(location.port) : 80;
 
-  function thumbUrl(match, backend) {
-    if (!match.thumbnailsPath) return null;
-    const partition = encodeURIComponent(match.partition).replace(/%2F/g, '/');
-    return 'http://127.0.0.1:' + httpPort + '/thumbnails/' + backend + '/' + partition + '/thumbnails.avif';
+  // Returns tile geometry {url, col, row, tileSize, cols} or null.
+  function tileInfo(match, isThumb, backend) {
+    var path, cols, tileSize, avifKind, avifFile;
+    if (isThumb) {
+      path = match.thumbnailsPath;
+      cols = match.thumbnailCols;
+      tileSize = match.thumbnailTileSize;
+      avifKind = 'thumbnails';
+      avifFile = 'thumbnails.avif';
+    } else {
+      path = match.previewsPath;
+      cols = match.previewCols;
+      tileSize = match.previewTileSize;
+      avifKind = 'previews';
+      avifFile = 'previews.avif';
+    }
+    if (!path || match.tileIndex == null || !cols || !tileSize) { return null; }
+    var partition = encodeURIComponent(match.partition).replace(/%2F/g, '/');
+    var url = 'http://127.0.0.1:' + httpPort + '/' + avifKind + '/' + backend + '/' + partition + '/' + avifFile;
+    return { url: url, col: match.tileIndex % cols, row: Math.floor(match.tileIndex / cols), tileSize: tileSize, cols: cols };
   }
 
-  function previewUrl(match, backend) {
-    if (!match.previewsPath) return null;
-    const partition = encodeURIComponent(match.partition).replace(/%2F/g, '/');
-    return 'http://127.0.0.1:' + httpPort + '/previews/' + backend + '/' + partition + '/previews.avif';
+  // Creates an <img> that shows the correct tile from the AVIF grid at displaySize px.
+  function makeTileImg(tile, displaySize) {
+    var img = document.createElement('img');
+    img.src = tile.url;
+    img.style.width = (tile.cols * displaySize) + 'px';
+    img.style.height = 'auto';
+    img.style.marginLeft = -(tile.col * displaySize) + 'px';
+    img.style.marginTop = -(tile.row * displaySize) + 'px';
+    img.style.display = 'block';
+    return img;
   }
 
   function renderGrid(newMatches, backend) {
     matches = newMatches;
-    const grid = document.getElementById('grid');
+    var grid = document.getElementById('grid');
     grid.innerHTML = '';
-    matches.forEach((m, i) => {
-      const url = thumbUrl(m, backend);
-      if (!url) return;
-      const img = document.createElement('img');
-      img.className = 'tile';
-      img.src = url;
-      img.title = m.filename;
-      img.addEventListener('click', () => openPreview(i, backend));
-      grid.appendChild(img);
-    });
+    for (var i = 0; i < matches.length; i++) {
+      var match = matches[i];
+      var tile = tileInfo(match, true, backend);
+      var div = document.createElement('div');
+      div.className = 'tile';
+      div.title = match.filename;
+      div.addEventListener('click', (function(idx) {
+        return function() { openPreview(idx, backend); };
+      })(i));
+      if (tile) { div.appendChild(makeTileImg(tile, DISPLAY_SIZE)); }
+      grid.appendChild(div);
+    }
   }
 
   function openPreview(i, backend) {
-    const m = matches[i];
-    const url = previewUrl(m, backend) || thumbUrl(m, backend);
-    if (!url) return;
-    document.getElementById('preview-img').src = url;
+    var match = matches[i];
+    var tile = tileInfo(match, false, backend);
+    if (!tile) { tile = tileInfo(match, true, backend); }
+    var clip = document.getElementById('preview-clip');
+    clip.innerHTML = '';
+    if (!tile) { return; }
+    var displaySize = Math.min(tile.tileSize, Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82));
+    clip.style.width = displaySize + 'px';
+    clip.style.height = displaySize + 'px';
+    clip.appendChild(makeTileImg(tile, displaySize));
     document.getElementById('preview').classList.add('open');
   }
 
-  document.getElementById('preview-close').addEventListener('click', () => {
+  document.getElementById('preview-close').addEventListener('click', function() {
     document.getElementById('preview').classList.remove('open');
   });
 

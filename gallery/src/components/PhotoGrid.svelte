@@ -2,32 +2,48 @@
   /**
    * @type {{
    *   matches: any[],
-   *   thumbnailUrl: (match: any) => string | null,
+   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
    *   onSelect: (index: number) => void,
    * }}
    */
-  let { matches, thumbnailUrl, onSelect } = $props();
+  let { matches, thumbnailTile, onSelect } = $props();
+
+  const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
 </script>
 
 <div class="grid">
   {#each matches as match, i}
-    {@const url = thumbnailUrl(match)}
-    {#if url}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <img
-        class="tile"
-        src={url}
-        alt={match.filename}
-        title={match.filename}
-        onclick={() => onSelect(i)}
-      />
-    {:else}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div role="button" tabindex="0" class="tile placeholder" onclick={() => onSelect(i)}>
-        {match.filename}
-      </div>
-    {/if}
+    {@const tile = thumbnailTile(match)}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      role="button"
+      tabindex="0"
+      class="tile"
+      onclick={() => onSelect(i)}
+      title={match.filename}
+    >
+      {#if tile}
+        <!--
+          Scale the full AVIF grid to cols×DISPLAY_SIZE wide, then shift it so
+          the target tile (col, row) appears at the top-left of the 160×160 clip.
+          Scale = DISPLAY_SIZE / tileSize, applied by setting img width to cols*DISPLAY_SIZE.
+        -->
+        <img
+          src={tile.url}
+          alt={match.filename}
+          style="
+            width: {tile.cols * DISPLAY_SIZE}px;
+            height: auto;
+            margin-left: -{tile.col * DISPLAY_SIZE}px;
+            margin-top: -{tile.row * DISPLAY_SIZE}px;
+            display: block;
+          "
+        />
+      {:else}
+        <span class="label">{match.filename}</span>
+      {/if}
+    </div>
   {/each}
 </div>
 
@@ -45,13 +61,17 @@
   .tile {
     width: 160px;
     height: 160px;
-    object-fit: cover;
+    overflow: hidden;
     cursor: pointer;
     border-radius: 4px;
     background: #222;
+    flex-shrink: 0;
+    position: relative;
   }
 
-  .placeholder {
+  .label {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;

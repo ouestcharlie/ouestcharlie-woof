@@ -2,14 +2,22 @@
   /**
    * @type {{
    *   match: any,
-   *   previewUrl: (match: any) => string | null,
-   *   thumbnailUrl: (match: any) => string | null,
+   *   previewTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
+   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
    *   onClose: () => void,
    * }}
    */
-  let { match, previewUrl, thumbnailUrl, onClose } = $props();
+  let { match, previewTile, thumbnailTile, onClose } = $props();
 
-  let imgSrc = $derived(previewUrl(match) ?? thumbnailUrl(match));
+  // Use preview tile if available, fall back to thumbnail tile
+  let tile = $derived(previewTile(match) ?? thumbnailTile(match));
+
+  // Scale the tile so it fits within 85% of the smaller viewport dimension
+  let displaySize = $derived(
+    tile
+      ? Math.min(tile.tileSize, Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82))
+      : 0
+  );
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -19,8 +27,24 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="panel" onclick={(e) => e.stopPropagation()}>
     <button class="close" onclick={onClose}>✕</button>
-    {#if imgSrc}
-      <img src={imgSrc} alt={match.filename} />
+    {#if tile}
+      <!--
+        Clip to displaySize × displaySize.
+        Scale the full grid proportionally so each tile = displaySize px.
+      -->
+      <div class="tile-clip" style="width: {displaySize}px; height: {displaySize}px;">
+        <img
+          src={tile.url}
+          alt={match.filename}
+          style="
+            width: {tile.cols * displaySize}px;
+            height: auto;
+            margin-left: -{tile.col * displaySize}px;
+            margin-top: -{tile.row * displaySize}px;
+            display: block;
+          "
+        />
+      </div>
     {/if}
     <div class="meta">
       <div class="filename">{match.filename}</div>
@@ -53,16 +77,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    max-width: 90vw;
-    max-height: 90vh;
     gap: 0.75rem;
   }
 
-  img {
-    max-width: 100%;
-    max-height: 80vh;
-    object-fit: contain;
+  .tile-clip {
+    overflow: hidden;
     border-radius: 4px;
+    flex-shrink: 0;
   }
 
   .close {

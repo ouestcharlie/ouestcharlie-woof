@@ -20,7 +20,7 @@ import logging
 
 from ouestcharlie_toolkit import setup_logging
 
-_log_file = setup_logging("woof", log_file_env_var="WOOF_LOG_FILE")
+_log_file = setup_logging("woof", log_file_env_var="WOOF_LOG_FILE", level=logging.DEBUG)
 logging.getLogger(__name__).info("Woof starting — log: %s", _log_file)
 
 from woof.agent_client import AgentClient  # noqa: E402
