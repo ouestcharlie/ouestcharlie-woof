@@ -7,6 +7,19 @@
         "latex",
         "plaintext"
     ],
+    "cSpell.enabledLanguageIds": [
+        "markdown",
+        "latex",
+        "plaintext"
+    ],
+    "cSpell.ignorePaths": [
+        "**/*.svelte",
+        "**/*.js",
+        "**/*.ts"
+    ],
+    "[svelte]": {
+        "editor.spellcheck": false
+    },
 
     // Python
     "[python]": {

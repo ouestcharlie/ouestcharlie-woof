@@ -184,6 +184,7 @@ class WoofServer:
         async def browse_gallery(
             backend_name: str,
             matches: list[Any],
+            query_summary: str = "",
         ) -> dict[str, Any]:
             """Display photos from a search result in the gallery viewer.
 
@@ -193,6 +194,9 @@ class WoofServer:
             Args:
                 backend_name: Name of the backend (from list_backends).
                 matches: The matches list returned by search_photos.
+                query_summary: Short human-readable description of the query
+                    shown in the gallery header (e.g. "Nikon photos, July 2024").
+                    Leave empty to show a default title.
             """
             self._require_backend(backend_name)
             token = secrets.token_urlsafe(16)
@@ -200,6 +204,7 @@ class WoofServer:
                 "matches": matches,
                 "backend": backend_name,
                 "httpPort": self.http_port,
+                "querySummary": query_summary,
             }
             url = f"http://127.0.0.1:{self.http_port}/gallery/{token}"
             return {

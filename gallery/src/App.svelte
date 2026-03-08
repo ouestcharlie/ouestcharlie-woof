@@ -6,6 +6,7 @@
   let httpPort = $state(null);
   let backendName = $state(null);
   let matches = $state([]);
+  let querySummary = $state('');
   let status = $state('Loading\u2026');
   let selectedIndex = $state(null);
 
@@ -25,6 +26,7 @@
       const session = await response.json();
       backendName = session.backend;
       matches = session.matches ?? [];
+      querySummary = session.querySummary ?? '';
       status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
     } catch (err) {
       status = `Error: ${err.message}`;
@@ -54,7 +56,7 @@
 
 <div class="app">
   <header>
-    <h1>OuEstCharlie</h1>
+    <h1>{querySummary || 'OuEstCharlie'}</h1>
   </header>
 
   <PhotoGrid
@@ -67,7 +69,9 @@
 
   {#if selectedIndex !== null}
     <PreviewPanel
-      match={matches[selectedIndex]}
+      {matches}
+      {selectedIndex}
+      onNavigate={(i) => (selectedIndex = i)}
       {previewTile}
       {thumbnailTile}
       onClose={() => (selectedIndex = null)}
