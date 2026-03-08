@@ -1,37 +1,35 @@
 <script>
   import { onMount } from 'svelte';
-  import { callTool, onInitialize } from './lib/bridge.js';
-  import SearchForm from './components/SearchForm.svelte';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
 
   let httpPort = $state(null);
   let backendName = $state(null);
   let matches = $state([]);
-  let status = $state('Waiting for initialization…');
+  let status = $state('Loading\u2026');
   let selectedIndex = $state(null);
 
-  onMount(() => {
-    onInitialize((data) => {
-      httpPort = data.httpPort;
-      backendName = data.backend;
-      status = `Backend: ${backendName}`;
-    });
-  });
+  onMount(async () => {
+    // Extract session token from path: /gallery/{token}
+    const token = location.pathname.split('/').pop();
+    const port = location.port ? parseInt(location.port) : 80;
+    httpPort = port;
 
-  async function handleSearch(params) {
-    status = 'Searching…';
     try {
-      const result = await callTool('search_photos', {
-        backend_name: backendName,
-        ...params,
-      });
-      matches = result.matches ?? [];
-      status = `${matches.length} photos (${result.partitionsScanned ?? 0} partitions scanned)`;
+      const response = await fetch(`http://127.0.0.1:${port}/api/results/${token}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: response.statusText }));
+        status = `Error: ${err.error || response.statusText}`;
+        return;
+      }
+      const session = await response.json();
+      backendName = session.backend;
+      matches = session.matches ?? [];
+      status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
     } catch (err) {
       status = `Error: ${err.message}`;
     }
-  }
+  });
 
   function thumbnailUrl(match) {
     if (!httpPort || !match.thumbnailsPath) return null;
@@ -48,8 +46,6 @@
   <header>
     <h1>OuEstCharlie</h1>
   </header>
-
-  <SearchForm onSearch={handleSearch} />
 
   <PhotoGrid
     {matches}

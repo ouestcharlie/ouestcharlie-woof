@@ -180,7 +180,7 @@ class WoofServer:
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
-        @mcp.tool()
+        @mcp.tool(meta={"ui": {"resourceUri": _GALLERY_URI}})
         async def browse_gallery(
             backend_name: str,
             matches: list[Any],
@@ -215,7 +215,7 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        @self.mcp.resource(_GALLERY_URI, mime_type="text/html")
+        @self.mcp.resource(_GALLERY_URI, mime_type="text/html;profile=mcp-app")
         async def gallery_resource() -> str:
             return get_gallery_html()
 

@@ -44,6 +44,8 @@ tests/
 
 ## Setup
 
+### MCP Server
+
 Requires sibling repositories:
 
 ```
@@ -58,7 +60,7 @@ uv venv
 uv sync
 ```
 
-### Gallery (optional — a functional placeholder is built in)
+### Gallery
 
 ```bash
 cd gallery
