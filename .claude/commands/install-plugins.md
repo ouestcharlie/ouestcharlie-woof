@@ -1,4 +1,4 @@
-Run the following two Claude Code commands in sequence to install the MCP Apps extension required for the gallery webview:
+Run the following two Claude Code commands in sequence to install the MCP Apps extension required for the gallery web view:
 
 ```
 /plugin marketplace add modelcontextprotocol/ext-apps
