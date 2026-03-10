@@ -189,8 +189,8 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
     def _not_found(self) -> None:
         self.send_error(404)
 
-    def log_message(self, fmt: str, *args: object) -> None:  # noqa: N802
-        _log.debug("HTTP %s", fmt % args)
+    def log_message(self, format: str, *args: object) -> None: 
+        _log.debug("HTTP %s", format % args)
 
 
 def _gallery_placeholder() -> str:
