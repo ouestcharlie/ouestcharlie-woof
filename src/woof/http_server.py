@@ -7,6 +7,7 @@ through the MCP channel.
 URL scheme:
   GET /gallery/{token}                   — gallery HTML (token identifies session)
   GET /api/results/{token}               — JSON session data (matches + metadata)
+  GET /gallery-static/{path}            — gallery JS/CSS assets from dist/
   GET /thumbnails/{backend_name}/{partition}/thumbnails.avif
   GET /previews/{backend_name}/{partition}/previews.avif
 
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import queue
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -32,8 +34,9 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-# Pre-built Svelte bundle (produced by `npm run build` in gallery/)
-_GALLERY_DIST = Path(__file__).parent / "gallery" / "dist" / "index.html"
+# Pre-built Svelte app (produced by `npm run build` in gallery/)
+_GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
+_GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 # File extension → AVIF filename inside .ouestcharlie/
 _SUFFIX_MAP = {
@@ -42,10 +45,17 @@ _SUFFIX_MAP = {
 }
 
 
-def get_gallery_html() -> str:
-    """Return the gallery HTML — built bundle if present, placeholder otherwise."""
-    if _GALLERY_DIST.exists():
-        return _GALLERY_DIST.read_text(encoding="utf-8")
+def get_gallery_html(http_port: int) -> str:
+    """Return the gallery HTML with asset URLs rewritten to absolute localhost URLs.
+
+    Vite builds the app with base='/gallery-static/'.  At runtime we replace
+    those relative-rooted paths with http://127.0.0.1:{http_port}/gallery-static/
+    so the MCP Apps iframe (and direct browser access) can load JS/CSS.
+    """
+    if _GALLERY_DIST_HTML.exists():
+        html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
+        base = f"http://127.0.0.1:{http_port}/gallery-static/"
+        return html.replace("/gallery-static/", base)
     return _gallery_placeholder()
 
 
@@ -65,14 +75,16 @@ def start_http_server(
     """
     sessions: dict = gallery_sessions if gallery_sessions is not None else {}
     port_queue: queue.Queue[int] = queue.Queue()
+    bound_port: list[int] = [0]
 
     def _run() -> None:
         def handler_factory(*args: object, **kwargs: object) -> _ThumbnailHandler:
-            return _ThumbnailHandler(config, sessions, *args, **kwargs)  # type: ignore[arg-type]
+            return _ThumbnailHandler(config, sessions, bound_port[0], *args, **kwargs)  # type: ignore[arg-type]
 
         server = HTTPServer(("127.0.0.1", 0), handler_factory)
-        port_queue.put(server.server_address[1])
-        _log.info("HTTP server listening on 127.0.0.1:%d", server.server_address[1])
+        bound_port[0] = server.server_address[1]
+        port_queue.put(bound_port[0])
+        _log.info("HTTP server listening on 127.0.0.1:%d", bound_port[0])
         server.serve_forever()
 
     thread = threading.Thread(target=_run, daemon=True, name="woof-http")
@@ -87,11 +99,13 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self,
         config: "WoofConfig",
         gallery_sessions: dict,
+        http_port: int,
         *args: object,
         **kwargs: object,
     ) -> None:
         self._config = config
         self._gallery_sessions = gallery_sessions
+        self._http_port = http_port
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     def do_GET(self) -> None:  # noqa: N802
@@ -117,6 +131,12 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
             self._serve_results(token)
             return
 
+        # /gallery-static/{asset_path} — Vite-built JS/CSS assets
+        if path.startswith("gallery-static/"):
+            asset_path = path[len("gallery-static/"):]
+            self._serve_static(asset_path)
+            return
+
         # path = "{kind}/{backend_name}/{partition}/{filename}"
         # kind is "thumbnails" or "previews"
         parts = path.split("/", 2)
@@ -124,7 +144,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
             self._not_found()
             return
 
-        _kind, backend_name, rest = parts
+        _, backend_name, rest = parts
         # rest = "{partition}/{filename}" — filename is the last segment
         rest_parts = rest.rsplit("/", 1)
         if len(rest_parts) != 2:
@@ -156,6 +176,26 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _serve_static(self, asset_path: str) -> None:
+        file_path = (_GALLERY_DIST_DIR / asset_path).resolve()
+        # Prevent path traversal outside dist/
+        try:
+            file_path.relative_to(_GALLERY_DIST_DIR.resolve())
+        except ValueError:
+            self._not_found()
+            return
+        if not file_path.exists() or not file_path.is_file():
+            self._not_found()
+            return
+        data = file_path.read_bytes()
+        mime, _ = mimetypes.guess_type(str(file_path))
+        self.send_response(200)
+        self.send_header("Content-Type", mime or "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _serve_results(self, token: str) -> None:
         session = self._gallery_sessions.get(token)
         if session is None:
@@ -176,7 +216,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self._json_response({"error": message}, status)
 
     def _serve_gallery(self) -> None:
-        html = get_gallery_html()
+        html = get_gallery_html(self._http_port)
         data = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -189,147 +229,18 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
     def _not_found(self) -> None:
         self.send_error(404)
 
-    def log_message(self, format: str, *args: object) -> None: 
+    def log_message(self, format: str, *args: object) -> None:
         _log.debug("HTTP %s", format % args)
 
 
 def _gallery_placeholder() -> str:
-    """Minimal HTML served when no built gallery bundle is present.
-
-    Extracts the session token from the URL path (/gallery/{token}),
-    fetches /api/results/{token} to get pre-computed matches, and renders
-    the photo grid.  No search form — Claude runs search_photos and passes
-    results to browse_gallery.
-    """
-    return """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OuEstCharlie Gallery</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #111; color: #eee; }
-    #app { display: flex; flex-direction: column; height: 100vh; }
-    header { padding: 1rem; background: #1a1a1a; border-bottom: 1px solid #333; }
-    header h1 { margin: 0; font-size: 1.1rem; }
-    #grid { flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 4px; padding: 1rem; align-content: flex-start; }
-    .tile { width: 160px; height: 160px; overflow: hidden; cursor: pointer; border-radius: 4px; background: #222; flex-shrink: 0; position: relative; }
-    .tile img { display: block; }
-    #status { padding: 0.5rem 1rem; font-size: 0.8rem; color: #888; background: #1a1a1a; border-top: 1px solid #333; }
-    #preview { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; }
-    #preview.open { display: flex; }
-    .preview-clip { overflow: hidden; border-radius: 4px; }
-    .preview-clip img { display: block; }
-    #preview-close { position: absolute; top: 1rem; right: 1rem; background: #333; border: none; color: #eee; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 4px; }
-  </style>
-</head>
-<body>
-<div id="app">
-  <header><h1>OuEstCharlie</h1></header>
-  <div id="grid"></div>
-  <div id="status">Loading\u2026</div>
-</div>
-<div id="preview">
-  <button id="preview-close">Close</button>
-  <div class="preview-clip" id="preview-clip"></div>
-</div>
-
-<script>
-  const DISPLAY_SIZE = 160; // px per thumbnail tile
-  let matches = [];
-
-  const token = location.pathname.split('/').pop();
-  const httpPort = location.port ? parseInt(location.port) : 80;
-
-  // Returns tile geometry {url, col, row, tileSize, cols} or null.
-  function tileInfo(match, isThumb, backend) {
-    var path, cols, tileSize, avifKind, avifFile;
-    if (isThumb) {
-      path = match.thumbnailsPath;
-      cols = match.thumbnailCols;
-      tileSize = match.thumbnailTileSize;
-      avifKind = 'thumbnails';
-      avifFile = 'thumbnails.avif';
-    } else {
-      path = match.previewsPath;
-      cols = match.previewCols;
-      tileSize = match.previewTileSize;
-      avifKind = 'previews';
-      avifFile = 'previews.avif';
-    }
-    if (!path || match.tileIndex == null || !cols || !tileSize) { return null; }
-    var partition = encodeURIComponent(match.partition).replace(/%2F/g, '/');
-    var url = 'http://127.0.0.1:' + httpPort + '/' + avifKind + '/' + backend + '/' + partition + '/' + avifFile;
-    return { url: url, col: match.tileIndex % cols, row: Math.floor(match.tileIndex / cols), tileSize: tileSize, cols: cols };
-  }
-
-  // Creates an <img> that shows the correct tile from the AVIF grid at displaySize px.
-  function makeTileImg(tile, displaySize) {
-    var img = document.createElement('img');
-    img.src = tile.url;
-    img.style.width = (tile.cols * displaySize) + 'px';
-    img.style.height = 'auto';
-    img.style.marginLeft = -(tile.col * displaySize) + 'px';
-    img.style.marginTop = -(tile.row * displaySize) + 'px';
-    img.style.display = 'block';
-    return img;
-  }
-
-  function renderGrid(newMatches, backend) {
-    matches = newMatches;
-    var grid = document.getElementById('grid');
-    grid.innerHTML = '';
-    for (var i = 0; i < matches.length; i++) {
-      var match = matches[i];
-      var tile = tileInfo(match, true, backend);
-      var div = document.createElement('div');
-      div.className = 'tile';
-      div.title = match.filename;
-      div.addEventListener('click', (function(idx) {
-        return function() { openPreview(idx, backend); };
-      })(i));
-      if (tile) { div.appendChild(makeTileImg(tile, DISPLAY_SIZE)); }
-      grid.appendChild(div);
-    }
-  }
-
-  function openPreview(i, backend) {
-    var match = matches[i];
-    var tile = tileInfo(match, false, backend);
-    if (!tile) { tile = tileInfo(match, true, backend); }
-    var clip = document.getElementById('preview-clip');
-    clip.innerHTML = '';
-    if (!tile) { return; }
-    var displaySize = Math.min(tile.tileSize, Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82));
-    clip.style.width = displaySize + 'px';
-    clip.style.height = displaySize + 'px';
-    clip.appendChild(makeTileImg(tile, displaySize));
-    document.getElementById('preview').classList.add('open');
-  }
-
-  document.getElementById('preview-close').addEventListener('click', function() {
-    document.getElementById('preview').classList.remove('open');
-  });
-
-  async function loadResults() {
-    const status = document.getElementById('status');
-    try {
-      const resp = await fetch('http://127.0.0.1:' + httpPort + '/api/results/' + token);
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-        status.textContent = 'Error: ' + (err.error || resp.statusText);
-        return;
-      }
-      const session = await resp.json();
-      const m = session.matches || [];
-      renderGrid(m, session.backend);
-      status.textContent = m.length + ' photo' + (m.length === 1 ? '' : 's');
-    } catch (err) {
-      status.textContent = 'Error: ' + err.message;
-    }
-  }
-
-  loadResults();
-</script>
-</body>
-</html>"""
+    """Placeholder served when the gallery bundle has not been built yet."""
+    return (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<title>OuEstCharlie Gallery</title>"
+        "<style>body{font-family:system-ui,sans-serif;background:#111;color:#888;"
+        "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
+        "</style></head><body>"
+        "<p>Gallery not built. Run <code>npm run build</code> in <code>gallery/</code>.</p>"
+        "</body></html>"
+    )

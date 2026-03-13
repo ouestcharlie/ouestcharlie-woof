@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { App } from '@modelcontextprotocol/ext-apps';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
 
@@ -10,26 +11,39 @@
   let status = $state('Loading\u2026');
   let selectedIndex = $state(null);
 
-  onMount(async () => {
-    // Extract session token from path: /gallery/{token}
-    const token = location.pathname.split('/').pop();
-    const port = location.port ? parseInt(location.port) : 80;
-    httpPort = port;
+  function applySession(session) {
+    httpPort = session.httpPort ?? httpPort;
+    backendName = session.backend;
+    matches = session.matches ?? [];
+    querySummary = session.querySummary ?? '';
+    status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
+  }
 
+  onMount(async () => {
+    // Primary: MCP Apps channel — host pushes tool result via postMessage
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/results/${token}`);
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: response.statusText }));
-        status = `Error: ${err.error || response.statusText}`;
-        return;
+      const app = new App({ name: 'OuEstCharlie', version: '1.0.0' });
+      app.ontoolresult = ({ content }) => {
+        const text = (content ?? []).find(b => b.type === 'text')?.text;
+        if (text) applySession(JSON.parse(text));
+      };
+      await app.connect();
+    } catch (_) {
+      // Fallback: direct HTTP access (dev / debug) — fetch session by URL token
+      const token = location.pathname.split('/').pop();
+      const port = location.port ? parseInt(location.port) : 80;
+      httpPort = port;
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/results/${token}`);
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: response.statusText }));
+          status = `Error: ${err.error || response.statusText}`;
+          return;
+        }
+        applySession(await response.json());
+      } catch (err) {
+        status = `Error: ${err.message}`;
       }
-      const session = await response.json();
-      backendName = session.backend;
-      matches = session.matches ?? [];
-      querySummary = session.querySummary ?? '';
-      status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
-    } catch (err) {
-      status = `Error: ${err.message}`;
     }
   });
 

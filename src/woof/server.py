@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.types import EmbeddedResource, TextResourceContents
+from fastmcp import Context, FastMCP
+from fastmcp.server.apps import AppConfig, ResourceCSP
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
@@ -182,12 +181,12 @@ class WoofServer:
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
-        @mcp.tool()
+        @mcp.tool(app=AppConfig(resource_uri=_GALLERY_URI))
         async def browse_gallery(
             backend_name: str,
             matches: list[Any],
             query_summary: str = "",
-        ) -> list[EmbeddedResource]:
+        ) -> dict[str, Any]:
             """Display photos from a search result in the gallery viewer.
 
             Call search_photos first to get matching photos, then pass the
@@ -201,6 +200,7 @@ class WoofServer:
                     Leave empty to show a default title.
             """
             self._require_backend(backend_name)
+            # Keep HTTP session available for direct browser access / debug
             token = secrets.token_urlsafe(16)
             self._gallery_sessions[token] = {
                 "matches": matches,
@@ -208,32 +208,31 @@ class WoofServer:
                 "httpPort": self.http_port,
                 "querySummary": query_summary,
             }
-            url = f"http://127.0.0.1:{self.http_port}/gallery/{token}"
-            return [
-                EmbeddedResource(
-                    type="resource",
-                    resource=TextResourceContents(
-                        uri=_GALLERY_URI, # type: ignore
-                        mimeType="application/json",
-                        text=json.dumps({
-                            "matches": matches,
-                            "backend": backend_name,
-                            "querySummary": query_summary,
-                            "httpPort": self.http_port,
-                        }),
-                    ),
-                    _meta={"ui": {"type": "webview", "url": url, "title": "OuEstCharlie Gallery"}},
-                )
-            ]
+            return {
+                "matches": matches,
+                "backend": backend_name,
+                "querySummary": query_summary,
+                "httpPort": self.http_port,
+            }
 
     # ------------------------------------------------------------------
     # Gallery resource
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        @self.mcp.resource(_GALLERY_URI, mime_type="text/html;profile=mcp-app")
+        origin = f"http://127.0.0.1:{self.http_port}"
+        @self.mcp.resource(
+            _GALLERY_URI,
+            mime_type='text/html;profile=mcp-app',
+            app=AppConfig(
+                csp=ResourceCSP(
+                    resource_domains=[origin],
+                    connect_domains=[origin],
+                )
+            ),
+        )
         async def gallery_resource() -> str:
-            return get_gallery_html()
+            return get_gallery_html(self.http_port)
 
     # ------------------------------------------------------------------
     # Helpers
