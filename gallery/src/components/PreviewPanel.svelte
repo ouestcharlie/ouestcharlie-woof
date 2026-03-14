@@ -94,8 +94,8 @@
     <div class="meta">
       <div class="filename">{match.filename}</div>
       <div class="counter">{selectedIndex + 1} / {matches.length}</div>
-      {#if match.dateTaken}
-        <div class="detail">{formatDate(match.dateTaken)}</div>
+      {#if match.date}
+        <div class="detail">{formatDate(match.date)}</div>
       {/if}
       {#if match.make || match.model}
         <div class="detail">{[match.make, match.model].filter(Boolean).join(' ')}</div>

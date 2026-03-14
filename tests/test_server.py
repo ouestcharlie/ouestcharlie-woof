@@ -48,7 +48,7 @@ def _make_matches(
             "filename": f"photo_{i}.jpg",
             "contentHash": f"hash{i}",
             "filePath": f"{partitions[i]}/photo_{i}.jpg",
-            **({"dateTaken": dates[i]} if dates[i] is not None else {}),
+            **({"date": dates[i]} if dates[i] is not None else {}),
             **({"rating": ratings[i]} if ratings[i] is not None else {}),
         }
         for i in range(n)
@@ -162,14 +162,19 @@ async def test_index_backend_agent_error_is_logged(
 # _search_stats
 # ---------------------------------------------------------------------------
 
+_DATE_FIELD = {"name": "date", "type": "DATE_RANGE"}
+_RATING_FIELD = {"name": "rating", "type": "INT_RANGE"}
+_ALL_FIELDS = [_DATE_FIELD, _RATING_FIELD]
+
+
 def test_search_stats_empty() -> None:
+    stats = WoofServer._search_stats([], _ALL_FIELDS)
+    assert stats == {"count": 0, "partitions": {}, "date": None, "rating": None}
+
+
+def test_search_stats_no_fields() -> None:
     stats = WoofServer._search_stats([])
-    assert stats == {
-        "count": 0,
-        "partitions": {},
-        "date_range": None,
-        "rating_distribution": {},
-    }
+    assert stats == {"count": 0, "partitions": {}}
 
 
 def test_search_stats_partition_counts_sorted() -> None:
@@ -182,23 +187,51 @@ def test_search_stats_partition_counts_sorted() -> None:
 def test_search_stats_date_range() -> None:
     dates = ["2024-01-10T12:00:00", "2024-03-05T08:30:00", "2024-02-20T00:00:00"]
     matches = _make_matches(partitions=["p"] * 3, dates=dates)
-    stats = WoofServer._search_stats(matches)
-    assert stats["date_range"] == {
-        "earliest": "2024-01-10T12:00:00",
-        "latest": "2024-03-05T08:30:00",
+    stats = WoofServer._search_stats(matches, [_DATE_FIELD])
+    assert stats["date"] == {
+        "min": "2024-01-10T12:00:00",
+        "max": "2024-03-05T08:30:00",
     }
 
 
-def test_search_stats_rating_distribution() -> None:
+def test_search_stats_rating_range() -> None:
     matches = _make_matches(partitions=["p"] * 6, ratings=[5, 3, 5, None, 3, 1])
-    stats = WoofServer._search_stats(matches)
-    assert stats["rating_distribution"] == {"1": 1, "3": 2, "5": 2}
+    stats = WoofServer._search_stats(matches, [_RATING_FIELD])
+    assert stats["rating"] == {"min": 1, "max": 5}
     assert stats["count"] == 6
 
 
-def test_search_stats_no_dates_gives_none_range() -> None:
+def test_search_stats_no_dates_gives_none() -> None:
     matches = _make_matches()
-    assert WoofServer._search_stats(matches)["date_range"] is None
+    assert WoofServer._search_stats(matches, [_DATE_FIELD])["date"] is None
+
+
+# ---------------------------------------------------------------------------
+# list_search_fields
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_search_fields_delegates_to_wally(server: WoofServer) -> None:
+    mock_result = {"fields": [{"name": "date", "type": "DATE_RANGE", "filterFormat": "...", "pruneable": True}]}
+    mock = AsyncMock(return_value=mock_result)
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "list_search_fields")
+        result = await tool_fn(ctx=None, backend_name="testlib")
+        assert mock.call_args[0][0] == "wally"
+        assert mock.call_args[0][1] == "list_search_fields_tool"
+        assert result == mock_result
+
+
+@pytest.mark.asyncio
+async def test_list_search_fields_agent_error(
+    server: WoofServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock = AsyncMock(side_effect=AgentError("wally gone"))
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "list_search_fields")
+        with caplog.at_level(logging.ERROR, logger="woof.server"):
+            result = await tool_fn(ctx=None, backend_name="testlib")
+    assert "error" in result
 
 
 # ---------------------------------------------------------------------------
@@ -209,23 +242,24 @@ def test_search_stats_no_dates_gives_none_range() -> None:
 async def test_search_photos_calls_wally(server: WoofServer) -> None:
     mock_result = {"matches": [], "partitionsScanned": 3, "partitionsPruned": 1, "errors": 0}
     mock = AsyncMock(return_value=mock_result)
+    filters = {"date": {"min": "2024"}, "rating": {"min": 4}}
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
-        await tool_fn(ctx=None, backend_name="testlib", date_min="2024")
+        await tool_fn(ctx=None, backend_name="testlib", filters=filters)
         assert mock.call_args[0][0] == "wally"
         assert mock.call_args[0][1] == "search_photos_tool"
-        assert mock.call_args[0][2]["date_min"] == "2024"
+        assert mock.call_args[0][2]["filters"] == filters
 
 
 @pytest.mark.asyncio
-async def test_search_photos_omits_none_params(server: WoofServer) -> None:
+async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None:
     mock = AsyncMock(return_value={"matches": []})
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
         await tool_fn(ctx=None, backend_name="testlib")
         args_passed = mock.call_args[0][2]
-        assert "date_min" not in args_passed
-        assert "tags" not in args_passed
+        assert "filters" not in args_passed
+        assert args_passed["root"] == ""
 
 
 @pytest.mark.asyncio
@@ -235,15 +269,20 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
         dates=["2024-01-05T00:00:00", "2024-01-10T00:00:00", "2024-02-01T00:00:00"],
         ratings=[5, None, 3],
     )
-    mock = AsyncMock(return_value={"matches": matches})
-    with patch.object(server._agent, "call_tool", new=mock):
+    fields = [{"name": "date", "type": "DATE_RANGE"}, {"name": "rating", "type": "INT_RANGE"}]
+
+    async def _side_effect(agent, tool, args, backend, **kwargs):
+        if tool == "list_search_fields_tool":
+            return {"fields": fields}
+        return {"matches": matches}
+
+    with patch.object(server._agent, "call_tool", new=AsyncMock(side_effect=_side_effect)):
         tool_fn = await _get_tool(server, "search_photos")
         result = await tool_fn(ctx=None, backend_name="testlib")
     assert result["count"] == 3
     assert result["partitions"] == {"2024/01": 2, "2024/02": 1}
-    assert result["date_range"]["earliest"] == "2024-01-05T00:00:00"
-    assert result["date_range"]["latest"] == "2024-02-01T00:00:00"
-    assert result["rating_distribution"] == {"3": 1, "5": 1}
+    assert result["date"] == {"min": "2024-01-05T00:00:00", "max": "2024-02-01T00:00:00"}
+    assert result["rating"] == {"min": 3, "max": 5}
     assert "session_token" in result
 
 

@@ -23,7 +23,7 @@ _GALLERY_URI = "ui://gallery/ouestcharlie"
 class WoofServer:
     """Woof MCP server.
 
-    Exposes five V1 tools to Claude Desktop and registers the gallery
+    Exposes six tools to Claude Desktop and registers the gallery
     as an MCP App resource.
 
     Roles:
@@ -139,53 +139,77 @@ class WoofServer:
             return result  # type: ignore[return-value]
 
         @mcp.tool()
+        async def list_search_fields(
+            ctx: Context,
+            backend_name: str,
+        ) -> dict[str, Any]:
+            """List all searchable photo fields with their types and filter formats.
+
+            Delegates to Wally's field registry. Use the returned field names
+            and formats when constructing the ``filters`` argument for
+            ``search_photos``.
+
+            Args:
+                backend_name: Name of any registered backend (used to route
+                    the request to the correct Wally instance).
+            """
+            backend = self._require_backend(backend_name)
+            try:
+                return await self._agent.call_tool(  # type: ignore[return-value]
+                    "wally", "list_search_fields_tool", {}, backend
+                )
+            except AgentError as exc:
+                _log.error("list_search_fields(%r) failed: %s", backend_name, exc)
+                return {"error": str(exc)}
+
+        @mcp.tool()
         async def search_photos(
             ctx: Context,
             backend_name: str,
-            date_min: str | None = None,
-            date_max: str | None = None,
-            tags: list[str] | None = None,
-            rating_min: int | None = None,
-            rating_max: int | None = None,
-            make: str | None = None,
-            model: str | None = None,
+            filters: dict | None = None,
+            root: str = "",
         ) -> dict[str, Any]:
             """Search photos in a backend using Wally.
 
             Traverses the manifest tree with two-level pruning for efficiency.
-            All parameters are optional — omitting all returns all indexed photos.
+            Omitting ``filters`` (or passing None) returns all indexed photos.
+
+            Use ``list_search_fields`` to discover available filter fields and
+            their expected formats before constructing a query.
 
             Args:
                 backend_name: Name of the backend to search.
-                date_min: Inclusive lower bound on date taken. Partial dates
-                    accepted: "2024" expands to 2024-01-01, "2024-07" to
-                    2024-07-01.
-                date_max: Inclusive upper bound. "2024-07" expands to
-                    2024-07-31T23:59:59.
-                tags: All tags must be present (AND semantics). Matches
-                    dc:subject values.
-                rating_min: Minimum xmp:Rating (0=unrated, 1–5=stars,
-                    -1=rejected).
-                rating_max: Maximum xmp:Rating.
-                make: Case-insensitive substring match on camera make.
-                model: Case-insensitive substring match on camera model.
+                filters: Optional dict mapping field names to filter values.
+                    Call ``list_search_fields`` to get valid fields and formats.
+                    Examples::
+
+                        # Photos taken in 2024 rated 4–5 stars
+                        {"date": {"min": "2024", "max": "2024"},
+                         "rating": {"min": 4, "max": 5}}
+
+                        # Tagged "vacation" AND "portrait", shot on Nikon
+                        {"tags": ["vacation", "portrait"], "make": "nikon"}
+
+                        # 4K landscape photos
+                        {"width": {"min": 3840}}
+
+                root: Sub-path to search within the backend (default "" = entire
+                    library). E.g. "2024/2024-07" to restrict to one partition.
             """
             backend = self._require_backend(backend_name)
-            args: dict[str, Any] = {}
-            if date_min is not None:
-                args["date_min"] = date_min
-            if date_max is not None:
-                args["date_max"] = date_max
-            if tags is not None:
-                args["tags"] = tags
-            if rating_min is not None:
-                args["rating_min"] = rating_min
-            if rating_max is not None:
-                args["rating_max"] = rating_max
-            if make is not None:
-                args["make"] = make
-            if model is not None:
-                args["model"] = model
+            args: dict[str, Any] = {"root": root}
+            if filters is not None:
+                args["filters"] = filters
+
+            # Fetch field definitions to drive stats computation.
+            try:
+                fields_result = await self._agent.call_tool(
+                    "wally", "list_search_fields_tool", {}, backend
+                )
+                fields: list[Any] = fields_result.get("fields", [])  # type: ignore[union-attr]
+            except AgentError as exc:
+                _log.warning("list_search_fields_tool failed, stats will be empty: %s", exc)
+                fields = []
 
             try:
                 result = await self._agent.call_tool(
@@ -205,7 +229,7 @@ class WoofServer:
                 "querySummary": "",
             }
             return {
-                **self._search_stats(matches),
+                **self._search_stats(matches, fields),
                 "session_token": token,
             }
 
@@ -260,19 +284,34 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _search_stats(matches: list[Any]) -> dict[str, Any]:
-        """Compute summary statistics over a list of match dicts."""
+    def _search_stats(matches: list[Any], fields: list[Any] | None = None) -> dict[str, Any]:
+        """Compute summary statistics over a list of match dicts.
+
+        ``fields`` is the descriptor list returned by Wally's
+        ``list_search_fields_tool``. For each DATE_RANGE or INT_RANGE field
+        a ``{name}: {min, max}`` entry is added. Field name and match dict
+        key are the same by convention.
+
+        New fields added to Wally are picked up automatically without
+        any changes here.
+        """
         by_partition: Counter[str] = Counter(m["partition"] for m in matches)
-        dates = [m["dateTaken"] for m in matches if m.get("dateTaken")]
-        ratings: Counter[int] = Counter(
-            m["rating"] for m in matches if m.get("rating") is not None
-        )
-        return {
+        stats: dict[str, Any] = {
             "count": len(matches),
             "partitions": dict(sorted(by_partition.items())),
-            "date_range": {"earliest": min(dates), "latest": max(dates)} if dates else None,
-            "rating_distribution": {str(k): v for k, v in sorted(ratings.items())},
         }
+        for fdef in (fields or []):
+            field_type = fdef.get("type", "")
+            if field_type in ("DATE_RANGE", "INT_RANGE"):
+                name = fdef.get("name", "")
+                if not name:
+                    continue
+                values = [m[name] for m in matches if m.get(name) is not None]
+                if not values:
+                    stats[name] = None
+                else:
+                    stats[name] = {"min": min(values), "max": max(values)}
+        return stats
 
     def _require_backend(self, name: str) -> BackendConfig:
         backend = self.config.get_backend(name)
