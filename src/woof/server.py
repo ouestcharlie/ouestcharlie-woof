@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -183,15 +184,16 @@ class WoofServer:
                 return {"error": str(exc)}
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
+            matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
             token = secrets.token_urlsafe(16)
             self._gallery_sessions[token] = {
-                "matches": result.get("matches", []),  # type: ignore[union-attr]
+                "matches": matches,
                 "backend": backend_name,
                 "httpPort": self.http_port,
                 "querySummary": "",
             }
             return {
-                "count": len(result.get("matches", [])),  # type: ignore[union-attr]
+                **self._search_stats(matches),
                 "session_token": token,
             }
 
@@ -244,6 +246,21 @@ class WoofServer:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _search_stats(matches: list[Any]) -> dict[str, Any]:
+        """Compute summary statistics over a list of match dicts."""
+        by_partition: Counter[str] = Counter(m["partition"] for m in matches)
+        dates = [m["dateTaken"] for m in matches if m.get("dateTaken")]
+        ratings: Counter[int] = Counter(
+            m["rating"] for m in matches if m.get("rating") is not None
+        )
+        return {
+            "count": len(matches),
+            "partitions": dict(sorted(by_partition.items())),
+            "date_range": {"earliest": min(dates), "latest": max(dates)} if dates else None,
+            "rating_distribution": {str(k): v for k, v in sorted(ratings.items())},
+        }
 
     def _require_backend(self, name: str) -> BackendConfig:
         backend = self.config.get_backend(name)
