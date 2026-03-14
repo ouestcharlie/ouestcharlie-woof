@@ -101,6 +101,28 @@ class WoofServer:
             return {"backends": statuses, "fields": fields}
 
         @mcp.tool()
+        async def get_root_manifests() -> list[Any]:
+            """Return the root manifest of each registered backend.
+
+            Manifests contain a summary of each child partition
+                and an aggregated summary.
+            
+            Returns ``None`` for the manifest if the backend is unindexed
+            or unreachable.
+            """
+            result = []
+            for b in self.config.backends:
+                try:
+                    manifest = await self._agent.call_tool(
+                        "wally", "get_root_manifest_tool", {}, b
+                    )
+                except AgentError as exc:
+                    _log.warning("get_root_manifests: failed for %r: %s", b.name, exc)
+                    manifest = None
+                result.append({"name": b.name, "manifest": manifest})
+            return result
+
+        @mcp.tool()
         async def index_backend(
             ctx: Context,
             backend_name: str,
