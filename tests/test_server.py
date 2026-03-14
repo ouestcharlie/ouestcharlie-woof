@@ -108,6 +108,9 @@ async def test_index_backend_calls_whitebeard(server: WoofServer) -> None:
         mock.assert_called_once()
         assert mock.call_args[0][0] == "whitebeard"
         assert mock.call_args[0][1] == "index_library_tool"
+        args = mock.call_args[0][2]
+        assert args["generate_thumbnails"] is True
+        assert args["extract_exif"] is True
 
 
 @pytest.mark.asyncio
@@ -118,6 +121,21 @@ async def test_index_backend_with_partition(server: WoofServer) -> None:
         await tool_fn(ctx=None, backend_name="testlib", partition="2024/2024-07", force=False)
         assert mock.call_args[0][1] == "index_partition_tool"
         assert mock.call_args[0][2]["partition"] == "2024/2024-07"
+
+
+@pytest.mark.asyncio
+async def test_index_backend_extract_exif_false(server: WoofServer) -> None:
+    """extract_exif=False and generate_thumbnails=False are forwarded to Whitebeard."""
+    mock = AsyncMock(return_value={})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "index_backend")
+        await tool_fn(
+            ctx=None, backend_name="testlib", partition="",
+            force=False, generate_thumbnails=False, extract_exif=False,
+        )
+        args = mock.call_args[0][2]
+        assert args["extract_exif"] is False
+        assert args["generate_thumbnails"] is False
 
 
 @pytest.mark.asyncio
