@@ -114,10 +114,10 @@ mcp dev src/woof/__main__.py
 
 | Repository | Purpose |
 |------------|---------|
-| [ouestcharlie](../ouestcharlie) | Architecture docs, HLR/HLD, MCP interface |
-| **ouestcharlie-woof** *(this repo)* | Woof controller |
-| [ouestcharlie-py-toolkit](../ouestcharlie-py-toolkit) | Python toolkit for agents |
-| [ouestcharlie-whitebeard](../ouestcharlie-whitebeard) | Indexing agent |
-| [ouestcharlie-wally](../ouestcharlie-wally) | Search/consumption agent |
+| [ouestcharlie](https://github.com/ouestcharlie/ouestcharlie/) | Architecture docs, HLR/HLD, MCP interface |
+| [**ouestcharlie-woof** *(this repo)*](https://github.com/ouestcharlie/ouestcharlie-woof/) | Woof controller |
+| [ouestcharlie-py-toolkit](https://github.com/ouestcharlie/ouestcharlie-py-toolkit) | Python toolkit for agents |
+| [ouestcharlie-whitebeard](https://github.com/ouestcharlie/ouestcharlie-whitebeard) | Indexing agent |
+| [ouestcharlie-wally](https://github.com/ouestcharlie/ouestcharlie-wally) | Search/consumption agent |
 
-See [ouestcharlie/HLD.md](../ouestcharlie/HLD.md) for the overall system architecture.
+See [ouestcharlie/HLD.md](https://github.com/ouestcharlie/ouestcharlie/blob/master/HLD.md) for the overall system architecture.

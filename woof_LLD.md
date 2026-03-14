@@ -1,6 +1,6 @@
 # Woof Low-Level Design
 
-This document details the internal design of Woof. For requirements, see [woof_LLR.md](woof_LLR.md). For MCP tool definitions, see [controller_api.json](../controller_api.json).
+This document details the internal design of Woof. For requirements, see [woof_LLR.md](woof_LLR.md). For MCP tool definitions, see [controller_api.json](https://github.com/ouestcharlie/ouestcharlie/blob/master/controller_api.json).
 
 ## Architecture Overview
 
