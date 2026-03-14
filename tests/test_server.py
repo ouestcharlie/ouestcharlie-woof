@@ -77,20 +77,47 @@ async def test_list_backends(server: WoofServer) -> None:
 
 @pytest.mark.asyncio
 async def test_get_status_existing_backend(server: WoofServer, tmp_path: Path) -> None:
-    tool_fn = await _get_tool(server, "get_status")
-    result = await tool_fn()
+    mock_fields = [{"name": "dateTaken", "type": "DATE_RANGE", "filterFormat": "...", "pruneable": True}]
+    mock = AsyncMock(return_value={"fields": mock_fields})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_status")
+        result = await tool_fn()
     entry = next(s for s in result["backends"] if s["name"] == "testlib")
     assert entry["exists"] is True
+    assert result["fields"] == mock_fields
 
 
 @pytest.mark.asyncio
 async def test_get_status_missing_backend(config: WoofConfig) -> None:
     config.backends = [BackendConfig(name="ghost", type="local", path="/nonexistent")]
     server = WoofServer(config, http_port=9999)
-    tool_fn = await _get_tool(server, "get_status")
-    result = await tool_fn()
+    mock = AsyncMock(return_value={"fields": []})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_status")
+        result = await tool_fn()
     entry = next(s for s in result["backends"] if s["name"] == "ghost")
     assert entry["exists"] is False
+    assert "fields" in result
+
+
+@pytest.mark.asyncio
+async def test_get_status_no_backends(tmp_path: Path) -> None:
+    config = WoofConfig(backends=[], config_dir=tmp_path / ".woof")
+    server = WoofServer(config, http_port=9999)
+    tool_fn = await _get_tool(server, "get_status")
+    result = await tool_fn()
+    assert result["backends"] == []
+    assert result["fields"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_status_wally_error_returns_empty_fields(server: WoofServer) -> None:
+    mock = AsyncMock(side_effect=AgentError("wally down"))
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_status")
+        result = await tool_fn()
+    assert result["fields"] == []
+    assert any(s["name"] == "testlib" for s in result["backends"])
 
 
 # ---------------------------------------------------------------------------
@@ -204,34 +231,6 @@ def test_search_stats_rating_range() -> None:
 def test_search_stats_no_dates_gives_none() -> None:
     matches = _make_matches()
     assert WoofServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
-
-
-# ---------------------------------------------------------------------------
-# list_search_fields
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_list_search_fields_delegates_to_wally(server: WoofServer) -> None:
-    mock_result = {"fields": [{"name": "date", "type": "DATE_RANGE", "filterFormat": "...", "pruneable": True}]}
-    mock = AsyncMock(return_value=mock_result)
-    with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "list_search_fields")
-        result = await tool_fn(ctx=None, backend_name="testlib")
-        assert mock.call_args[0][0] == "wally"
-        assert mock.call_args[0][1] == "list_search_fields_tool"
-        assert result == mock_result
-
-
-@pytest.mark.asyncio
-async def test_list_search_fields_agent_error(
-    server: WoofServer, caplog: pytest.LogCaptureFixture
-) -> None:
-    mock = AsyncMock(side_effect=AgentError("wally gone"))
-    with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "list_search_fields")
-        with caplog.at_level(logging.ERROR, logger="woof.server"):
-            result = await tool_fn(ctx=None, backend_name="testlib")
-    assert "error" in result
 
 
 # ---------------------------------------------------------------------------

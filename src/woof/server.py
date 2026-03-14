@@ -78,20 +78,27 @@ class WoofServer:
 
         @mcp.tool()
         async def get_status() -> dict[str, Any]:
-            """Get the status of all registered backends.
+            """Get the status of all registered backends and the searchable field list.
 
-            Returns basic information about each backend (path, existence).
+            Returns basic information about each backend (path, existence) and
+            the field definitions available for filtering in search_photos.
             Indexing status requires reading manifests — use index_backend
             to trigger indexing and search_photos to verify results.
             """
-            statuses = []
-            for b in self.config.backends:
-                statuses.append({
-                    "name": b.name,
-                    "path": b.path,
-                    "exists": Path(b.path).is_dir(),
-                })
-            return {"backends": statuses}
+            statuses = [
+                {"name": b.name, "path": b.path, "exists": Path(b.path).is_dir()}
+                for b in self.config.backends
+            ]
+            fields: list[Any] = []
+            if self.config.backends:
+                try:
+                    result = await self._agent.call_tool(
+                        "wally", "list_search_fields_tool", {}, self.config.backends[0]
+                    )
+                    fields = result.get("fields", [])  # type: ignore[union-attr]
+                except AgentError as exc:
+                    _log.warning("get_status: could not fetch search fields: %s", exc)
+            return {"backends": statuses, "fields": fields}
 
         @mcp.tool()
         async def index_backend(
@@ -139,30 +146,6 @@ class WoofServer:
             return result  # type: ignore[return-value]
 
         @mcp.tool()
-        async def list_search_fields(
-            ctx: Context,
-            backend_name: str,
-        ) -> dict[str, Any]:
-            """List all searchable photo fields with their types and filter formats.
-
-            Delegates to Wally's field registry. Use the returned field names
-            and formats when constructing the ``filters`` argument for
-            ``search_photos``.
-
-            Args:
-                backend_name: Name of any registered backend (used to route
-                    the request to the correct Wally instance).
-            """
-            backend = self._require_backend(backend_name)
-            try:
-                return await self._agent.call_tool(  # type: ignore[return-value]
-                    "wally", "list_search_fields_tool", {}, backend
-                )
-            except AgentError as exc:
-                _log.error("list_search_fields(%r) failed: %s", backend_name, exc)
-                return {"error": str(exc)}
-
-        @mcp.tool()
         async def search_photos(
             ctx: Context,
             backend_name: str,
@@ -174,13 +157,13 @@ class WoofServer:
             Traverses the manifest tree with two-level pruning for efficiency.
             Omitting ``filters`` (or passing None) returns all indexed photos.
 
-            Use ``list_search_fields`` to discover available filter fields and
+            Use ``get_status`` to discover available filter fields and
             their expected formats before constructing a query.
 
             Args:
                 backend_name: Name of the backend to search.
                 filters: Optional dict mapping field names to filter values.
-                    Call ``list_search_fields`` to get valid fields and formats.
+                    Call ``get_status`` to get valid fields and formats.
                     Examples::
 
                         # Photos taken in 2024 rated 4–5 stars
