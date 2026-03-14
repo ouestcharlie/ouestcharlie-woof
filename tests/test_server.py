@@ -48,7 +48,7 @@ def _make_matches(
             "filename": f"photo_{i}.jpg",
             "contentHash": f"hash{i}",
             "filePath": f"{partitions[i]}/photo_{i}.jpg",
-            **({"date": dates[i]} if dates[i] is not None else {}),
+            **({"dateTaken": dates[i]} if dates[i] is not None else {}),
             **({"rating": ratings[i]} if ratings[i] is not None else {}),
         }
         for i in range(n)
@@ -162,14 +162,14 @@ async def test_index_backend_agent_error_is_logged(
 # _search_stats
 # ---------------------------------------------------------------------------
 
-_DATE_FIELD = {"name": "date", "type": "DATE_RANGE"}
+_DATE_FIELD = {"name": "dateTaken", "type": "DATE_RANGE"}
 _RATING_FIELD = {"name": "rating", "type": "INT_RANGE"}
 _ALL_FIELDS = [_DATE_FIELD, _RATING_FIELD]
 
 
 def test_search_stats_empty() -> None:
     stats = WoofServer._search_stats([], _ALL_FIELDS)
-    assert stats == {"count": 0, "partitions": {}, "date": None, "rating": None}
+    assert stats == {"count": 0, "partitions": {}, "dateTaken": None, "rating": None}
 
 
 def test_search_stats_no_fields() -> None:
@@ -188,7 +188,7 @@ def test_search_stats_date_range() -> None:
     dates = ["2024-01-10T12:00:00", "2024-03-05T08:30:00", "2024-02-20T00:00:00"]
     matches = _make_matches(partitions=["p"] * 3, dates=dates)
     stats = WoofServer._search_stats(matches, [_DATE_FIELD])
-    assert stats["date"] == {
+    assert stats["dateTaken"] == {
         "min": "2024-01-10T12:00:00",
         "max": "2024-03-05T08:30:00",
     }
@@ -203,7 +203,7 @@ def test_search_stats_rating_range() -> None:
 
 def test_search_stats_no_dates_gives_none() -> None:
     matches = _make_matches()
-    assert WoofServer._search_stats(matches, [_DATE_FIELD])["date"] is None
+    assert WoofServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
         dates=["2024-01-05T00:00:00", "2024-01-10T00:00:00", "2024-02-01T00:00:00"],
         ratings=[5, None, 3],
     )
-    fields = [{"name": "date", "type": "DATE_RANGE"}, {"name": "rating", "type": "INT_RANGE"}]
+    fields = [{"name": "dateTaken", "type": "DATE_RANGE"}, {"name": "rating", "type": "INT_RANGE"}]
 
     async def _side_effect(agent, tool, args, backend, **kwargs):
         if tool == "list_search_fields_tool":
@@ -281,7 +281,7 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
         result = await tool_fn(ctx=None, backend_name="testlib")
     assert result["count"] == 3
     assert result["partitions"] == {"2024/01": 2, "2024/02": 1}
-    assert result["date"] == {"min": "2024-01-05T00:00:00", "max": "2024-02-01T00:00:00"}
+    assert result["dateTaken"] == {"min": "2024-01-05T00:00:00", "max": "2024-02-01T00:00:00"}
     assert result["rating"] == {"min": 3, "max": 5}
     assert "session_token" in result
 

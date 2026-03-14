@@ -184,7 +184,7 @@ class WoofServer:
                     Examples::
 
                         # Photos taken in 2024 rated 4–5 stars
-                        {"date": {"min": "2024", "max": "2024"},
+                        {"dateTaken": {"min": "2024", "max": "2024"},
                          "rating": {"min": 4, "max": 5}}
 
                         # Tagged "vacation" AND "portrait", shot on Nikon
