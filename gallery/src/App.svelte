@@ -8,7 +8,8 @@
   let backendName = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
-  let status = $state('Loading\u2026');
+  let status = $state('');
+  let loading = $state(true);
   let selectedIndex = $state(null);
 
   function applySession(session) {
@@ -17,6 +18,7 @@
     matches = session.matches ?? [];
     querySummary = session.querySummary ?? '';
     status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
+    loading = false;
   }
 
   onMount(async () => {
@@ -75,6 +77,7 @@
 
   <PhotoGrid
     {matches}
+    {loading}
     {thumbnailTile}
     onSelect={(i) => (selectedIndex = i)}
   />
@@ -94,15 +97,22 @@
 </div>
 
 <style>
+  :global(html),
+  :global(body) {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
   .app {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100%;
     background: #111;
     color: #eee;
     font-family: system-ui, sans-serif;
   }
-
+  
   header {
     padding: 0.75rem 1rem;
     background: #1a1a1a;

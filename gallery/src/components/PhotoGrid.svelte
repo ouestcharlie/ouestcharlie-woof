@@ -2,17 +2,47 @@
   /**
    * @type {{
    *   matches: any[],
+   *   loading: boolean,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
    *   onSelect: (index: number) => void,
    * }}
    */
-  let { matches, thumbnailTile, onSelect } = $props();
+  let { matches, loading = false, thumbnailTile, onSelect } = $props();
 
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
+  const PAGE_SIZE = 20;
+  const SKELETON_COUNT = 20;
+
+  let page = $state(0);
+
+  let pageCount = $derived(Math.max(1, Math.ceil(matches.length / PAGE_SIZE)));
+  let pageMatches = $derived(matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
+
+  // Reset to first page when matches change
+  $effect(() => { matches; page = 0; });
+
+  function prevPage() { if (page > 0) page -= 1; }
+  function nextPage() { if (page < pageCount - 1) page += 1; }
 </script>
 
+{#if loading}
+  <div class="grid">
+    {#each { length: SKELETON_COUNT } as _, i}
+      <div class="tile skeleton" style="animation-delay: {(i % 4) * 0.1}s"></div>
+    {/each}
+  </div>
+{:else}
+
+{#if pageCount > 1}
+  <div class="nav nav-top">
+    <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
+    <span>{page + 1} / {pageCount}</span>
+    <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+  </div>
+{/if}
+
 <div class="grid">
-  {#each matches as match, i}
+  {#each pageMatches as match, i}
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -20,7 +50,7 @@
       role="button"
       tabindex="0"
       class="tile"
-      onclick={() => onSelect(i)}
+      onclick={() => onSelect(page * PAGE_SIZE + i)}
       title={match.filename}
     >
       {#if tile}
@@ -47,16 +77,52 @@
   {/each}
 </div>
 
+{#if pageCount > 1}
+  <div class="nav nav-bottom">
+    <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
+    <span>{page + 1} / {pageCount}</span>
+    <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+  </div>
+{/if}
+
+{/if}
+
 <style>
   .grid {
     flex: 1;
-    overflow-y: auto;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     padding: 1rem;
     align-content: flex-start;
   }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: #1a1a1a;
+    font-size: 0.85rem;
+    color: #aaa;
+  }
+
+  .nav-top { border-bottom: 1px solid #333; }
+  .nav-bottom { border-top: 1px solid #333; }
+
+  .nav button {
+    background: #2a2a2a;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .nav button:hover:not(:disabled) { background: #3a3a3a; }
+  .nav button:disabled { opacity: 0.35; cursor: default; }
 
   .tile {
     width: 160px;
@@ -67,6 +133,18 @@
     background: #222;
     flex-shrink: 0;
     position: relative;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: -320px 0; }
+    100% { background-position: 320px 0; }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, #222 25%, #2e2e2e 50%, #222 75%);
+    background-size: 320px 100%;
+    animation: shimmer 1.4s infinite;
+    cursor: default;
   }
 
   .label {
