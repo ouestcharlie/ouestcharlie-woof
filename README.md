@@ -98,8 +98,11 @@ Restart Claude Desktop. Woof is launched on demand when Claude Desktop starts.
 add_backend name="My Photos" path="/Users/you/Pictures"
 index_backend backend_name="My Photos"
 search_photos backend_name="My Photos" date_min="2024-07"
-browse_gallery backend_name="My Photos"
+# → returns count, per-partition breakdown, date range, and a session_token
+browse_gallery session_token="<token from search_photos>" query_summary="July 2024"
 ```
+
+`search_photos` stores matches server-side and returns a lightweight `session_token`. Pass that token to `browse_gallery` — the full photo list is never echoed back through Claude's tool arguments.
 
 ## MCP Inspector (development)
 

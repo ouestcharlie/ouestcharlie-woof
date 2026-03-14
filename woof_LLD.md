@@ -36,7 +36,25 @@ Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude ca
 - **Album operations**: `list_albums`, `create_album`, `add_to_album`
 - **Configuration**: `add_backend`, `configure_credentials`
 
-The gallery tool (`browse_gallery`) returns a result that includes a `_meta.ui.resourceUri` pointing to the gallery MCP App resource. Claude Desktop fetches the HTML from Woof and renders it in a sandboxed iframe inside the conversation.
+### Search → Gallery session flow
+
+The gallery display uses a two-step flow to avoid passing large match payloads back through Claude as tool arguments (which would produce excessive `tool-input-partial` MCP notifications):
+
+1. **`search_photos`** calls Wally, stores the full match list in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
+   ```json
+   {
+     "count": 41,
+     "partitions": { "2024/01": 12, "2024/07": 29 },
+     "date_range": { "earliest": "2024-01-03T...", "latest": "2024-07-28T..." },
+     "rating_distribution": { "3": 5, "5": 2 },
+     "session_token": "<22-char opaque token>"
+   }
+   ```
+2. **`browse_gallery`** receives only the `session_token` (a 22-character string), looks up the session, and returns the full match list to the gallery iframe via the MCP App tool result mechanism.
+
+Gallery sessions are stored in `WoofServer._gallery_sessions` (in-memory dict). Sessions persist for the lifetime of the Woof process and are not pruned in V1.
+
+The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLERY_URI)` which causes Claude Desktop to open the gallery MCP App resource and push the tool result into it via postMessage.
 
 ## Gallery MCP App
 
@@ -47,6 +65,10 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 **Bidirectional flow**:
 - Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
 - Woof → Gallery: push fresh results as search completes, update indexing progress indicators
+
+**Pagination**: The gallery renders photos in pages of 20 to avoid iframe height overflow (the iframe expands to content height in Claude Desktop, making CSS scroll unreliable). Prev/Next navigation is rendered above and below the grid when `pageCount > 1`.
+
+**Loading state**: A shimmer skeleton grid is shown while `loading = true` (between the MCP App connection and the first tool result arriving).
 
 ## Local HTTP Server
 
@@ -182,6 +204,8 @@ Woof computes partition health indicators by reading manifest metadata. These ar
 | Enrichment coverage | Manifest | Percentage of photos with `ouestcharlie:faces` and `ouestcharlie:scene` fields populated |
 
 ## Error Handling
+
+Agent errors in `index_backend` and `search_photos` are logged at `ERROR` level via the `woof.server` logger before being returned to Claude as `{"error": "..."}` dicts. This ensures errors are visible in the Woof process log even when Claude's response summarizes them briefly.
 
 Agent errors are categorized for the user surface:
 
