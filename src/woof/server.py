@@ -121,6 +121,7 @@ class WoofServer:
                     "whitebeard", tool, args, backend, progress_ctx=ctx
                 )
             except AgentError as exc:
+                _log.error("index_backend(%r) failed: %s", backend_name, exc)
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
@@ -178,39 +179,45 @@ class WoofServer:
                     "wally", "search_photos_tool", args, backend, progress_ctx=ctx
                 )
             except AgentError as exc:
+                _log.error("search_photos(%r) failed: %s", backend_name, exc)
                 return {"error": str(exc)}
-            return result  # type: ignore[return-value]
+            # Store matches server-side; return only a token so Claude never
+            # echoes the full payload back as browse_gallery arguments.
+            token = secrets.token_urlsafe(16)
+            self._gallery_sessions[token] = {
+                "matches": result.get("matches", []),  # type: ignore[union-attr]
+                "backend": backend_name,
+                "httpPort": self.http_port,
+                "querySummary": "",
+            }
+            return {
+                "count": len(result.get("matches", [])),  # type: ignore[union-attr]
+                "session_token": token,
+            }
 
         @mcp.tool(app=AppConfig(resource_uri=_GALLERY_URI))
         async def browse_gallery(
-            backend_name: str,
-            matches: list[Any],
+            session_token: str,
             query_summary: str = "",
         ) -> dict[str, Any]:
             """Display photos from a search result in the gallery viewer.
 
-            Call search_photos first to get matching photos, then pass the
-            matches list here to open the gallery pre-loaded with results.
+            Call search_photos first, then pass its session_token here to
+            open the gallery pre-loaded with the results.
 
             Args:
-                backend_name: Name of the backend (from list_backends).
-                matches: The matches list returned by search_photos.
+                session_token: The session_token returned by search_photos.
                 query_summary: Short human-readable description of the query
                     shown in the gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            self._require_backend(backend_name)
-            # Keep HTTP session available for direct browser access / debug
-            token = secrets.token_urlsafe(16)
-            self._gallery_sessions[token] = {
-                "matches": matches,
-                "backend": backend_name,
-                "httpPort": self.http_port,
-                "querySummary": query_summary,
-            }
+            session = self._gallery_sessions.get(session_token)
+            if session is None:
+                return {"error": f"Unknown session_token {session_token!r}. Call search_photos first."}
+            session["querySummary"] = query_summary
             return {
-                "matches": matches,
-                "backend": backend_name,
+                "matches": session["matches"],
+                "backend": session["backend"],
                 "querySummary": query_summary,
                 "httpPort": self.http_port,
             }
