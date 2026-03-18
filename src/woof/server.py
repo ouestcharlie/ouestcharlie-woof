@@ -127,9 +127,8 @@ class WoofServer:
             ctx: Context,
             backend_name: str,
             partition: str = "",
-            force: bool = False,
+            force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
-            extract_exif: bool = True,
         ) -> dict[str, Any]:
             """Index photos in a backend using Whitebeard.
 
@@ -141,20 +140,16 @@ class WoofServer:
                 backend_name: Name of the backend to index (from list_backends).
                 partition: Sub-path to index (e.g. "2024/2024-07"). Defaults
                     to "" which indexes the entire library.
-                force: Re-index photos that already have an XMP sidecar.
+                force_extract_exif: Re-extract EXIF and overwrite existing XMP
+                    sidecars. Defaults to False.
                 generate_thumbnails: Generate thumbnails.avif and previews.avif
                     AVIF grids. Defaults to True.
-                extract_exif: Extract EXIF and create/update XMP sidecars.
-                    Set to False to only rebuild manifests from existing sidecars,
-                    without touching any photo or XMP file. Cannot be combined
-                    with force. Defaults to True.
             """
             backend = self._require_backend(backend_name)
             tool = "index_partition_tool" if partition else "index_library_tool"
             args: dict[str, Any] = {
-                "force": force,
+                "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
-                "extract_exif": extract_exif,
             }
             if partition:
                 args["partition"] = partition
