@@ -102,13 +102,12 @@ class WoofServer:
 
         @mcp.tool()
         async def get_root_manifests() -> list[Any]:
-            """Return the root manifest of each registered backend.
+            """Return the root summary of each registered backend.
 
-            Manifests contain a summary of each child partition
-                and an aggregated summary.
-            
-            Returns ``None`` for the manifest if the backend is unindexed
-            or unreachable.
+            The summary contains a flat list of all indexed partitions with
+            photo counts and statistics (date ranges, GPS bounding boxes, etc.).
+
+            Returns ``None`` for the summary if the backend is unindexed or unreachable.
             """
             result = []
             for b in self.config.backends:
