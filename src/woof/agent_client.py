@@ -61,6 +61,7 @@ class _WallySidecar:
         self._start_error: BaseException | None = None
         self.alive = False
         self.http_port: int | None = None
+        self.token: str | None = None
 
     async def start(self, command: list[str], env: dict[str, str]) -> None:
         self._task = asyncio.create_task(
@@ -117,6 +118,7 @@ class _WallySidecar:
 
             self.http_port = port
             token = env.get("WOOF_AGENT_TOKEN", "")
+            self.token = token or None
             headers = {"Authorization": f"Bearer {token}"} if token else {}
             url = f"http://127.0.0.1:{port}/mcp"
 
@@ -197,6 +199,11 @@ class AgentClient:
         """Return the HTTP port of the live Wally sidecar for *backend_name*, or None."""
         sidecar = self._wally_sidecars.get(backend_name)
         return sidecar.http_port if sidecar and sidecar.alive else None
+
+    def get_wally_token(self, backend_name: str) -> str | None:
+        """Return the Bearer token for the live Wally sidecar for *backend_name*, or None."""
+        sidecar = self._wally_sidecars.get(backend_name)
+        return sidecar.token if sidecar and sidecar.alive else None
 
     async def shutdown(self) -> None:
         """Stop all persistent agent sidecars gracefully."""

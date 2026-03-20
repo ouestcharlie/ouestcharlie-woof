@@ -53,6 +53,7 @@ def get_gallery_html(http_port: int) -> str:
 def start_http_server(
     gallery_sessions: "dict | None" = None,
     wally_port_fn: "Any | None" = None,
+    wally_token_fn: "Any | None" = None,
 ) -> int:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -62,6 +63,8 @@ def start_http_server(
         wally_port_fn: Zero-argument callable returning the current Wally HTTP
             port (int or None).  Called on every request so dynamic port
             changes (e.g. after sidecar restart) are picked up automatically.
+        wally_token_fn: Zero-argument callable returning the current Wally Bearer
+            token (str or None).  Forwarded as Authorization header on proxy requests.
 
     Returns:
         The port number the server is listening on.
@@ -73,7 +76,8 @@ def start_http_server(
     def _run() -> None:
         def handler_factory(*args: object, **kwargs: object) -> _ThumbnailHandler:
             wally_port = wally_port_fn() if wally_port_fn is not None else None
-            return _ThumbnailHandler(sessions, bound_port[0], wally_port, *args, **kwargs)  # type: ignore[arg-type]
+            wally_token = wally_token_fn() if wally_token_fn is not None else None
+            return _ThumbnailHandler(sessions, bound_port[0], wally_port, wally_token, *args, **kwargs)  # type: ignore[arg-type]
 
         server = HTTPServer(("127.0.0.1", 0), handler_factory)
         bound_port[0] = server.server_address[1]
@@ -94,12 +98,14 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         gallery_sessions: dict,
         http_port: int,
         wally_port: "int | None",
+        wally_token: "str | None",
         *args: object,
         **kwargs: object,
     ) -> None:
         self._gallery_sessions = gallery_sessions
         self._http_port = http_port
         self._wally_port = wally_port
+        self._wally_token = wally_token
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     def do_GET(self) -> None:  # noqa: N802
@@ -153,8 +159,12 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
             self.send_error(503, "Wally preview server not available")
             return
         url = f"http://127.0.0.1:{self._wally_port}/{path}"
+        headers = {}
+        if self._wally_token:
+            headers["Authorization"] = f"Bearer {self._wally_token}"
         try:
-            with urllib.request.urlopen(url, timeout=120) as resp:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 data = resp.read()
             content_type = resp.headers.get("Content-Type", "image/jpeg")
             self.send_response(200)
