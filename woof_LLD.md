@@ -24,7 +24,7 @@ Claude Desktop (MCP client)
         └── Agent controller (Woof as MCP client to agents)
               ├── Whitebeard — indexing agent (MCP server, ephemeral stdio child process)
               ├── Wally — consumption agent (MCP server, persistent Streamable HTTP sidecar)
-              │     └── HTTP server (127.0.0.1, pre-assigned port): on-demand photos
+              │     └── HTTP server (127.0.0.1, pre-assigned port): serve media
               └── [future enrichment agents]
 ```
 
@@ -79,7 +79,7 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 
 | Route | Handler |
 |---|---|
-| `GET /thumbnails/<backend>/<partition>/thumbnails.avif` | Served directly from disk |
+| `GET /thumbnails/<backend>/<partition>/thumbnails.avif` | Proxied to Wally's HTTP server |
 | `GET /previews/<backend>/<partition>/<content_hash>.jpg` | Proxied to Wally's HTTP server |
 | `GET /gallery/<token>` | Gallery HTML (MCP App) |
 | `GET /gallery-static/<path>` | Vite-built JS/CSS assets |
@@ -87,9 +87,11 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 
 The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
 
-### Preview proxy
+### Media proxy
 
-Preview requests (`/previews/...`) are forwarded to Wally's HTTP server running on a **pre-assigned port** (stored in `~/.ouestcharlie/config.json` as `wallyHttpPort`). Woof assigns this port once at first startup and persists it so the gallery URL remains stable across Woof restarts. Wally binds its HTTP server to this port on startup (via the `WALLY_HTTP_PORT` environment variable injected by Woof).
+All media requests (`/thumbnails/...` and `/previews/...`) are forwarded to Wally's HTTP server. Woof has no direct access to backend storage — it is a pure proxy for media. This keeps the storage abstraction entirely within Wally and enables a future remote backend without any Woof changes.
+
+Wally's HTTP port is discovered dynamically via `AgentClient.get_wally_http_port()` on every request, so port changes after a sidecar restart are picked up automatically. If Wally's port is not yet known (sidecar not started), Woof returns `503`.
 
 ## MCP Client (Agent-facing)
 

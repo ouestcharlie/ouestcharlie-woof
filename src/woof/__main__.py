@@ -41,8 +41,8 @@ def _wally_port_fn() -> int | None:
         return None
     return _agent.get_wally_http_port(_config.backends[0].name)
 
-_http_port = start_http_server(_config, gallery_sessions=_gallery_sessions,
-                                wally_port_fn=_wally_port_fn)
+_http_port = start_http_server(gallery_sessions=_gallery_sessions,
+                               wally_port_fn=_wally_port_fn)
 _server = WoofServer(_config, _http_port, agent_client=_agent, gallery_sessions=_gallery_sessions)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
