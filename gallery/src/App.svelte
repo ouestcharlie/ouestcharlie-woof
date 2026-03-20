@@ -21,53 +21,52 @@
     loading = false;
   }
 
-  onMount(async () => {
-    // Primary: MCP Apps channel — host pushes tool result via postMessage
+  onMount(() => {
+    // Path 1: URL ?token= param — works in Chrome and any direct HTTP access.
+    // app.connect() may hang indefinitely outside Claude Desktop so we cannot
+    // rely on it throwing before this fallback would otherwise run.
+    const token = new URLSearchParams(location.search).get('token');
+    const port = location.port ? parseInt(location.port) : 80;
+    if (token) {
+      httpPort = port;
+      fetch(`http://127.0.0.1:${port}/api/results/${token}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
+        .then(data => applySession(data))
+        .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
+    }
+
+    // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.
+    // Not awaited: connect() may never resolve outside the host environment.
     try {
       const app = new App({ name: 'OuEstCharlie', version: '1.0.0' });
       app.ontoolresult = ({ content }) => {
         const text = (content ?? []).find(b => b.type === 'text')?.text;
         if (text) applySession(JSON.parse(text));
       };
-      await app.connect();
-    } catch (_) {
-      // Fallback: direct HTTP access (dev / debug) — fetch session by URL token
-      const token = location.pathname.split('/').pop();
-      const port = location.port ? parseInt(location.port) : 80;
-      httpPort = port;
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/results/${token}`);
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: response.statusText }));
-          status = `Error: ${err.error || response.statusText}`;
-          return;
-        }
-        applySession(await response.json());
-      } catch (err) {
-        status = `Error: ${err.message}`;
-      }
-    }
+      app.connect().catch(() => {});
+    } catch (_) {}
   });
 
   /**
-   * Returns tile geometry for clipping an AVIF grid, or null if unavailable.
-   * @param {'thumbnail'|'preview'} kind
+   * Returns tile geometry for clipping a thumbnail AVIF grid, or null if unavailable.
    */
-  function tileGeometry(match, kind) {
-    const path = kind === 'thumbnail' ? match.thumbnailsPath : match.previewsPath;
-    const cols = kind === 'thumbnail' ? match.thumbnailCols : match.previewCols;
-    const tileSize = kind === 'thumbnail' ? match.thumbnailTileSize : match.previewTileSize;
+  function thumbnailTile(match) {
+    const { thumbnailsPath: path, thumbnailCols: cols, thumbnailTileSize: tileSize } = match;
     if (!httpPort || !path || match.tileIndex == null || !cols || !tileSize) return null;
-    const avifKind = kind === 'thumbnail' ? 'thumbnails' : 'previews';
-    const avifFile = kind === 'thumbnail' ? 'thumbnails.avif' : 'previews.avif';
-    const url = `http://127.0.0.1:${httpPort}/${avifKind}/${backendName}/${match.partition}/${avifFile}`;
+    const url = `http://127.0.0.1:${httpPort}/thumbnails/${backendName}/${match.partition}/thumbnails.avif`;
     const col = match.tileIndex % cols;
     const row = Math.floor(match.tileIndex / cols);
     return { url, col, row, tileSize, cols };
   }
 
-  function thumbnailTile(match) { return tileGeometry(match, 'thumbnail'); }
-  function previewTile(match) { return tileGeometry(match, 'preview'); }
+  /**
+   * Returns the direct JPEG preview URL for a photo, or null if unavailable.
+   * The JPEG is generated on-demand by Wally and cached on disk.
+   */
+  function previewUrl(match) {
+    if (!httpPort || !match.contentHash) return null;
+    return `http://127.0.0.1:${httpPort}/previews/${backendName}/${match.partition}/${match.contentHash}.jpg`;
+  }
 </script>
 
 <div class="app">
@@ -89,7 +88,7 @@
       {matches}
       {selectedIndex}
       onNavigate={(i) => (selectedIndex = i)}
-      {previewTile}
+      {previewUrl}
       {thumbnailTile}
       onClose={() => (selectedIndex = null)}
     />

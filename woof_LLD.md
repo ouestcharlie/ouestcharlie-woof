@@ -18,12 +18,13 @@ Claude Desktop (MCP client)
         ├── MCP tools: search, browse, index, enrich, status, configure ...
         ├── MCP App resource: gallery HTML/JS (iframe in Claude Desktop conversation)
         │     └── calls back to Woof MCP tools (bidirectional via postMessage)
-        ├── Local HTTP server (127.0.0.1, random port): thumbnails and previews
+        ├── Local HTTP server (127.0.0.1, random port): thumbnails + preview proxy
         ├── Credential vault (OS keychain)
         ├── Configuration (~/.ouestcharlie/)
         └── Agent controller (Woof as MCP client to agents)
-              ├── Whitebeard — indexing agent (MCP server, stdio child process)
-              ├── Wally — consumption agent (MCP server, stdio child process)
+              ├── Whitebeard — indexing agent (MCP server, ephemeral stdio child process)
+              ├── Wally — consumption agent (MCP server, persistent Streamable HTTP sidecar)
+              │     └── HTTP server (127.0.0.1, pre-assigned port): on-demand photos
               └── [future enrichment agents]
 ```
 
@@ -60,7 +61,9 @@ The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLER
 
 The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) served by Woof as an MCP App resource. It renders inside Claude Desktop's conversation as a sandboxed iframe.
 
-**Thumbnail delivery**: The gallery fetches thumbnails from Woof's local HTTP server (`http://127.0.0.1:<port>/thumbnails/...`). The iframe Content Security Policy restricts `img-src` to this local origin only. Photo data never passes through Claude's MCP channel.
+**Thumbnail delivery**: The gallery fetches thumbnail tiles from Woof's local HTTP server (`http://127.0.0.1:<port>/thumbnails/...`) and preview JPEGs via the preview proxy route (`http://127.0.0.1:<port>/previews/...`). The iframe Content Security Policy restricts `img-src` to this local origin only. Photo data never passes through Claude's MCP channel.
+
+**Progressive preview loading**: When the user opens the preview panel, the gallery immediately displays the corresponding thumbnail tile (already cached locally) scaled up and blurred as a placeholder. The full-resolution JPEG preview is fetched in the background and fades in once loaded, with no layout shift (the container is pre-sized using the photo's `width`/`height` from manifest EXIF data).
 
 **Bidirectional flow**:
 - Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
@@ -73,10 +76,20 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 ## Local HTTP Server
 
 Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, serving:
-- Thumbnail AVIF containers (`/thumbnails/<backend>/<partition>/thumbnails.avif`)
-- Preview AVIF containers (`/previews/<backend>/<partition>/previews.avif`)
 
-The port is communicated to the gallery iframe via the `ui/initialize` message at iframe startup. No external network access is permitted — the server binds loopback only.
+| Route | Handler |
+|---|---|
+| `GET /thumbnails/<backend>/<partition>/thumbnails.avif` | Served directly from disk |
+| `GET /previews/<backend>/<partition>/<content_hash>.jpg` | Proxied to Wally's HTTP server |
+| `GET /gallery/<token>` | Gallery HTML (MCP App) |
+| `GET /gallery-static/<path>` | Vite-built JS/CSS assets |
+| `GET /api/results/<token>` | JSON session data (matches + metadata) |
+
+The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
+
+### Preview proxy
+
+Preview requests (`/previews/...`) are forwarded to Wally's HTTP server running on a **pre-assigned port** (stored in `~/.ouestcharlie/config.json` as `wallyHttpPort`). Woof assigns this port once at first startup and persists it so the gallery URL remains stable across Woof restarts. Wally binds its HTTP server to this port on startup (via the `WALLY_HTTP_PORT` environment variable injected by Woof).
 
 ## MCP Client (Agent-facing)
 
@@ -87,6 +100,15 @@ Woof acts as an MCP client to agents. Each agent is an MCP server that exposes i
 - **stdio** (default): Woof launches agents as child processes and communicates over stdin/stdout. This is the simplest model — no port management, no network exposure, no authentication layer needed. The OS process boundary provides isolation.
 - **Streamable HTTP**: for agents running as separate processes or containers, Woof connects via HTTP. The agent exposes an MCP endpoint on a configurable URL.
 
+### Agent lifecycle: ephemeral vs. persistent
+
+| Agent | Lifecycle | Reason |
+|---|---|---|
+| Whitebeard | Ephemeral — spawned per tool call, exits on completion | Indexing is infrequent; no persistent server needed |
+| Wally | Persistent sidecar — started on first search, kept alive for the Woof session | Wally's HTTP preview server must remain up to serve preview JPEGs between tool calls |
+
+`AgentClient` uses `contextlib.AsyncExitStack` to hold the `stdio_client` and `ClientSession` context managers open for persistent agents. The sidecar is started lazily on the first tool call for a given backend and restarted automatically if the process dies. Tool calls to persistent agents are serialized via an `asyncio.Lock`.
+
 ### Agent launch (stdio transport)
 
 When Woof launches an agent as a child process, it passes backend credentials and scope as environment variables:
@@ -94,6 +116,8 @@ When Woof launches an agent as a child process, it passes backend credentials an
 ```
 WOOF_BACKEND_CONFIG=<JSON backend connection info>
 WOOF_AGENT_TOKEN=<scoped-storage-token>
+WALLY_BACKEND_NAME=<backend name>        # Wally only — validates URL path segment
+WALLY_HTTP_PORT=<pre-assigned port>      # Wally only — binds HTTP server to stable port
 ```
 
 Woof then performs the MCP `initialize` handshake over stdio, receiving the agent's tool definitions and capabilities.

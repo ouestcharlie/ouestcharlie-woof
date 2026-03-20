@@ -23,15 +23,26 @@ from ouestcharlie_toolkit import setup_logging
 _log_file = setup_logging("woof", log_file_env_var="WOOF_LOG_FILE", level=logging.DEBUG)
 logging.getLogger(__name__).info("Woof starting — log: %s", _log_file)
 
-from woof.agent_client import AgentClient  # noqa: E402
-from woof.config import WoofConfig  # noqa: E402
-from woof.http_server import start_http_server  # noqa: E402
-from woof.server import WoofServer  # noqa: E402
+from woof.agent_client import AgentClient
+from woof.config import WoofConfig
+from woof.http_server import start_http_server
+from woof.server import WoofServer
 
 _config = WoofConfig.load()
 _agent = AgentClient()
 _gallery_sessions: dict = {}
-_http_port = start_http_server(_config, gallery_sessions=_gallery_sessions)
+
+# Wally's HTTP port is discovered dynamically after sidecar init via get_http_port_tool.
+# The wally_port_fn callable is evaluated on every preview request so port changes
+# (e.g. after sidecar restart) are picked up automatically.
+# For now previews are all routed through the first configured backend's sidecar.
+def _wally_port_fn() -> int | None:
+    if not _config.backends:
+        return None
+    return _agent.get_wally_http_port(_config.backends[0].name)
+
+_http_port = start_http_server(_config, gallery_sessions=_gallery_sessions,
+                                wally_port_fn=_wally_port_fn)
 _server = WoofServer(_config, _http_port, agent_client=_agent, gallery_sessions=_gallery_sessions)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`

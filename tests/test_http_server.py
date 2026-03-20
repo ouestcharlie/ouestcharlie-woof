@@ -17,7 +17,6 @@ def backend_root(tmp_path: Path) -> Path:
     partition = tmp_path / "2024" / "2024-07" / ".ouestcharlie"
     partition.mkdir(parents=True)
     (partition / "thumbnails.avif").write_bytes(b"AVIF_FAKE_THUMB")
-    (partition / "previews.avif").write_bytes(b"AVIF_FAKE_PREVIEW")
     return tmp_path
 
 
@@ -36,12 +35,13 @@ def test_thumbnail_served(config: WoofConfig) -> None:
         assert resp.read() == b"AVIF_FAKE_THUMB"
 
 
-def test_preview_served(config: WoofConfig) -> None:
+def test_preview_without_wally_returns_503(config: WoofConfig) -> None:
+    """Preview requests are proxied to Wally; without a Wally port configured → 503."""
     port = start_http_server(config)
-    url = f"http://127.0.0.1:{port}/previews/testlib/2024/2024-07/previews.avif"
-    with urllib.request.urlopen(url) as resp:
-        assert resp.status == 200
-        assert resp.read() == b"AVIF_FAKE_PREVIEW"
+    url = f"http://127.0.0.1:{port}/previews/testlib/2024/2024-07/sha256:abc123.jpg"
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(url)
+    assert exc_info.value.code == 503
 
 
 def test_unknown_backend_returns_404(config: WoofConfig) -> None:

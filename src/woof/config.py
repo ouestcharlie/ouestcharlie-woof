@@ -62,7 +62,7 @@ class WoofConfig:
         """Persist config to disk."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         config_file = self.config_dir / "config.json"
-        data = {"backends": [asdict(b) for b in self.backends]}
+        data: dict = {"backends": [asdict(b) for b in self.backends]}
         config_file.write_text(json.dumps(data, indent=2))
         _log.debug("Config saved to %s", config_file)
 

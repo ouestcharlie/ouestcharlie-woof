@@ -6,23 +6,32 @@
    *   matches: any[],
    *   selectedIndex: number,
    *   onNavigate: (index: number) => void,
-   *   previewTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
+   *   previewUrl: (match: any) => string | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
    *   onClose: () => void,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewTile, thumbnailTile, onClose } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile, onClose } = $props();
 
   let match = $derived(matches[selectedIndex]);
+  let thumbTile = $derived(thumbnailTile(match));
+  let jpegUrl = $derived(previewUrl(match));
 
-  // Use preview tile if available, fall back to thumbnail tile
-  let tile = $derived(previewTile(match) ?? thumbnailTile(match));
+  // Reset loaded state when the photo URL changes.
+  let previewLoaded = $state(false);
+  $effect(() => { jpegUrl; previewLoaded = false; });
 
-  // Scale the tile so it fits within 85% of the smaller viewport dimension
-  let displaySize = $derived(
-    tile
-      ? Math.min(tile.tileSize, Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82))
-      : 0
+  // Compute explicit pixel dimensions so the container is never 0×0.
+  // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
+  let containerSize = $derived(
+    (() => {
+      const max = Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82);
+      const w = match?.width, h = match?.height;
+      if (!w || !h) return { width: max, height: max };
+      return w >= h
+        ? { width: max,           height: max / (w / h) }
+        : { width: max * (w / h), height: max };
+    })()
   );
 
   let hasPrev = $derived(selectedIndex > 0);
@@ -49,6 +58,14 @@
     });
   }
 
+  // CSS background-position for the thumbnail tile used as blur placeholder.
+  function thumbBgStyle(tile) {
+    if (!tile) return '';
+    const { url, col, row, tileSize, cols } = tile;
+    const pctX = cols > 1 ? (col / (cols - 1)) * 100 : 0;
+    return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * tileSize}px;`;
+  }
+
   onMount(() => window.addEventListener('keydown', onKeydown));
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
 </script>
@@ -64,29 +81,42 @@
     <div class="viewer">
       <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
 
-      {#if tile}
+      <!--
+        Container pre-sized to the photo's actual aspect ratio.
+        Max dimension capped at 85vw / 82vh; the other axis follows aspect ratio.
+      -->
+      <div
+        class="preview-container"
+        style="width: {containerSize.width}px; height: {containerSize.height}px;"
+      >
         <!--
-          Clip to displaySize × displaySize.
-          Scale the full grid proportionally so each tile = displaySize px.
+          Image is always in the DOM (when jpegUrl is available) so the browser
+          fetches it and fires onload reliably — display:none suppresses onload
+          in some sandboxed environments (e.g. Claude Desktop iframe).
         -->
-        <div class="tile-clip" style="width: {displaySize}px; height: {displaySize}px;">
+        {#if jpegUrl}
           <img
-            src={tile.url}
+            src={jpegUrl}
+            class="preview-img"
+            onload={() => (previewLoaded = true)}
             alt={match.filename}
-            style="
-              width: {tile.cols * displaySize}px;
-              height: auto;
-              margin-left: -{tile.col * displaySize}px;
-              margin-top: -{tile.row * displaySize}px;
-              display: block;
-            "
           />
-        </div>
-      {:else}
-        <div class="tile-clip placeholder" style="width: {displaySize || 200}px; height: {displaySize || 200}px;">
-          <span>{match.filename}</span>
-        </div>
-      {/if}
+        {/if}
+
+        <!--
+          Placeholder rendered on top (later in DOM = higher stacking order).
+          Removed once the image has loaded, revealing the img underneath.
+        -->
+        {#if !previewLoaded}
+          {#if thumbTile}
+            <div class="thumb-placeholder" style={thumbBgStyle(thumbTile)}></div>
+          {:else if jpegUrl}
+            <div class="placeholder"><span>Loading…</span></div>
+          {:else}
+            <div class="placeholder"><span>{match.filename}</span></div>
+          {/if}
+        {/if}
+      </div>
 
       <button class="nav next" onclick={next} disabled={!hasNext}>›</button>
     </div>
@@ -132,19 +162,39 @@
     gap: 0.5rem;
   }
 
-  .tile-clip {
+  .preview-container {
+    position: relative;
     overflow: hidden;
     border-radius: 4px;
     flex-shrink: 0;
+    background: #222;
+  }
+
+  .thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    background-repeat: no-repeat;
+    filter: blur(8px);
+    transform: scale(1.05); /* hide blur edge artifacts */
+  }
+
+  .preview-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   .placeholder {
-    background: #222;
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #888;
     font-size: 0.8rem;
+    background: #222;
   }
 
   .close {

@@ -1,20 +1,20 @@
-"""Local HTTP server for serving thumbnail and preview AVIF containers.
+"""Local HTTP server for serving thumbnails, proxying preview requests, and gallery.
 
 Runs on 127.0.0.1 with an OS-assigned port in a daemon thread.  The gallery
 iframe fetches images directly from this server; photo data never passes
 through the MCP channel.
 
 URL scheme:
-  GET /gallery/{token}                   — gallery HTML (token identifies session)
-  GET /api/results/{token}               — JSON session data (matches + metadata)
-  GET /gallery-static/{path}            — gallery JS/CSS assets from dist/
-  GET /thumbnails/{backend_name}/{partition}/thumbnails.avif
-  GET /previews/{backend_name}/{partition}/previews.avif
+  GET /gallery/{token}                         — gallery HTML (token identifies session)
+  GET /api/results/{token}                     — JSON session data (matches + metadata)
+  GET /gallery-static/{path}                  — gallery JS/CSS assets from dist/
+  GET /thumbnails/{backend_name}/{partition}/thumbnails.avif  — served from disk
+  GET /previews/{backend_name}/{partition}/{content_hash}.jpg — proxied to Wally
 
 where {partition} may contain slashes (e.g. "2024/2024-07").
-The corresponding file on disk is:
+Thumbnail AVIF files are served directly from disk:
   {backend.path}/{partition}/.ouestcharlie/thumbnails.avif
-  {backend.path}/{partition}/.ouestcharlie/previews.avif
+Preview JPEGs are generated on-demand by Wally and proxied here.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ import logging
 import mimetypes
 import queue
 import threading
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,12 +39,6 @@ _log = logging.getLogger(__name__)
 # Pre-built Svelte app (produced by `npm run build` in gallery/)
 _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
-
-# File extension → AVIF filename inside .ouestcharlie/
-_SUFFIX_MAP = {
-    "thumbnails.avif": "thumbnails.avif",
-    "previews.avif": "previews.avif",
-}
 
 
 def get_gallery_html(http_port: int) -> str:
@@ -62,6 +58,7 @@ def get_gallery_html(http_port: int) -> str:
 def start_http_server(
     config: "WoofConfig",
     gallery_sessions: "dict | None" = None,
+    wally_port_fn: "Any | None" = None,
 ) -> int:
     """Start the thumbnail/gallery HTTP server in a daemon thread.
 
@@ -69,6 +66,10 @@ def start_http_server(
         config: WoofConfig — used to resolve backend paths.
         gallery_sessions: Shared dict for token-keyed gallery sessions.
             Keys are URL-safe tokens; values hold matches + metadata.
+        wally_port_fn: Zero-argument callable returning the current Wally HTTP
+            port (int or None).  Called on every preview request so dynamic
+            port changes (e.g. after sidecar restart) are picked up
+            automatically.
 
     Returns:
         The port number the server is listening on.
@@ -79,7 +80,8 @@ def start_http_server(
 
     def _run() -> None:
         def handler_factory(*args: object, **kwargs: object) -> _ThumbnailHandler:
-            return _ThumbnailHandler(config, sessions, bound_port[0], *args, **kwargs)  # type: ignore[arg-type]
+            wally_port = wally_port_fn() if wally_port_fn is not None else None
+            return _ThumbnailHandler(config, sessions, bound_port[0], wally_port, *args, **kwargs)  # type: ignore[arg-type]
 
         server = HTTPServer(("127.0.0.1", 0), handler_factory)
         bound_port[0] = server.server_address[1]
@@ -100,12 +102,14 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         config: "WoofConfig",
         gallery_sessions: dict,
         http_port: int,
+        wally_port: "int | None",
         *args: object,
         **kwargs: object,
     ) -> None:
         self._config = config
         self._gallery_sessions = gallery_sessions
         self._http_port = http_port
+        self._wally_port = wally_port
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     def do_GET(self) -> None:  # noqa: N802
@@ -144,15 +148,25 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
             self._not_found()
             return
 
-        _, backend_name, rest = parts
-        # rest = "{partition}/{filename}" — filename is the last segment
+        kind, backend_name, rest = parts
+
+        # Preview JPEGs are generated on-demand by Wally — proxy the request.
+        if kind == "previews":
+            self._proxy_to_wally(path)
+            return
+
+        # Thumbnails: serve thumbnails.avif directly from disk.
+        if kind != "thumbnails":
+            self._not_found()
+            return
+
         rest_parts = rest.rsplit("/", 1)
         if len(rest_parts) != 2:
             self._not_found()
             return
 
         partition, filename = rest_parts
-        if filename not in _SUFFIX_MAP:
+        if filename != "thumbnails.avif":
             self._not_found()
             return
 
@@ -162,7 +176,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
             self._not_found()
             return
 
-        file_path = Path(backend.path) / partition / ".ouestcharlie" / _SUFFIX_MAP[filename]
+        file_path = Path(backend.path) / partition / ".ouestcharlie" / "thumbnails.avif"
         if not file_path.exists():
             _log.debug("File not found: %s", file_path)
             self._not_found()
@@ -175,6 +189,28 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
+
+    def _proxy_to_wally(self, path: str) -> None:
+        """Proxy a /previews/... request to Wally's HTTP server."""
+        if self._wally_port is None:
+            self.send_error(503, "Wally preview server not available")
+            return
+        url = f"http://127.0.0.1:{self._wally_port}/{path}"
+        try:
+            with urllib.request.urlopen(url, timeout=120) as resp:
+                data = resp.read()
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        except urllib.error.HTTPError as exc:
+            self.send_error(exc.code)
+        except Exception as exc:
+            _log.error("Proxy to Wally failed for %r: %s", path, exc)
+            self.send_error(503)
 
     def _serve_static(self, asset_path: str) -> None:
         file_path = (_GALLERY_DIST_DIR / asset_path).resolve()

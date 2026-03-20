@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import secrets
 from collections import Counter
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastmcp import Context, FastMCP
 from fastmcp.server.apps import AppConfig, ResourceCSP
@@ -42,7 +43,17 @@ class WoofServer:
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
         self._gallery_sessions: dict[str, Any] = gallery_sessions if gallery_sessions is not None else {}
-        self.mcp = FastMCP("ouestcharlie-woof")
+
+        agent = self._agent
+
+        @asynccontextmanager
+        async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
+            try:
+                yield
+            finally:
+                await agent.shutdown()
+
+        self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
         self._register_tools()
         self._register_gallery_resource()
 
@@ -257,6 +268,7 @@ class WoofServer:
                 "backend": session["backend"],
                 "querySummary": query_summary,
                 "httpPort": self.http_port,
+                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={session_token}",
             }
 
     # ------------------------------------------------------------------
