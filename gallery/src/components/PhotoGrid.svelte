@@ -10,8 +10,8 @@
   let { matches, loading = false, thumbnailTile, onSelect } = $props();
 
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
-  const PAGE_SIZE = 20;
-  const SKELETON_COUNT = 20;
+  const PAGE_SIZE = 16;
+  const SKELETON_COUNT = 16;
 
   let page = $state(0);
 
