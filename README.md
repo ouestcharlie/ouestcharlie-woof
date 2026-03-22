@@ -42,9 +42,15 @@ tests/
   test_server.py
 ```
 
-## Setup
+## Installation
 
-### MCP Server
+### From PyPI (recommended)
+
+```bash
+pip install ouestcharlie-woof
+```
+
+### From source (development)
 
 Requires sibling repositories:
 
@@ -60,7 +66,7 @@ uv venv
 uv sync
 ```
 
-### Gallery
+#### Rebuild the gallery (only needed when editing Svelte source)
 
 ```bash
 cd gallery
@@ -71,13 +77,32 @@ npm run build
 
 ## Running Tests
 
+**Always use `.venv/bin/python -m pytest`:**
+
 ```bash
 .venv/bin/python -m pytest tests/ -v
 ```
 
 ## Claude Desktop Integration
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+### With uvx (recommended — no manual install)
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "ouestcharlie": {
+      "command": "uvx",
+      "args": ["ouestcharlie-woof"]
+    }
+  }
+}
+```
+
+`uvx` fetches the package from PyPI into an isolated environment on first run — no prior install needed.
+
+### With a local venv (development)
 
 ```json
 {
@@ -90,7 +115,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. Woof is launched on demand when Claude Desktop starts.
+Restart Claude Desktop after editing the config. Woof is launched on demand when Claude Desktop starts.
 
 ### First use
 

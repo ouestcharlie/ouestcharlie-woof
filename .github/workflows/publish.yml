@@ -1,0 +1,36 @@
+name: Build and publish ouestcharlie-woof
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and publish
+    runs-on: ubuntu-22.04
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build gallery
+        working-directory: gallery
+        run: npm ci && npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install hatch
+        run: pip install hatch
+
+      - name: Build
+        run: hatch build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
