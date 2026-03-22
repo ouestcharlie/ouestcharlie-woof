@@ -5,11 +5,14 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build and publish
     runs-on: ubuntu-22.04
-    environment: pypi
+    environment: test-pypi
     permissions:
       id-token: write  # trusted publishing
     steps:
@@ -34,3 +37,5 @@ jobs:
         run: hatch build
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
