@@ -8,10 +8,9 @@
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
-   *   onClose: () => void,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile, onBack } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile } = $props();
 
   let match = $derived(matches[selectedIndex]);
   let thumbTile = $derived(thumbnailTile(match));
@@ -21,16 +20,22 @@
   let previewLoaded = $state(false);
   $effect(() => { jpegUrl; previewLoaded = false; });
 
+  // Track viewport size reactively so containerSize updates on resize and fullscreen entry.
+  let windowW = $state(window.innerWidth);
+  let windowH = $state(window.innerHeight);
+
   // Compute explicit pixel dimensions so the container is never 0×0.
   // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
+  // Height is at least 50vh so the preview is never tiny (e.g. after entering fullscreen).
   let containerSize = $derived(
     (() => {
-      const max = Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82);
+      const maxDim = Math.min(windowW * 0.85, windowH * 0.82);
+      const minH   = windowH * 0.5;
       const w = match?.width, h = match?.height;
-      if (!w || !h) return { width: max, height: max };
+      if (!w || !h) return { width: maxDim, height: Math.max(maxDim, minH) };
       return w >= h
-        ? { width: max,           height: max / (w / h) }
-        : { width: max * (w / h), height: max };
+        ? { width: maxDim, height: Math.max(maxDim / (w / h), minH) }
+        : { width: maxDim * (w / h), height: Math.max(maxDim, minH) };
     })()
   );
 
@@ -65,8 +70,16 @@
     return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * tileSize}px;`;
   }
 
-  onMount(() => window.addEventListener('keydown', onKeydown));
-  onDestroy(() => window.removeEventListener('keydown', onKeydown));
+  function onResize() { windowW = window.innerWidth; windowH = window.innerHeight; }
+
+  onMount(() => {
+    window.addEventListener('keydown', onKeydown);
+    window.addEventListener('resize', onResize);
+  });
+  onDestroy(() => {
+    window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', onResize);
+  });
 </script>
 
 <div class="panel">

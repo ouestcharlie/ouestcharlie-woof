@@ -66,7 +66,7 @@
         canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
         isFullscreen = ctx?.displayMode === 'fullscreen';
       }).catch(() => {});
-    } catch (_) {}
+    } catch { /* not running inside MCP host */ }
   });
 
   /**
@@ -75,7 +75,8 @@
   function thumbnailTile(match) {
     const { avifPath, thumbnailCols: cols, thumbnailTileSize: tileSize } = match;
     if (!httpPort || !avifPath || match.tileIndex == null || !cols || !tileSize) return null;
-    const url = `http://127.0.0.1:${httpPort}/thumbnails/${backendName}/${avifPath}`;
+    const encodedAvifPath = avifPath.split('/').map(encodeURIComponent).join('/');
+    const url = `http://127.0.0.1:${httpPort}/thumbnails/${encodeURIComponent(backendName)}/${encodedAvifPath}`;
     const col = match.tileIndex % cols;
     const row = Math.floor(match.tileIndex / cols);
     return { url, col, row, tileSize, cols };
@@ -97,7 +98,8 @@
    */
   function previewUrl(match) {
     if (!httpPort || !match.contentHash) return null;
-    return `http://127.0.0.1:${httpPort}/previews/${backendName}/${match.partition}/${match.contentHash}.jpg`;
+    const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
+    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
   }
 </script>
 
@@ -163,7 +165,6 @@
         onNavigate={(i) => (selectedIndex = i)}
         {previewUrl}
         {thumbnailTile}
-        onBack={() => (view = 'grid')}
       />
     </div>
   {/if}

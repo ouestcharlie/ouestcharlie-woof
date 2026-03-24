@@ -27,7 +27,7 @@
 
 {#if loading}
   <div class="grid">
-    {#each { length: SKELETON_COUNT } as _, i}
+    {#each { length: SKELETON_COUNT } as _, i (i)}
       <div class="tile skeleton" style="animation-delay: {(i % 4) * 0.1}s"></div>
     {/each}
   </div>
@@ -42,10 +42,9 @@
 {/if}
 
 <div class="grid">
-  {#each pageMatches as match, i}
+  {#each pageMatches as match, i (match.contentHash ?? i)}
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       role="button"
       tabindex="0"

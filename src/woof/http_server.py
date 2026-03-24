@@ -27,7 +27,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 _log = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         if self._wally_port is None:
             self.send_error(503, "Wally preview server not available")
             return
-        url = f"http://127.0.0.1:{self._wally_port}/{path}"
+        url = f"http://127.0.0.1:{self._wally_port}/{quote(path, safe='/:@!$&\'()*+,;=')}"
         headers = {}
         if self._wally_token:
             headers["Authorization"] = f"Bearer {self._wally_token}"
