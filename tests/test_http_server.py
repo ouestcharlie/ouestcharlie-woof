@@ -49,6 +49,7 @@ def test_gallery_unknown_token_returns_404() -> None:
 
 def test_results_endpoint_returns_session_data() -> None:
     import json
+
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg"}]
     sessions: dict = {"tok456": {"matches": matches, "backend": "testlib", "httpPort": 9999}}
     port = start_http_server(gallery_sessions=sessions)

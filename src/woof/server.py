@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import secrets
 from collections import Counter
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastmcp import Context, FastMCP
 from fastmcp.server.apps import AppConfig, ResourceCSP
@@ -42,7 +42,9 @@ class WoofServer:
         self.config = config
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
-        self._gallery_sessions: dict[str, Any] = gallery_sessions if gallery_sessions is not None else {}
+        self._gallery_sessions: dict[str, Any] = (
+            gallery_sessions if gallery_sessions is not None else {}
+        )
         self._backend_fields: dict[str, list[Any]] = {}  # backend name → field defs, loaded lazily
 
         agent = self._agent
@@ -83,8 +85,7 @@ class WoofServer:
             """List all registered photo library backends."""
             return {
                 "backends": [
-                    {"name": b.name, "type": b.type, "path": b.path}
-                    for b in self.config.backends
+                    {"name": b.name, "type": b.type, "path": b.path} for b in self.config.backends
                 ]
             }
 
@@ -248,7 +249,9 @@ class WoofServer:
             """
             session = self._gallery_sessions.get(session_token)
             if session is None:
-                return {"error": f"Unknown session_token {session_token!r}. Call search_photos first."}
+                return {
+                    "error": f"Unknown session_token {session_token!r}. Call search_photos first."
+                }
             session["querySummary"] = query_summary
             return {
                 "matches": session["matches"],
@@ -264,9 +267,10 @@ class WoofServer:
 
     def _register_gallery_resource(self) -> None:
         origin = f"http://127.0.0.1:{self.http_port}"
+
         @self.mcp.resource(
             _GALLERY_URI,
-            mime_type='text/html;profile=mcp-app',
+            mime_type="text/html;profile=mcp-app",
             app=AppConfig(
                 csp=ResourceCSP(
                     resource_domains=[origin],
@@ -298,7 +302,7 @@ class WoofServer:
             "count": len(matches),
             "partitions": dict(sorted(by_partition.items())),
         }
-        for fdef in (fields or []):
+        for fdef in fields or []:
             field_type = fdef.get("type", "")
             if field_type in ("DATE_RANGE", "INT_RANGE"):
                 name = fdef.get("name", "")
@@ -324,15 +328,16 @@ class WoofServer:
                 )
                 self._backend_fields[backend.name] = result.get("fields", [])  # type: ignore[union-attr]
             except AgentError as exc:
-                _log.warning("list_search_fields_tool failed for %r, stats will be empty: %s", backend.name, exc)
+                _log.warning(
+                    "list_search_fields_tool failed for %r, stats will be empty: %s",
+                    backend.name,
+                    exc,
+                )
                 return []
         return self._backend_fields[backend.name]
 
     def _require_backend(self, name: str) -> BackendConfig:
         backend = self.config.get_backend(name)
         if backend is None:
-            raise ValueError(
-                f"Backend {name!r} not found. "
-                f"Use add_backend to register it first."
-            )
+            raise ValueError(f"Backend {name!r} not found. Use add_backend to register it first.")
         return backend

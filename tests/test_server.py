@@ -13,10 +13,10 @@ from woof.agent_client import AgentError
 from woof.config import BackendConfig, WoofConfig
 from woof.server import WoofServer
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def config(tmp_path: Path) -> WoofConfig:
@@ -59,6 +59,7 @@ def _make_matches(
 # add_backend / list_backends
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_add_backend(server: WoofServer, tmp_path: Path) -> None:
     new_path = str(tmp_path / "new")
@@ -79,9 +80,17 @@ async def test_list_backends(server: WoofServer) -> None:
 # list_search_fields
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_list_search_fields_returns_fields(server: WoofServer) -> None:
-    mock_fields = [{"name": "dateTaken", "type": "DATE_RANGE", "filterFormat": "...", "pruneable": True}]
+    mock_fields = [
+        {
+            "name": "dateTaken",
+            "type": "DATE_RANGE",
+            "filterFormat": "...",
+            "pruneable": True,
+        }
+    ]
     mock = AsyncMock(return_value={"fields": mock_fields})
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "list_search_fields")
@@ -117,7 +126,9 @@ async def test_list_search_fields_no_backends_returns_empty(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_list_search_fields_wally_error_returns_empty_fields(server: WoofServer) -> None:
+async def test_list_search_fields_wally_error_returns_empty_fields(
+    server: WoofServer,
+) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "list_search_fields")
@@ -128,6 +139,7 @@ async def test_list_search_fields_wally_error_returns_empty_fields(server: WoofS
 # ---------------------------------------------------------------------------
 # _get_fields (lazy cache)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_fields_fetches_on_first_call(server: WoofServer) -> None:
@@ -151,7 +163,9 @@ async def test_get_fields_reuses_cache_on_second_call(server: WoofServer) -> Non
 
 
 @pytest.mark.asyncio
-async def test_get_fields_error_returns_empty_and_is_not_cached(server: WoofServer) -> None:
+async def test_get_fields_error_returns_empty_and_is_not_cached(
+    server: WoofServer,
+) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
         result = await server._get_fields(server.config.backends[0])
@@ -176,13 +190,16 @@ async def test_get_fields_retries_after_error(server: WoofServer) -> None:
 # index_backend
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_index_backend_calls_whitebeard(server: WoofServer) -> None:
     mock_result: dict[str, Any] = {"photosProcessed": 5, "errors": 0}
     mock = AsyncMock(return_value=mock_result)
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "index_backend")
-        result = await tool_fn(ctx=None, backend_name="testlib", partition="", force_extract_exif=False)
+        result = await tool_fn(
+            ctx=None, backend_name="testlib", partition="", force_extract_exif=False
+        )
         assert result == mock_result
         mock.assert_called_once()
         assert mock.call_args[0][0] == "whitebeard"
@@ -197,7 +214,12 @@ async def test_index_backend_with_partition(server: WoofServer) -> None:
     mock = AsyncMock(return_value={})
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "index_backend")
-        await tool_fn(ctx=None, backend_name="testlib", partition="2024/2024-07", force_extract_exif=False)
+        await tool_fn(
+            ctx=None,
+            backend_name="testlib",
+            partition="2024/2024-07",
+            force_extract_exif=False,
+        )
         assert mock.call_args[0][1] == "index_partition_tool"
         assert mock.call_args[0][2]["partition"] == "2024/2024-07"
 
@@ -217,7 +239,9 @@ async def test_index_backend_agent_error_is_logged(
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "index_backend")
         with caplog.at_level(logging.ERROR, logger="woof.server"):
-            result = await tool_fn(ctx=None, backend_name="testlib", partition="", force_extract_exif=False)
+            result = await tool_fn(
+                ctx=None, backend_name="testlib", partition="", force_extract_exif=False
+            )
     assert "error" in result
     assert any("whitebeard crashed" in r.message for r in caplog.records)
 
@@ -274,9 +298,15 @@ def test_search_stats_no_dates_gives_none() -> None:
 # search_photos
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_search_photos_calls_wally(server: WoofServer) -> None:
-    mock_result = {"matches": [], "partitionsScanned": 3, "partitionsPruned": 1, "errors": 0}
+    mock_result = {
+        "matches": [],
+        "partitionsScanned": 3,
+        "partitionsPruned": 1,
+        "errors": 0,
+    }
     mock = AsyncMock(return_value=mock_result)
     filters = {"date": {"min": "2024"}, "rating": {"min": 4}}
     with patch.object(server._agent, "call_tool", new=mock):
@@ -305,7 +335,10 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
         dates=["2024-01-05T00:00:00", "2024-01-10T00:00:00", "2024-02-01T00:00:00"],
         ratings=[5, None, 3],
     )
-    fields = [{"name": "dateTaken", "type": "DATE_RANGE"}, {"name": "rating", "type": "INT_RANGE"}]
+    fields = [
+        {"name": "dateTaken", "type": "DATE_RANGE"},
+        {"name": "rating", "type": "INT_RANGE"},
+    ]
 
     async def _side_effect(agent, tool, args, backend, **kwargs):
         if tool == "list_search_fields_tool":
@@ -317,7 +350,10 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
         result = await tool_fn(ctx=None, backend_name="testlib")
     assert result["count"] == 3
     assert result["partitions"] == {"2024/01": 2, "2024/02": 1}
-    assert result["dateTaken"] == {"min": "2024-01-05T00:00:00", "max": "2024-02-01T00:00:00"}
+    assert result["dateTaken"] == {
+        "min": "2024-01-05T00:00:00",
+        "max": "2024-02-01T00:00:00",
+    }
     assert result["rating"] == {"min": 3, "max": 5}
     assert "session_token" in result
 
@@ -353,6 +389,7 @@ async def test_search_photos_agent_error_is_logged(
 # ---------------------------------------------------------------------------
 # browse_gallery
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
@@ -396,6 +433,7 @@ async def test_browse_gallery_sets_query_summary(server: WoofServer) -> None:
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 async def _get_tool(server: WoofServer, name: str) -> Any:
     """Extract a tool function from the FastMCP registry by name."""

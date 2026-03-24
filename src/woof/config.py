@@ -42,7 +42,7 @@ class WoofConfig:
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls, config_dir: Path | None = None) -> "WoofConfig":
+    def load(cls, config_dir: Path | None = None) -> WoofConfig:
         """Load config from disk, creating an empty one if absent."""
         if config_dir is None:
             config_dir = _DEFAULT_CONFIG_DIR

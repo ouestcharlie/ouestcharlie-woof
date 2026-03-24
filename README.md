@@ -66,6 +66,15 @@ uv venv
 uv sync
 ```
 
+#### Enable pre-commit hooks (recommended)
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Runs `ruff` (Python linter/formatter) and `eslint` (gallery JS/Svelte) automatically before each commit.
+
 #### Rebuild the gallery (only needed when editing Svelte source)
 
 ```bash

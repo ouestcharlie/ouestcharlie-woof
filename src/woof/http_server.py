@@ -51,9 +51,9 @@ def get_gallery_html(http_port: int) -> str:
 
 
 def start_http_server(
-    gallery_sessions: "dict | None" = None,
-    wally_port_fn: "Any | None" = None,
-    wally_token_fn: "Any | None" = None,
+    gallery_sessions: dict | None = None,
+    wally_port_fn: Any | None = None,
+    wally_token_fn: Any | None = None,
 ) -> int:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -77,7 +77,9 @@ def start_http_server(
         def handler_factory(*args: object, **kwargs: object) -> _ThumbnailHandler:
             wally_port = wally_port_fn() if wally_port_fn is not None else None
             wally_token = wally_token_fn() if wally_token_fn is not None else None
-            return _ThumbnailHandler(sessions, bound_port[0], wally_port, wally_token, *args, **kwargs)  # type: ignore[arg-type]
+            return _ThumbnailHandler(
+                sessions, bound_port[0], wally_port, wally_token, *args, **kwargs
+            )  # type: ignore[arg-type]
 
         server = HTTPServer(("127.0.0.1", 0), handler_factory)
         bound_port[0] = server.server_address[1]
@@ -97,8 +99,8 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         self,
         gallery_sessions: dict,
         http_port: int,
-        wally_port: "int | None",
-        wally_token: "str | None",
+        wally_port: int | None,
+        wally_token: str | None,
         *args: object,
         **kwargs: object,
     ) -> None:
@@ -118,7 +120,7 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
 
         # /gallery/{token}
         if path.startswith("gallery/"):
-            token = path[len("gallery/"):]
+            token = path[len("gallery/") :]
             if token in self._gallery_sessions:
                 self._serve_gallery()
             else:
@@ -127,13 +129,13 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
 
         # /api/results/{token}
         if path.startswith("api/results/"):
-            token = path[len("api/results/"):]
+            token = path[len("api/results/") :]
             self._serve_results(token)
             return
 
         # /gallery-static/{asset_path} — Vite-built JS/CSS assets
         if path.startswith("gallery-static/"):
-            asset_path = path[len("gallery-static/"):]
+            asset_path = path[len("gallery-static/") :]
             self._serve_static(asset_path)
             return
 
@@ -158,7 +160,8 @@ class _ThumbnailHandler(BaseHTTPRequestHandler):
         if self._wally_port is None:
             self.send_error(503, "Wally preview server not available")
             return
-        url = f"http://127.0.0.1:{self._wally_port}/{quote(path, safe='/:@!$&\'()*+,;=')}"
+        safe = "/:@!$&'()*+,;="
+        url = f"http://127.0.0.1:{self._wally_port}/{quote(path, safe=safe)}"
         headers = {}
         if self._wally_token:
             headers["Authorization"] = f"Bearer {self._wally_token}"
