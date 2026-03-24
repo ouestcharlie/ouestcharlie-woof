@@ -3,26 +3,26 @@
    * @type {{
    *   matches: any[],
    *   loading: boolean,
+   *   selectedIndex: number | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
    *   onSelect: (index: number) => void,
+   *   onPageSelect: (index: number) => void,
    * }}
    */
-  let { matches, loading = false, thumbnailTile, onSelect } = $props();
+  let { matches, loading = false, selectedIndex, thumbnailTile, onSelect, onPageSelect } = $props();
 
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
   const PAGE_SIZE = 16;
   const SKELETON_COUNT = 16;
 
-  let page = $state(0);
+  // Page is derived from selectedIndex so the grid always shows the page containing the selected photo.
+  let page = $derived(selectedIndex != null ? Math.floor(selectedIndex / PAGE_SIZE) : 0);
 
   let pageCount = $derived(Math.max(1, Math.ceil(matches.length / PAGE_SIZE)));
   let pageMatches = $derived(matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
 
-  // Reset to first page when matches change
-  $effect(() => { matches; page = 0; });
-
-  function prevPage() { if (page > 0) page -= 1; }
-  function nextPage() { if (page < pageCount - 1) page += 1; }
+  function prevPage() { if (page > 0) onPageSelect((page - 1) * PAGE_SIZE); }
+  function nextPage() { if (page < pageCount - 1) onPageSelect((page + 1) * PAGE_SIZE); }
 </script>
 
 {#if loading}
@@ -90,11 +90,13 @@
 <style>
   .grid {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     padding: 1rem;
     align-content: flex-start;
+    overflow-y: auto;
   }
 
   .nav {

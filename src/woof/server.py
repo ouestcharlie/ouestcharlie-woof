@@ -107,7 +107,7 @@ class WoofServer:
             return {"fields": await self._get_fields(backend)}
 
         @mcp.tool()
-        async def get_root_manifests() -> list[Any]:
+        async def get_partition_summaries() -> list[Any]:
             """Return the root summary of each registered backend.
 
             The summary contains a flat list of all indexed partitions with
@@ -119,10 +119,10 @@ class WoofServer:
             for b in self.config.backends:
                 try:
                     manifest = await self._agent.call_tool(
-                        "wally", "get_root_manifest_tool", {}, b
+                        "wally", "get_partition_summaries", {}, b
                     )
                 except AgentError as exc:
-                    _log.warning("get_root_manifests: failed for %r: %s", b.name, exc)
+                    _log.warning("get_partition_summaries: failed for %r: %s", b.name, exc)
                     manifest = None
                 result.append({"name": b.name, "manifest": manifest})
             return result
