@@ -11,6 +11,9 @@
   let status = $state('');
   let loading = $state(true);
   let selectedIndex = $state(null);
+  let mcpApp = $state(null);
+  let isFullscreen = $state(false);
+  let canFullscreen = $state(false);
 
   function applySession(session) {
     httpPort = session.httpPort ?? httpPort;
@@ -39,11 +42,20 @@
     // Not awaited: connect() may never resolve outside the host environment.
     try {
       const app = new App({ name: 'OuEstCharlie', version: '1.0.0' });
+      mcpApp = app;
       app.ontoolresult = ({ content }) => {
         const text = (content ?? []).find(b => b.type === 'text')?.text;
         if (text) applySession(JSON.parse(text));
       };
-      app.connect().catch(() => {});
+      app.onhostcontextchanged = (ctx) => {
+        canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
+        isFullscreen = ctx?.displayMode === 'fullscreen';
+      };
+      app.connect().then(() => {
+        const ctx = app.getHostContext();
+        canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
+        isFullscreen = ctx?.displayMode === 'fullscreen';
+      }).catch(() => {});
     } catch (_) {}
   });
 
@@ -59,6 +71,12 @@
     return { url, col, row, tileSize, cols };
   }
 
+  async function toggleFullscreen() {
+    if (!mcpApp) return;
+    const targetMode = isFullscreen ? 'inline' : 'fullscreen';
+    await mcpApp.requestDisplayMode({ mode: targetMode });
+  }
+
   /**
    * Returns the direct JPEG preview URL for a photo, or null if unavailable.
    * The JPEG is generated on-demand by Wally and cached on disk.
@@ -72,6 +90,23 @@
 <div class="app">
   <header>
     <h1>{querySummary || 'OuEstCharlie'}</h1>
+    {#if canFullscreen}
+      <button
+        class="fullscreen-btn"
+        onclick={toggleFullscreen}
+        title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+      >
+        {#if isFullscreen}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M5.5 1H2a1 1 0 0 0-1 1v3.5h1.5V2.5H5.5V1zM1 11.5V15a1 1 0 0 0 1 1h3.5v-1.5H2.5V11.5H1zM14 1h-3.5v1.5h2.5V5.5H15V2a1 1 0 0 0-1-1zM13.5 13.5H11V15h3.5a1 1 0 0 0 1-1v-3.5H14v2.5z"/>
+          </svg>
+        {:else}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M1 1h4.5v1.5H2.5V5.5H1V1zM10.5 1H15v4.5h-1.5V2.5H10.5V1zM1 10.5h1.5v2.5h3v1.5H1v-4zM13.5 13H10.5v1.5H15V10.5h-1.5V13z"/>
+          </svg>
+        {/if}
+      </button>
+    {/if}
   </header>
 
   <PhotoGrid
@@ -113,6 +148,9 @@
   }
   
   header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 0.75rem 1rem;
     background: #1a1a1a;
     border-bottom: 1px solid #333;
@@ -122,6 +160,23 @@
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
+  }
+
+  .fullscreen-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0.3rem 0.4rem;
+    border-radius: 4px;
+    line-height: 0;
+    flex-shrink: 0;
+  }
+
+  .fullscreen-btn:hover {
+    background: #222;
+    color: #eee;
+    border-color: #666;
   }
 
   .status {
