@@ -26,16 +26,17 @@
 
   // Compute explicit pixel dimensions so the container is never 0×0.
   // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
-  // Height is at least 50vh so the preview is never tiny (e.g. after entering fullscreen).
+  // Height drives sizing (capped at 90vh); width follows the aspect ratio, capped at 100vw.
   let containerSize = $derived(
     (() => {
-      const maxDim = Math.min(windowW * 0.85, windowH * 0.82);
-      const minH   = windowH * 0.5;
+      const maxH = windowH * 0.9;
+      const maxW = windowW;
       const w = match?.width, h = match?.height;
-      if (!w || !h) return { width: maxDim, height: Math.max(maxDim, minH) };
-      return w >= h
-        ? { width: maxDim, height: Math.max(maxDim / (w / h), minH) }
-        : { width: maxDim * (w / h), height: Math.max(maxDim, minH) };
+      if (!w || !h) return { width: Math.min(maxH, maxW), height: Math.min(maxH, maxW) };
+      let height = maxH;
+      let width = height * (w / h);
+      if (width > maxW) { width = maxW; height = width / (w / h); }
+      return { width, height };
     })()
   );
 
@@ -84,11 +85,10 @@
 
 <div class="panel">
   <div class="viewer">
-    <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
-
     <!--
       Container pre-sized to the photo's actual aspect ratio.
-      Max dimension capped at 85vw / 82vh; the other axis follows aspect ratio.
+      Height capped at 90vh; width follows aspect ratio, capped at 100vw.
+      Nav buttons are overlaid on the image edges.
     -->
     <div
       class="preview-container"
@@ -121,9 +121,10 @@
           <div class="placeholder"><span>{match.filename}</span></div>
         {/if}
       {/if}
-    </div>
 
-    <button class="nav next" onclick={next} disabled={!hasNext}>›</button>
+      <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
+      <button class="nav next" onclick={next} disabled={!hasNext}>›</button>
+    </div>
   </div>
 
   <div class="meta">
@@ -155,8 +156,6 @@
 
   .viewer {
     display: flex;
-    align-items: stretch;
-    gap: 0.5rem;
   }
 
   .preview-container {
@@ -195,27 +194,32 @@
   }
 
   .nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.25);
     border: none;
     color: #eee;
     font-size: 2rem;
     line-height: 1;
-    padding: 0 0.7rem;
     cursor: pointer;
-    border-radius: 4px;
     transition: background 0.15s;
-    flex-shrink: 0;
+    z-index: 1;
   }
 
+  .nav.prev { left: 0; border-radius: 4px 0 0 4px; }
+  .nav.next { right: 0; border-radius: 0 4px 4px 0; }
+
   .nav:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.45);
   }
 
   .nav:disabled {
-    opacity: 0.2;
+    opacity: 0.15;
     cursor: default;
   }
 
