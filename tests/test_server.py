@@ -56,7 +56,7 @@ def _make_matches(
 
 
 # ---------------------------------------------------------------------------
-# add_backend / list_backends / get_status
+# add_backend / list_backends
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -75,49 +75,101 @@ async def test_list_backends(server: WoofServer) -> None:
     assert any(b["name"] == "testlib" for b in result["backends"])
 
 
+# ---------------------------------------------------------------------------
+# list_search_fields
+# ---------------------------------------------------------------------------
+
 @pytest.mark.asyncio
-async def test_get_status_existing_backend(server: WoofServer, tmp_path: Path) -> None:
+async def test_list_search_fields_returns_fields(server: WoofServer) -> None:
     mock_fields = [{"name": "dateTaken", "type": "DATE_RANGE", "filterFormat": "...", "pruneable": True}]
     mock = AsyncMock(return_value={"fields": mock_fields})
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "get_status")
+        tool_fn = await _get_tool(server, "list_search_fields")
         result = await tool_fn()
-    entry = next(s for s in result["backends"] if s["name"] == "testlib")
-    assert entry["exists"] is True
-    assert result["fields"] == mock_fields
+    assert result == {"fields": mock_fields}
+    mock.assert_called_once_with("wally", "list_search_fields_tool", {}, server.config.backends[0])
 
 
 @pytest.mark.asyncio
-async def test_get_status_missing_backend(config: WoofConfig) -> None:
-    config.backends = [BackendConfig(name="ghost", type="local", path="/nonexistent")]
-    server = WoofServer(config, http_port=9999)
-    mock = AsyncMock(return_value={"fields": []})
+async def test_list_search_fields_explicit_backend(server: WoofServer) -> None:
+    mock_fields = [{"name": "rating", "type": "INT_RANGE"}]
+    mock = AsyncMock(return_value={"fields": mock_fields})
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "get_status")
-        result = await tool_fn()
-    entry = next(s for s in result["backends"] if s["name"] == "ghost")
-    assert entry["exists"] is False
-    assert "fields" in result
+        tool_fn = await _get_tool(server, "list_search_fields")
+        result = await tool_fn(backend_name="testlib")
+    assert result == {"fields": mock_fields}
 
 
 @pytest.mark.asyncio
-async def test_get_status_no_backends(tmp_path: Path) -> None:
+async def test_list_search_fields_unknown_backend_raises(server: WoofServer) -> None:
+    tool_fn = await _get_tool(server, "list_search_fields")
+    with pytest.raises(ValueError, match="not found"):
+        await tool_fn(backend_name="ghost")
+
+
+@pytest.mark.asyncio
+async def test_list_search_fields_no_backends_returns_empty(tmp_path: Path) -> None:
     config = WoofConfig(backends=[], config_dir=tmp_path / ".woof")
     server = WoofServer(config, http_port=9999)
-    tool_fn = await _get_tool(server, "get_status")
+    tool_fn = await _get_tool(server, "list_search_fields")
     result = await tool_fn()
-    assert result["backends"] == []
-    assert result["fields"] == []
+    assert result == {}
 
 
 @pytest.mark.asyncio
-async def test_get_status_wally_error_returns_empty_fields(server: WoofServer) -> None:
+async def test_list_search_fields_wally_error_returns_empty_fields(server: WoofServer) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "get_status")
+        tool_fn = await _get_tool(server, "list_search_fields")
         result = await tool_fn()
-    assert result["fields"] == []
-    assert any(s["name"] == "testlib" for s in result["backends"])
+    assert result == {"fields": []}
+
+
+# ---------------------------------------------------------------------------
+# _get_fields (lazy cache)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_fields_fetches_on_first_call(server: WoofServer) -> None:
+    fields = [{"name": "rating", "type": "INT_RANGE"}]
+    mock = AsyncMock(return_value={"fields": fields})
+    with patch.object(server._agent, "call_tool", new=mock):
+        result = await server._get_fields(server.config.backends[0])
+    assert result == fields
+    mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_fields_reuses_cache_on_second_call(server: WoofServer) -> None:
+    fields = [{"name": "rating", "type": "INT_RANGE"}]
+    mock = AsyncMock(return_value={"fields": fields})
+    with patch.object(server._agent, "call_tool", new=mock):
+        await server._get_fields(server.config.backends[0])
+        result = await server._get_fields(server.config.backends[0])
+    assert result == fields
+    assert mock.call_count == 1  # only fetched once
+
+
+@pytest.mark.asyncio
+async def test_get_fields_error_returns_empty_and_is_not_cached(server: WoofServer) -> None:
+    mock = AsyncMock(side_effect=AgentError("wally down"))
+    with patch.object(server._agent, "call_tool", new=mock):
+        result = await server._get_fields(server.config.backends[0])
+    assert result == []
+    assert "testlib" not in server._backend_fields  # error must not be cached
+
+
+@pytest.mark.asyncio
+async def test_get_fields_retries_after_error(server: WoofServer) -> None:
+    backend = server.config.backends[0]
+    fields = [{"name": "dateTaken", "type": "DATE_RANGE"}]
+    mock = AsyncMock(side_effect=[AgentError("down"), {"fields": fields}])
+    with patch.object(server._agent, "call_tool", new=mock):
+        first = await server._get_fields(backend)
+        second = await server._get_fields(backend)
+    assert first == []
+    assert second == fields
+    assert mock.call_count == 2
 
 
 # ---------------------------------------------------------------------------

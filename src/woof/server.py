@@ -24,7 +24,7 @@ _GALLERY_URI = "ui://gallery/ouestcharlie"
 class WoofServer:
     """Woof MCP server.
 
-    Exposes six tools to Claude Desktop and registers the gallery
+    Exposes tools to Claude Desktop and registers the gallery
     as an MCP App resource.
 
     Roles:
@@ -43,6 +43,7 @@ class WoofServer:
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
         self._gallery_sessions: dict[str, Any] = gallery_sessions if gallery_sessions is not None else {}
+        self._backend_fields: dict[str, list[Any]] = {}  # backend name → field defs, loaded lazily
 
         agent = self._agent
 
@@ -88,27 +89,22 @@ class WoofServer:
             }
 
         @mcp.tool()
-        async def get_status() -> dict[str, Any]:
-            """Get the status of all registered backends and the searchable field list.
+        async def list_search_fields(backend_name: str = "") -> dict:
+            """Get the searchable field definitions for a backend.
 
-            Returns basic information about each backend (path, existence) and
-            the field definitions available for filtering in search_photos.
-            Indexing status requires reading manifests through get_root_manifests.
+            Returns the field definitions available for filtering in search_photos.
+
+            Args:
+                backend_name: Name of the backend to query. Defaults to the
+                    first registered backend when omitted.
             """
-            statuses = [
-                {"name": b.name, "path": b.path, "exists": Path(b.path).is_dir()}
-                for b in self.config.backends
-            ]
-            fields: list[Any] = []
-            if self.config.backends:
-                try:
-                    result = await self._agent.call_tool(
-                        "wally", "list_search_fields_tool", {}, self.config.backends[0]
-                    )
-                    fields = result.get("fields", [])  # type: ignore[union-attr]
-                except AgentError as exc:
-                    _log.warning("get_status: could not fetch search fields: %s", exc)
-            return {"backends": statuses, "fields": fields}
+            if not self.config.backends:
+                return {}
+            if backend_name:
+                backend = self._require_backend(backend_name)
+            else:
+                backend = self.config.backends[0]
+            return {"fields": await self._get_fields(backend)}
 
         @mcp.tool()
         async def get_root_manifests() -> list[Any]:
@@ -183,13 +179,13 @@ class WoofServer:
             Traverses the manifest tree with two-level pruning for efficiency.
             Omitting ``filters`` (or passing None) returns all indexed photos.
 
-            Use ``get_status`` to discover available filter fields and
+            Use ``list_search_fields`` to discover available filter fields and
             their expected formats before constructing a query.
 
             Args:
                 backend_name: Name of the backend to search.
                 filters: Optional dict mapping field names to filter values.
-                    Call ``get_status`` to get valid fields and formats.
+                    Call ``list_search_fields`` to get valid fields and formats.
                     Examples::
 
                         # Photos taken in 2024 rated 4–5 stars
@@ -210,15 +206,7 @@ class WoofServer:
             if filters is not None:
                 args["filters"] = filters
 
-            # Fetch field definitions to drive stats computation.
-            try:
-                fields_result = await self._agent.call_tool(
-                    "wally", "list_search_fields_tool", {}, backend
-                )
-                fields: list[Any] = fields_result.get("fields", [])  # type: ignore[union-attr]
-            except AgentError as exc:
-                _log.warning("list_search_fields_tool failed, stats will be empty: %s", exc)
-                fields = []
+            fields = await self._get_fields(backend)
 
             try:
                 result = await self._agent.call_tool(
@@ -322,6 +310,23 @@ class WoofServer:
                 else:
                     stats[name] = {"min": min(values), "max": max(values)}
         return stats
+
+    async def _get_fields(self, backend: BackendConfig) -> list[Any]:
+        """Return field definitions for a backend, fetching from Wally on first call.
+
+        The result is cached per backend name for the lifetime of the server.
+        Returns an empty list if the agent call fails.
+        """
+        if backend.name not in self._backend_fields:
+            try:
+                result = await self._agent.call_tool(
+                    "wally", "list_search_fields_tool", {}, backend
+                )
+                self._backend_fields[backend.name] = result.get("fields", [])  # type: ignore[union-attr]
+            except AgentError as exc:
+                _log.warning("list_search_fields_tool failed for %r, stats will be empty: %s", backend.name, exc)
+                return []
+        return self._backend_fields[backend.name]
 
     def _require_backend(self, name: str) -> BackendConfig:
         backend = self.config.get_backend(name)
