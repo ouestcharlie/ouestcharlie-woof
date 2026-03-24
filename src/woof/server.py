@@ -93,8 +93,7 @@ class WoofServer:
 
             Returns basic information about each backend (path, existence) and
             the field definitions available for filtering in search_photos.
-            Indexing status requires reading manifests — use index_backend
-            to trigger indexing and search_photos to verify results.
+            Indexing status requires reading manifests through get_root_manifests.
             """
             statuses = [
                 {"name": b.name, "path": b.path, "exists": Path(b.path).is_dir()}
