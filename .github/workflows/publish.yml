@@ -1,41 +1,36 @@
-name: Build and publish ouestcharlie-woof
+name: Publish ouestcharlie-woof
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    inputs:
+      run-id:
+        description: 'Build workflow run ID whose artifacts to publish'
+        required: true
+      target:
+        description: 'Publish target'
+        required: true
+        default: 'test-pypi'
+        type: choice
+        options:
+          - test-pypi
+          - pypi
 
 jobs:
-  build:
-    name: Build and publish
+  publish:
+    name: Publish to ${{ inputs.target }}
     runs-on: ubuntu-22.04
-    environment: test-pypi
+    environment: ${{ inputs.target }}
     permissions:
       id-token: write  # trusted publishing
+      actions: read    # needed to download artifacts from another run
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: "22"
-
-      - name: Build gallery
-        working-directory: gallery
-        run: npm ci && npm run build
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install hatch
-        run: pip install hatch
-
-      - name: Build
-        run: hatch build
-
+          name: dist
+          path: dist
+          run-id: ${{ inputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://test.pypi.org/legacy/
+          repository-url: ${{ vars.PUBLISH_URL }}
+          verbose: true

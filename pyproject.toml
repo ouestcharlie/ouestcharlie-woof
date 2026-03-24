@@ -8,11 +8,15 @@ version = "0.1.0"
 description = "OuEstCharlie Woof — central controller and UI backend"
 requires-python = ">=3.11"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE*"]
+authors = [
+    { name = "Antoine Hue" },
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
-license = "MIT"
 dependencies = [
     "mcp>=1.0",
     "fastmcp>=3.0",
@@ -23,6 +27,10 @@ dependencies = [
     "whitebeard>=0.1.0",
     "wally>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ouestcharlie/ouestcharlie-woof"
+Issues = "https://github.com/ouestcharlie/ouestcharlie-woof/issues"
 
 [project.scripts]
 woof = "woof.__main__:main"
