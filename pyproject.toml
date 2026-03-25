@@ -24,8 +24,8 @@ dependencies = [
     "uvicorn>=0.30",
     "ouestcharlie-py-toolkit>=0.1.0",
     "platformdirs>=4.0",
-    "whitebeard>=0.1.0",
-    "wally>=0.1.0",
+    "ouestcharlie-whitebeard>=0.1.0",
+    "ouestcharlie-wally>=0.1.0",
 ]
 
 [project.urls]
@@ -37,8 +37,8 @@ woof = "woof.__main__:main"
 
 [tool.uv.sources]
 ouestcharlie-py-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
-whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
-wally = { path = "../ouestcharlie-wally", editable = true }
+ouestcharlie-whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
+ouestcharlie-wally = { path = "../ouestcharlie-wally", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/woof"]
