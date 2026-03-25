@@ -32,6 +32,8 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from .gallery_session_manager import GallerySessionManager
+
 _log = logging.getLogger(__name__)
 
 # Pre-built Svelte app (produced by `npm run build` in gallery/)
@@ -54,15 +56,16 @@ def get_gallery_html(http_port: int) -> str:
 
 
 def start_http_server(
-    gallery_sessions: dict | None = None,
+    session_manager: GallerySessionManager | None = None,
     wally_port_fn: Any | None = None,
     wally_token_fn: Any | None = None,
 ) -> int:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
     Args:
-        gallery_sessions: Shared dict for token-keyed gallery sessions.
-            Keys are URL-safe tokens; values hold matches + metadata.
+        session_manager: Gallery session manager shared with WoofServer.
+            Provides token-keyed session lookup for the gallery and results
+            endpoints.  A new empty manager is created when omitted.
         wally_port_fn: Zero-argument callable returning the current Wally HTTP
             port (int or None).  Called on every request so dynamic port
             changes (e.g. after sidecar restart) are picked up automatically.
@@ -72,7 +75,7 @@ def start_http_server(
     Returns:
         The port number the server is listening on.
     """
-    sessions: dict = gallery_sessions if gallery_sessions is not None else {}
+    mgr = session_manager if session_manager is not None else GallerySessionManager()
 
     # Bind port before starting the thread so the port is known synchronously.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -80,7 +83,7 @@ def start_http_server(
     sock.bind(("127.0.0.1", 0))
     port: int = sock.getsockname()[1]
 
-    app = _build_app(sessions, wally_port_fn, wally_token_fn, http_port=port)
+    app = _build_app(mgr, wally_port_fn, wally_token_fn, http_port=port)
     ready = threading.Event()
 
     def _run() -> None:
@@ -112,7 +115,7 @@ async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
 
 
 def _build_app(
-    sessions: dict,
+    session_manager: GallerySessionManager,
     wally_port_fn: Any | None,
     wally_token_fn: Any | None,
     http_port: int,
@@ -121,7 +124,7 @@ def _build_app(
 
     async def gallery_token(request: Request) -> Response:
         token = request.path_params["token"]
-        if token not in sessions:
+        if session_manager.get(token) is None:
             return Response(status_code=404)
         html = get_gallery_html(http_port)
         return HTMLResponse(
@@ -131,7 +134,7 @@ def _build_app(
 
     async def api_results(request: Request) -> Response:
         token = request.path_params["token"]
-        session = sessions.get(token)
+        session = session_manager.get(token)
         if session is None:
             return JSONResponse(
                 {"error": f"Session {token!r} not found or expired"}, status_code=404

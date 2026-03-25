@@ -7,6 +7,7 @@ import urllib.request
 
 import pytest
 
+from woof.gallery_session_manager import GallerySessionManager
 from woof.http_server import start_http_server
 
 
@@ -29,8 +30,9 @@ def test_preview_without_wally_returns_503() -> None:
 
 
 def test_gallery_token_route_serves_html() -> None:
-    sessions: dict = {"tok123": {"matches": [], "backend": "testlib", "httpPort": 0}}
-    port = start_http_server(gallery_sessions=sessions)
+    mgr = GallerySessionManager()
+    mgr.sessions["tok123"] = {"matches": [], "backend": "testlib", "httpPort": 0}
+    port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/gallery/tok123"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
@@ -51,8 +53,9 @@ def test_results_endpoint_returns_session_data() -> None:
     import json
 
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg"}]
-    sessions: dict = {"tok456": {"matches": matches, "backend": "testlib", "httpPort": 9999}}
-    port = start_http_server(gallery_sessions=sessions)
+    mgr = GallerySessionManager()
+    mgr.sessions["tok456"] = {"matches": matches, "backend": "testlib", "httpPort": 9999}
+    port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/api/results/tok456"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
@@ -88,8 +91,9 @@ def test_cors_header_present_on_responses() -> None:
     CORSMiddleware only adds the header when the request includes an Origin header,
     matching real browser behaviour.
     """
-    sessions: dict = {"tok789": {"matches": [], "backend": "testlib", "httpPort": 0}}
-    port = start_http_server(gallery_sessions=sessions)
+    mgr = GallerySessionManager()
+    mgr.sessions["tok789"] = {"matches": [], "backend": "testlib", "httpPort": 0}
+    port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/api/results/tok789"
     req = urllib.request.Request(url, headers={"Origin": "http://example.com"})
     with urllib.request.urlopen(req) as resp:

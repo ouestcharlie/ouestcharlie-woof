@@ -25,12 +25,13 @@ logging.getLogger(__name__).info("Woof starting — log: %s", _log_file)
 
 from woof.agent_client import AgentClient
 from woof.config import WoofConfig
+from woof.gallery_session_manager import GallerySessionManager
 from woof.http_server import start_http_server
 from woof.server import WoofServer
 
 _config = WoofConfig.load()
 _agent = AgentClient()
-_gallery_sessions: dict = {}
+_session_manager = GallerySessionManager()
 
 
 # Wally's HTTP port is discovered dynamically after sidecar init via get_http_port_tool.
@@ -50,11 +51,11 @@ def _wally_token_fn() -> str | None:
 
 
 _http_port = start_http_server(
-    gallery_sessions=_gallery_sessions,
+    session_manager=_session_manager,
     wally_port_fn=_wally_port_fn,
     wally_token_fn=_wally_token_fn,
 )
-_server = WoofServer(_config, _http_port, agent_client=_agent, gallery_sessions=_gallery_sessions)
+_server = WoofServer(_config, _http_port, agent_client=_agent, session_manager=_session_manager)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
 

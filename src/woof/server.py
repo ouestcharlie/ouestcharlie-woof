@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +13,7 @@ from fastmcp.server.apps import AppConfig, ResourceCSP
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
+from .gallery_session_manager import GallerySessionManager
 from .http_server import get_gallery_html
 
 _log = logging.getLogger(__name__)
@@ -37,14 +37,12 @@ class WoofServer:
         config: WoofConfig,
         http_port: int,
         agent_client: AgentClient | None = None,
-        gallery_sessions: dict[str, Any] | None = None,
+        session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
-        self._gallery_sessions: dict[str, Any] = (
-            gallery_sessions if gallery_sessions is not None else {}
-        )
+        self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._backend_fields: dict[str, list[Any]] = {}  # backend name → field defs, loaded lazily
 
         agent = self._agent
@@ -217,13 +215,7 @@ class WoofServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            token = secrets.token_urlsafe(16)
-            self._gallery_sessions[token] = {
-                "matches": matches,
-                "backend": backend_name,
-                "httpPort": self.http_port,
-                "querySummary": "",
-            }
+            token = self._sessions.create(backend_name, matches, self.http_port)
             return {
                 **self._search_stats(matches, fields),
                 "session_token": token,
@@ -231,32 +223,40 @@ class WoofServer:
 
         @mcp.tool(app=AppConfig(resource_uri=_GALLERY_URI))
         async def browse_gallery(
-            session_token: str,
+            session_tokens: list[str],
             query_summary: str = "",
         ) -> dict[str, Any]:
-            """Display photos from a search result in the gallery viewer.
+            """Display photos from one or more search results in the gallery viewer.
 
-            Call search_photos first, then pass its session_token here to
-            open the gallery pre-loaded with the results.
+            Call search_photos one or more times, then pass all returned
+            session_tokens here.  Matches are merged and deduplicated by
+            content hash so the same photo never appears twice even when it
+            is returned by several queries.
 
             Args:
-                session_token: The session_token returned by search_photos.
-                query_summary: Short human-readable description of the query
-                    shown in the gallery header (e.g. "Nikon photos, July 2024").
+                session_tokens: List of session_token values returned by
+                    search_photos.  Pass a single-element list when showing
+                    one query's results.
+                query_summary: Short human-readable description shown in the
+                    gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            session = self._gallery_sessions.get(session_token)
-            if session is None:
+            unknown = self._sessions.unknown_tokens(session_tokens)
+            if unknown:
                 return {
-                    "error": f"Unknown session_token {session_token!r}. Call search_photos first."
+                    "error": (
+                        f"Unknown session_token(s): {', '.join(repr(t) for t in unknown)}. "
+                        "Call search_photos first."
+                    )
                 }
-            session["querySummary"] = query_summary
+
+            merged_token, data = self._sessions.merge(session_tokens, query_summary, self.http_port)
             return {
-                "matches": session["matches"],
-                "backend": session["backend"],
+                "matches": data["matches"],
+                "backend": data["backend"],
                 "querySummary": query_summary,
                 "httpPort": self.http_port,
-                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={session_token}",
+                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={merged_token}",
             }
 
     # ------------------------------------------------------------------

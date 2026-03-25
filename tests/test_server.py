@@ -366,7 +366,7 @@ async def test_search_photos_stores_session(server: WoofServer) -> None:
         tool_fn = await _get_tool(server, "search_photos")
         result = await tool_fn(ctx=None, backend_name="testlib")
     token = result["session_token"]
-    session = server._gallery_sessions[token]
+    session = server._sessions.sessions[token]
     assert session["matches"] == matches
     assert session["backend"] == "testlib"
     assert session["httpPort"] == 9999
@@ -394,7 +394,7 @@ async def test_search_photos_agent_error_is_logged(
 @pytest.mark.asyncio
 async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_token="bad-token")
+    result = await tool_fn(session_tokens=["bad-token"])
     assert "error" in result
 
 
@@ -402,14 +402,14 @@ async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
 async def test_browse_gallery_returns_session_matches(server: WoofServer) -> None:
     matches = _make_matches(partitions=["2024/01", "2024/01"])
     token = "test-token"
-    server._gallery_sessions[token] = {
+    server._sessions.sessions[token] = {
         "matches": matches,
         "backend": "testlib",
         "httpPort": 9999,
         "querySummary": "",
     }
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_token=token, query_summary="My query")
+    result = await tool_fn(session_tokens=[token], query_summary="My query")
     assert result["matches"] == matches
     assert result["backend"] == "testlib"
     assert result["querySummary"] == "My query"
@@ -419,15 +419,52 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
 @pytest.mark.asyncio
 async def test_browse_gallery_sets_query_summary(server: WoofServer) -> None:
     token = "tok"
-    server._gallery_sessions[token] = {
+    server._sessions.sessions[token] = {
         "matches": [],
         "backend": "testlib",
         "httpPort": 9999,
         "querySummary": "",
     }
     tool_fn = await _get_tool(server, "browse_gallery")
-    await tool_fn(session_token=token, query_summary="Summer 2024")
-    assert server._gallery_sessions[token]["querySummary"] == "Summer 2024"
+    result = await tool_fn(session_tokens=[token], query_summary="Summer 2024")
+    merged_token = result["galleryUrl"].split("token=")[-1]
+    assert server._sessions.sessions[merged_token]["querySummary"] == "Summer 2024"
+
+
+@pytest.mark.asyncio
+async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> None:
+    matches_a = _make_matches(partitions=["2024/01", "2024/02"])  # hash0, hash1
+    matches_b = _make_matches(partitions=["2024/02", "2024/03"])  # hash0 (dup), hash1 (dup)
+    # Override hashes so session B shares hash0 with session A but has a unique hash2
+    matches_b[0]["contentHash"] = "hash0"  # duplicate
+    matches_b[1]["contentHash"] = "hash2"  # unique
+
+    server._sessions.sessions["tok-a"] = {
+        "matches": matches_a,
+        "backend": "lib1",
+        "querySummary": "",
+    }
+    server._sessions.sessions["tok-b"] = {
+        "matches": matches_b,
+        "backend": "lib2",
+        "querySummary": "",
+    }
+
+    tool_fn = await _get_tool(server, "browse_gallery")
+    result = await tool_fn(session_tokens=["tok-a", "tok-b"], query_summary="")
+
+    hashes = [m["contentHash"] for m in result["matches"]]
+    assert hashes == ["hash0", "hash1", "hash2"]
+    assert result["backend"] == "lib1, lib2"
+
+
+@pytest.mark.asyncio
+async def test_browse_gallery_partial_unknown_token(server: WoofServer) -> None:
+    server._sessions.sessions["good"] = {"matches": [], "backend": "lib", "querySummary": ""}
+    tool_fn = await _get_tool(server, "browse_gallery")
+    result = await tool_fn(session_tokens=["good", "missing"])
+    assert "error" in result
+    assert "missing" in result["error"]
 
 
 # ---------------------------------------------------------------------------
