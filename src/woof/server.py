@@ -105,7 +105,7 @@ class WoofServer:
                 backend = self._require_backend(backend_name)
             else:
                 backend = self.config.backends[0]
-            return {"fields": await self._get_fields(backend)}
+            return {"name": backend.name, "fields": await self._get_fields(backend)}
 
         @mcp.tool()
         async def get_partition_summaries() -> list[Any]:
@@ -119,13 +119,11 @@ class WoofServer:
             result = []
             for b in self.config.backends:
                 try:
-                    manifest = await self._agent.call_tool(
-                        "wally", "get_partition_summaries", {}, b
-                    )
+                    summary = await self._agent.call_tool("wally", "get_partition_summaries", {}, b)
                 except AgentError as exc:
                     _log.warning("get_partition_summaries: failed for %r: %s", b.name, exc)
-                    manifest = None
-                result.append({"name": b.name, "manifest": manifest})
+                    summary = None
+                result.append({"name": b.name, "summary": summary})
             return result
 
         @mcp.tool()
@@ -152,7 +150,7 @@ class WoofServer:
                     AVIF grids. Defaults to True.
             """
             backend = self._require_backend(backend_name)
-            tool = "index_partition_tool" if partition else "index_library_tool"
+            tool = "index_partition" if partition else "index_library"
             args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
@@ -211,7 +209,7 @@ class WoofServer:
 
             try:
                 result = await self._agent.call_tool(
-                    "wally", "search_photos_tool", args, backend, progress_ctx=ctx
+                    "wally", "search_photos", args, backend, progress_ctx=ctx
                 )
             except AgentError as exc:
                 _log.error("search_photos(%r) failed: %s", backend_name, exc)
@@ -290,7 +288,7 @@ class WoofServer:
         """Compute summary statistics over a list of match dicts.
 
         ``fields`` is the descriptor list returned by Wally's
-        ``list_search_fields_tool``. For each DATE_RANGE or INT_RANGE field
+        ``list_search_fields``. For each DATE_RANGE or INT_RANGE field
         a ``{name}: {min, max}`` entry is added. Field name and match dict
         key are the same by convention.
 
@@ -323,13 +321,11 @@ class WoofServer:
         """
         if backend.name not in self._backend_fields:
             try:
-                result = await self._agent.call_tool(
-                    "wally", "list_search_fields_tool", {}, backend
-                )
+                result = await self._agent.call_tool("wally", "list_search_fields", {}, backend)
                 self._backend_fields[backend.name] = result.get("fields", [])  # type: ignore[union-attr]
             except AgentError as exc:
                 _log.warning(
-                    "list_search_fields_tool failed for %r, stats will be empty: %s",
+                    "list_search_fields failed for %r, stats will be empty: %s",
                     backend.name,
                     exc,
                 )

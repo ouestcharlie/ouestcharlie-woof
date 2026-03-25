@@ -95,8 +95,8 @@ async def test_list_search_fields_returns_fields(server: WoofServer) -> None:
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "list_search_fields")
         result = await tool_fn()
-    assert result == {"fields": mock_fields}
-    mock.assert_called_once_with("wally", "list_search_fields_tool", {}, server.config.backends[0])
+    assert result == {"name": "testlib", "fields": mock_fields}
+    mock.assert_called_once_with("wally", "list_search_fields", {}, server.config.backends[0])
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_list_search_fields_explicit_backend(server: WoofServer) -> None:
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "list_search_fields")
         result = await tool_fn(backend_name="testlib")
-    assert result == {"fields": mock_fields}
+    assert result == {"name": "testlib", "fields": mock_fields}
 
 
 @pytest.mark.asyncio
@@ -133,7 +133,7 @@ async def test_list_search_fields_wally_error_returns_empty_fields(
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "list_search_fields")
         result = await tool_fn()
-    assert result == {"fields": []}
+    assert result == {"name": "testlib", "fields": []}
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ async def test_index_backend_calls_whitebeard(server: WoofServer) -> None:
         assert result == mock_result
         mock.assert_called_once()
         assert mock.call_args[0][0] == "whitebeard"
-        assert mock.call_args[0][1] == "index_library_tool"
+        assert mock.call_args[0][1] == "index_library"
         args = mock.call_args[0][2]
         assert args["generate_thumbnails"] is True
         assert args["force_extract_exif"] is False
@@ -220,7 +220,7 @@ async def test_index_backend_with_partition(server: WoofServer) -> None:
             partition="2024/2024-07",
             force_extract_exif=False,
         )
-        assert mock.call_args[0][1] == "index_partition_tool"
+        assert mock.call_args[0][1] == "index_partition"
         assert mock.call_args[0][2]["partition"] == "2024/2024-07"
 
 
@@ -313,7 +313,7 @@ async def test_search_photos_calls_wally(server: WoofServer) -> None:
         tool_fn = await _get_tool(server, "search_photos")
         await tool_fn(ctx=None, backend_name="testlib", filters=filters)
         assert mock.call_args[0][0] == "wally"
-        assert mock.call_args[0][1] == "search_photos_tool"
+        assert mock.call_args[0][1] == "search_photos"
         assert mock.call_args[0][2]["filters"] == filters
 
 
@@ -341,7 +341,7 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
     ]
 
     async def _side_effect(agent, tool, args, backend, **kwargs):
-        if tool == "list_search_fields_tool":
+        if tool == "list_search_fields":
             return {"fields": fields}
         return {"matches": matches}
 
