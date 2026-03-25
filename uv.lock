@@ -857,6 +857,7 @@ dependencies = [
     { name = "ouestcharlie-wally" },
     { name = "ouestcharlie-whitebeard" },
     { name = "platformdirs" },
+    { name = "starlette" },
     { name = "uvicorn" },
 ]
 
@@ -877,6 +878,7 @@ requires-dist = [
     { name = "ouestcharlie-wally", editable = "../ouestcharlie-wally" },
     { name = "ouestcharlie-whitebeard", editable = "../ouestcharlie-whitebeard" },
     { name = "platformdirs", specifier = ">=4.0" },
+    { name = "starlette", specifier = ">=0.40" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 

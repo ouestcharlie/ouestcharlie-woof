@@ -1,8 +1,7 @@
 """Local HTTP server for proxying media requests and serving the gallery.
 
-Runs on 127.0.0.1 with an OS-assigned port in a daemon thread.  The gallery
-iframe fetches images directly from this server; photo data never passes
-through the MCP channel.
+Runs on 127.0.0.1 with an OS-assigned port in a daemon thread backed by
+Starlette + uvicorn (async ASGI), matching Wally's HTTP server architecture.
 
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
@@ -17,17 +16,22 @@ All backend media (thumbnails and previews) is served by Wally and proxied here.
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-import mimetypes
-import queue
+import socket
 import threading
-import urllib.error
-import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote
+
+import httpx
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
 _log = logging.getLogger(__name__)
 
@@ -70,173 +74,110 @@ def start_http_server(
         The port number the server is listening on.
     """
     sessions: dict = gallery_sessions if gallery_sessions is not None else {}
-    port_queue: queue.Queue[int] = queue.Queue()
-    bound_port: list[int] = [0]
+
+    # Bind port before starting the thread so the port is known synchronously.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", 0))
+    port: int = sock.getsockname()[1]
+
+    app = _build_app(sessions, wally_port_fn, wally_token_fn, http_port=port)
 
     def _run() -> None:
-        def handler_factory(*args: object, **kwargs: object) -> _ThumbnailHandler:
-            wally_port = wally_port_fn() if wally_port_fn is not None else None
-            wally_token = wally_token_fn() if wally_token_fn is not None else None
-            return _ThumbnailHandler(
-                sessions, bound_port[0], wally_port, wally_token, *args, **kwargs
-            )  # type: ignore[arg-type]
-
-        server = HTTPServer(("127.0.0.1", 0), handler_factory)
-        bound_port[0] = server.server_address[1]
-        port_queue.put(bound_port[0])
-        _log.info("HTTP server listening on 127.0.0.1:%d", bound_port[0])
-        server.serve_forever()
-
-    thread = threading.Thread(target=_run, daemon=True, name="woof-http")
-    thread.start()
-    return port_queue.get(timeout=10)
-
-
-class _ThumbnailHandler(BaseHTTPRequestHandler):
-    """HTTP handler for gallery, media proxy, and results API."""
-
-    def __init__(
-        self,
-        gallery_sessions: dict,
-        http_port: int,
-        wally_port: int | None,
-        wally_token: str | None,
-        *args: object,
-        **kwargs: object,
-    ) -> None:
-        self._gallery_sessions = gallery_sessions
-        self._http_port = http_port
-        self._wally_port = wally_port
-        self._wally_token = wally_token
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
-
-    def do_GET(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        path = unquote(parsed.path.lstrip("/"))
-
-        if path == "gallery" or path == "":
-            self._serve_gallery()
-            return
-
-        # /gallery/{token}
-        if path.startswith("gallery/"):
-            token = path[len("gallery/") :]
-            if token in self._gallery_sessions:
-                self._serve_gallery()
-            else:
-                self._not_found()
-            return
-
-        # /api/results/{token}
-        if path.startswith("api/results/"):
-            token = path[len("api/results/") :]
-            self._serve_results(token)
-            return
-
-        # /gallery-static/{asset_path} — Vite-built JS/CSS assets
-        if path.startswith("gallery-static/"):
-            asset_path = path[len("gallery-static/") :]
-            self._serve_static(asset_path)
-            return
-
-        # path = "{kind}/{backend_name}/{partition}/{filename}"
-        # kind is "thumbnails" or "previews"
-        parts = path.split("/", 2)
-        if len(parts) < 3:
-            self._not_found()
-            return
-
-        kind, backend_name, rest = parts
-
-        # Thumbnails and previews are both served by Wally — proxy the request.
-        if kind in ("thumbnails", "previews"):
-            self._proxy_to_wally(path)
-            return
-
-        self._not_found()
-
-    def _proxy_to_wally(self, path: str) -> None:
-        """Proxy a media request (thumbnails or previews) to Wally's HTTP server."""
-        if self._wally_port is None:
-            self.send_error(503, "Wally preview server not available")
-            return
-        safe = "/:@!$&'()*+,;="
-        url = f"http://127.0.0.1:{self._wally_port}/{quote(path, safe=safe)}"
-        headers = {}
-        if self._wally_token:
-            headers["Authorization"] = f"Bearer {self._wally_token}"
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = resp.read()
-            content_type = resp.headers.get("Content-Type", "image/jpeg")
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(data)
-        except urllib.error.HTTPError as exc:
-            self.send_error(exc.code)
-        except Exception as exc:
-            _log.error("Proxy to Wally failed for %r: %s", path, exc)
-            self.send_error(503)
+            asyncio.run(_serve(app, sock))
+        except Exception:
+            _log.exception("HTTP server thread crashed")
 
-    def _serve_static(self, asset_path: str) -> None:
-        file_path = (_GALLERY_DIST_DIR / asset_path).resolve()
-        # Prevent path traversal outside dist/
+    threading.Thread(target=_run, daemon=True, name="woof-http").start()
+    _wait_for_port(port)
+    _log.info("HTTP server listening on 127.0.0.1:%d", port)
+    return port
+
+
+async def _serve(app: Any, sock: socket.socket) -> None:
+    import uvicorn
+
+    class _Server(uvicorn.Server):
+        def install_signal_handlers(self) -> None:
+            pass  # Signal handling belongs to the main thread; no-op in daemon thread
+
+    config = uvicorn.Config(app, log_level="warning", access_log=False)
+    server = _Server(config)
+    await server.serve(sockets=[sock])
+
+
+def _wait_for_port(port: int, timeout: float = 5.0) -> None:
+    """Block until the server is accepting TCP connections on the given port."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         try:
-            file_path.relative_to(_GALLERY_DIST_DIR.resolve())
-        except ValueError:
-            self._not_found()
-            return
-        if not file_path.exists() or not file_path.is_file():
-            self._not_found()
-            return
-        data = file_path.read_bytes()
-        mime, _ = mimetypes.guess_type(str(file_path))
-        self.send_response(200)
-        self.send_header("Content-Type", mime or "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(data)
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                return
+        except OSError:
+            time.sleep(0.05)
+    raise TimeoutError(f"HTTP server did not start on port {port} within {timeout}s")
 
-    def _serve_results(self, token: str) -> None:
-        session = self._gallery_sessions.get(token)
+
+def _build_app(
+    sessions: dict,
+    wally_port_fn: Any | None,
+    wally_token_fn: Any | None,
+    http_port: int,
+) -> Any:
+    """Build and return the Starlette ASGI application."""
+
+    async def gallery_token(request: Request) -> Response:
+        token = request.path_params["token"]
+        if token not in sessions:
+            return Response(status_code=404)
+        html = get_gallery_html(http_port)
+        return HTMLResponse(
+            html,
+            headers={"Content-Security-Policy": "default-src 'self' http://127.0.0.1:*"},
+        )
+
+    async def api_results(request: Request) -> Response:
+        token = request.path_params["token"]
+        session = sessions.get(token)
         if session is None:
-            self._json_error(404, f"Session {token!r} not found or expired")
-            return
-        self._json_response(session)
+            return JSONResponse(
+                {"error": f"Session {token!r} not found or expired"}, status_code=404
+            )
+        return JSONResponse(session)
 
-    def _json_response(self, data: Any, status: int = 200) -> None:
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+    async def proxy_media(request: Request) -> Response:
+        wally_port = wally_port_fn() if wally_port_fn is not None else None
+        if wally_port is None:
+            return Response("Wally preview server not available", status_code=503)
+        kind = request.path_params["kind"]
+        rest = request.path_params["rest"]
+        safe = "/:@!$&'()*+,;="
+        url = f"http://127.0.0.1:{wally_port}/{quote(f'{kind}/{rest}', safe=safe)}"
+        headers: dict[str, str] = {}
+        wally_token = wally_token_fn() if wally_token_fn is not None else None
+        if wally_token:
+            headers["Authorization"] = f"Bearer {wally_token}"
+        async with httpx.AsyncClient() as client:
+            try:
+                upstream = await client.get(url, headers=headers, timeout=120.0)
+            except Exception as exc:
+                _log.error("Proxy to Wally failed for %r/%r: %s", kind, rest, exc)
+                return Response(status_code=503)
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type", "image/jpeg"),
+        )
 
-    def _json_error(self, status: int, message: str) -> None:
-        self._json_response({"error": message}, status)
-
-    def _serve_gallery(self) -> None:
-        html = get_gallery_html(self._http_port)
-        data = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Security-Policy", "default-src 'self' http://127.0.0.1:*")
-        self.end_headers()
-        self.wfile.write(data)
-
-    def _not_found(self) -> None:
-        self.send_error(404)
-
-    def log_message(self, format: str, *args: object) -> None:
-        _log.debug("HTTP %s", format % args)
+    routes = [
+        Route("/gallery/{token}", gallery_token),
+        Route("/api/results/{token}", api_results),
+        Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
+        Route("/{kind}/{rest:path}", proxy_media),
+    ]
+    app = Starlette(routes=routes)
+    return CORSMiddleware(app, allow_origins=["*"])
 
 
 def _gallery_placeholder() -> str:

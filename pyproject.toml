@@ -21,6 +21,7 @@ dependencies = [
     "mcp>=1.0",
     "fastmcp>=3.0",
     "httpx>=0.27",
+    "starlette>=0.40",
     "uvicorn>=0.30",
     "ouestcharlie-py-toolkit>=0.1.0",
     "platformdirs>=4.0",
