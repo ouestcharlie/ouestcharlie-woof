@@ -48,6 +48,10 @@ packages = ["src/woof"]
 asyncio_mode = "strict"
 testpaths = ["tests"]
 tmp_path_retention_policy = "none"
+filterwarnings = [
+    "ignore::DeprecationWarning:websockets",
+    "ignore::DeprecationWarning:uvicorn",
+]
 
 [tool.ruff]
 target-version = "py311"
