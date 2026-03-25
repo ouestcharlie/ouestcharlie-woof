@@ -20,7 +20,6 @@ import asyncio
 import logging
 import socket
 import threading
-import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -82,41 +81,34 @@ def start_http_server(
     port: int = sock.getsockname()[1]
 
     app = _build_app(sessions, wally_port_fn, wally_token_fn, http_port=port)
+    ready = threading.Event()
 
     def _run() -> None:
         try:
-            asyncio.run(_serve(app, sock))
+            asyncio.run(_serve(app, sock, ready))
         except Exception:
             _log.exception("HTTP server thread crashed")
 
     threading.Thread(target=_run, daemon=True, name="woof-http").start()
-    _wait_for_port(port)
+    ready.wait(timeout=5.0)
     _log.info("HTTP server listening on 127.0.0.1:%d", port)
     return port
 
 
-async def _serve(app: Any, sock: socket.socket) -> None:
+async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
     import uvicorn
 
     class _Server(uvicorn.Server):
         def install_signal_handlers(self) -> None:
             pass  # Signal handling belongs to the main thread; no-op in daemon thread
 
+        async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+            await super().startup(sockets=sockets)
+            ready.set()
+
     config = uvicorn.Config(app, log_level="warning", access_log=False)
     server = _Server(config)
     await server.serve(sockets=[sock])
-
-
-def _wait_for_port(port: int, timeout: float = 5.0) -> None:
-    """Block until the server is accepting TCP connections on the given port."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
-                return
-        except OSError:
-            time.sleep(0.05)
-    raise TimeoutError(f"HTTP server did not start on port {port} within {timeout}s")
 
 
 def _build_app(

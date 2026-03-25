@@ -67,3 +67,30 @@ def test_results_unknown_token_returns_404() -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(url)
     assert exc_info.value.code == 404
+
+
+def test_gallery_static_not_intercepted_by_proxy() -> None:
+    """Requests to /gallery-static/ must reach StaticFiles, not proxy_media.
+
+    A missing file returns 404 (StaticFiles); if the catch-all proxy_media
+    intercepted it first, we would get 503 (no Wally configured).
+    """
+    port = start_http_server()
+    url = f"http://127.0.0.1:{port}/gallery-static/nonexistent.js"
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(url)
+    assert exc_info.value.code == 404
+
+
+def test_cors_header_present_on_responses() -> None:
+    """Responses to cross-origin requests must carry Access-Control-Allow-Origin: *.
+
+    CORSMiddleware only adds the header when the request includes an Origin header,
+    matching real browser behaviour.
+    """
+    sessions: dict = {"tok789": {"matches": [], "backend": "testlib", "httpPort": 0}}
+    port = start_http_server(gallery_sessions=sessions)
+    url = f"http://127.0.0.1:{port}/api/results/tok789"
+    req = urllib.request.Request(url, headers={"Origin": "http://example.com"})
+    with urllib.request.urlopen(req) as resp:
+        assert resp.headers["Access-Control-Allow-Origin"] == "*"
