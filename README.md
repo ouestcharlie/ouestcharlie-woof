@@ -12,6 +12,7 @@ Most photo managers either lock your library into a cloud service (Google Photos
 - **No database.** Metadata is stored as XMP sidecars alongside your photos and in lightweight JSON manifests. Copy the folder, move the drive — your organization travels with your photos.
 - **Open formats.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. If you ever stop using OuEstCharlie, every other tool (Lightroom, darktable, ExifTool) can still read your metadata.
 - **No cloud dependency.** Your photos stay on your own storage: a local drive, a mounted cloud drive (iCloud, OneDrive), or anything accessible as a filesystem.
+- **No deep AI dependency.** Only part of the metadata is shared with the AI tool (e.g. Claude Desktop), the pictures are served locally by Woof, the full metadata is managed by Woof and its companions (Wally, Whitebeard).
 
 ---
 
@@ -71,11 +72,7 @@ extensions:
 
 Once Woof is connected to your AI client, ask it to register your photo folder:
 
-> *"Register my Photos folder as a backend"*
-
-Or more precisely:
-
-> *"Add a local backend pointing to /Users/yourname/Pictures"*
+> *"Add a local backend to Woof pointing to /Users/yourname/Pictures"*
 
 Woof will create a configuration entry for this folder and prepare it for indexing.
 
@@ -91,19 +88,17 @@ Woof will launch the indexing agent, which will:
 - Generate thumbnails and previews
 - Build a hierarchical manifest for fast querying
 
-Indexing a large library takes time. You can ask for status updates:
-
-> *"What's the indexing status?"*
+Indexing a large library takes time, from 10 to 100 millisecond per picture. 
 
 ### 3. Test your first queries
 
 Once indexing is complete, start browsing:
 
-> *"Show me photos from last July"*
+> *"Show me photos in Woof from last July"*
 
-> *"Show me pictures located close to Paris"*
+> *"In Woof, Show me pictures located close to Paris"*
 
-> *"How many photos do I have?"*
+> *"How many photos do I have in Woof?"*
 
 The gallery panel will appear inline in your conversation with matching results.
 

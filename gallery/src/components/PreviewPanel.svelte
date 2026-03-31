@@ -26,10 +26,12 @@
 
   // Compute explicit pixel dimensions so the container is never 0×0.
   // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
-  // Height drives sizing (capped at 90vh); width follows the aspect ratio, capped at 100vw.
+  // CHROME_RESERVED accounts for all vertical chrome outside the image:
+  //   header (~50px) + status bar (~30px) + meta block + gap (~75px) + Claude prompt overlay (~80px)
+  const CHROME_RESERVED = 235;
   let containerSize = $derived(
     (() => {
-      const maxH = windowH * 0.9;
+      const maxH = Math.max(100, windowH - CHROME_RESERVED);
       const maxW = windowW;
       const w = match?.width, h = match?.height;
       if (!w || !h) return { width: Math.min(maxH, maxW), height: Math.min(maxH, maxW) };
@@ -151,7 +153,6 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    overflow: hidden;
   }
 
   .viewer {
