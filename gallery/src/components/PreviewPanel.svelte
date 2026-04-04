@@ -8,9 +8,10 @@
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
+   *   onShare?: (hashes: string[]) => void,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile, onShare, canShare = false } = $props();
 
   let match = $derived(matches[selectedIndex]);
   let thumbTile = $derived(thumbnailTile(match));
@@ -86,6 +87,18 @@
 </script>
 
 <div class="panel">
+  <div class="panel-toolbar">
+    <button
+      class="share-btn"
+      title="Share to host"
+      disabled={!canShare}
+      onclick={() => onShare?.([match.contentHash])}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 1l4 4H9v5H7V5H4L8 1zM2 11v3h12v-3h-1.5v1.5h-9V11H2z"/>
+      </svg>
+    </button>
+  </div>
   <div class="viewer">
     <!--
       Container pre-sized to the photo's actual aspect ratio.
@@ -148,11 +161,36 @@
   .panel {
     flex: 1;
     min-height: 0;
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
+  }
+
+  .panel-toolbar {
+    position: absolute;
+    top: 0.5rem;
+    left: 1rem;
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .share-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0.3rem 0.4rem;
+    border-radius: 4px;
+    line-height: 0;
+  }
+
+  .share-btn:hover {
+    background: #222;
+    color: #eee;
+    border-color: #666;
   }
 
   .viewer {

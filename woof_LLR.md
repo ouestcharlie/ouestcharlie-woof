@@ -62,6 +62,13 @@ This document captures the requirements for Woof, the user-facing controller com
 - Woof shall maintain a dirty partition queue with debounce logic (default: 10 minutes quiet period)
 - Woof shall schedule housekeeping agents for dirty partitions after the debounce window expires
 
+## Gallery Photo Sharing
+
+- The gallery shall allow the user to select one or more photos and share them into the active MCP Host conversation
+- Photo binaries are served on demand by a Woof MCP resource, fetched from Wally when the host resolves the resource link
+- The gallery shall limit share actions to a maximum of 10 photos at a time
+- The share button shall be disabled when the gallery is accessed outside a Claude Desktop host (i.e. no MCP Apps connection is established)
+
 ## User Approval
 
 - Woof shall present agent scope requests to the user for explicit approval before issuing credentials

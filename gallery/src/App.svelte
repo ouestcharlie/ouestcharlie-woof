@@ -1,5 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { App } from '@modelcontextprotocol/ext-apps';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
@@ -16,6 +17,10 @@
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
 
+  let sessionToken = $state(null);
+  let selectedHashes = new SvelteSet();
+  let shareStatus = $state(null); // null | 'sharing' | 'done' | 'error'
+
   function applySession(session) {
     httpPort = session.httpPort ?? httpPort;
     backendName = session.backend;
@@ -25,6 +30,25 @@
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
+    if (session.sessionToken) sessionToken = session.sessionToken;
+  }
+
+  async function sharePhotos(hashes) {
+    if (!sessionToken || !hashes?.length || !mcpApp) return;
+    shareStatus = 'sharing';
+    try {
+      const result = await mcpApp.callServerTool({
+        name: 'share_photos_with_claude',
+        arguments: { session_token: sessionToken, content_hashes: hashes },
+      });
+      if (result.isError) throw new Error('Tool returned error');
+      selectedHashes.clear();
+      shareStatus = 'done';
+      setTimeout(() => { shareStatus = null; }, 2000);
+    } catch {
+      shareStatus = 'error';
+      setTimeout(() => { shareStatus = null; }, 3000);
+    }
   }
 
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
@@ -34,10 +58,15 @@
     // Path 1: URL ?token= param — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
-    const token = new URLSearchParams(location.search).get('token');
+    // Token can be a query param (?token=...) or a path segment (/gallery/{token}).
+    const params = new URLSearchParams(location.search);
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    const token = params.get('token')
+      || (pathParts[0] === 'gallery' && pathParts[1] ? pathParts[1] : null);
     const port = location.port ? parseInt(location.port) : 80;
     if (token) {
       httpPort = port;
+      sessionToken = token;
       fetch(`http://127.0.0.1:${port}/api/results/${token}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
         .then(data => applySession(data))
@@ -152,8 +181,14 @@
       {loading}
       {selectedIndex}
       {thumbnailTile}
+      {selectedHashes}
+      canShare={mcpApp !== null}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}
+      onToggleSelect={(hash) => {
+        if (selectedHashes.has(hash)) selectedHashes.delete(hash); else selectedHashes.add(hash);
+      }}
+      onShare={() => sharePhotos([...selectedHashes])}
     />
   </div>
 
@@ -165,11 +200,23 @@
         onNavigate={(i) => (selectedIndex = i)}
         {previewUrl}
         {thumbnailTile}
+        canShare={mcpApp !== null}
+        onShare={(hashes) => sharePhotos(hashes)}
       />
     </div>
   {/if}
 
-  <div class="status">{status}</div>
+  <div class="status">
+    {#if shareStatus === 'sharing'}
+      Sharing…
+    {:else if shareStatus === 'done'}
+      Shared ✓
+    {:else if shareStatus === 'error'}
+      Share failed
+    {:else}
+      {status}
+    {/if}
+  </div>
 </div>
 
 <style>

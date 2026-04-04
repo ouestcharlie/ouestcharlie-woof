@@ -167,3 +167,41 @@ def test_merge_empty_sessions() -> None:
     _, data = mgr.merge([tok_a, tok_b], "", 9999)
     assert data["matches"] == []
     assert data["backend"] == ""
+
+
+# ---------------------------------------------------------------------------
+# get_matches_by_hashes
+# ---------------------------------------------------------------------------
+
+
+def test_get_matches_by_hashes_returns_matching_subset() -> None:
+    m1 = _match("h1")
+    m2 = _match("h2")
+    m3 = _match("h3")
+    mgr, [tok] = _manager_with_sessions({"matches": [m1, m2, m3]})
+    result = mgr.get_matches_by_hashes(tok, ["h1", "h3"])
+    assert [m["contentHash"] for m in result] == ["h1", "h3"]
+
+
+def test_get_matches_by_hashes_preserves_hash_order() -> None:
+    matches = [_match(f"h{i}") for i in range(5)]
+    mgr, [tok] = _manager_with_sessions({"matches": matches})
+    result = mgr.get_matches_by_hashes(tok, ["h4", "h1", "h2"])
+    assert [m["contentHash"] for m in result] == ["h4", "h1", "h2"]
+
+
+def test_get_matches_by_hashes_unknown_hashes_are_skipped() -> None:
+    mgr, [tok] = _manager_with_sessions({"matches": [_match("h1")]})
+    result = mgr.get_matches_by_hashes(tok, ["h1", "ghost"])
+    assert len(result) == 1
+    assert result[0]["contentHash"] == "h1"
+
+
+def test_get_matches_by_hashes_unknown_token_returns_empty() -> None:
+    mgr = GallerySessionManager()
+    assert mgr.get_matches_by_hashes("no-such-token", ["h1"]) == []
+
+
+def test_get_matches_by_hashes_empty_hashes_returns_empty() -> None:
+    mgr, [tok] = _manager_with_sessions({"matches": [_match("h1")]})
+    assert mgr.get_matches_by_hashes(tok, []) == []

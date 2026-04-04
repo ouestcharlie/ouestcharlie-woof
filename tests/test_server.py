@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.types import ResourceLink, TextContent
 
 from woof.agent_client import AgentError
 from woof.config import BackendConfig, WoofConfig
@@ -427,7 +428,7 @@ async def test_browse_gallery_sets_query_summary(server: WoofServer) -> None:
     }
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=[token], query_summary="Summer 2024")
-    merged_token = result["galleryUrl"].split("token=")[-1]
+    merged_token = result["galleryUrl"].rstrip("/").split("/")[-1]
     assert server._sessions.sessions[merged_token]["querySummary"] == "Summer 2024"
 
 
@@ -465,6 +466,117 @@ async def test_browse_gallery_partial_unknown_token(server: WoofServer) -> None:
     result = await tool_fn(session_tokens=["good", "missing"])
     assert "error" in result
     assert "missing" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_browse_gallery_returns_session_token(server: WoofServer) -> None:
+    """browse_gallery must include sessionToken so the gallery can call share_photos."""
+    server._sessions.sessions["tok"] = {
+        "matches": [],
+        "backend": "testlib",
+        "httpPort": 9999,
+        "querySummary": "",
+    }
+    tool_fn = await _get_tool(server, "browse_gallery")
+    result = await tool_fn(session_tokens=["tok"])
+    assert "sessionToken" in result
+    assert isinstance(result["sessionToken"], str) and result["sessionToken"]
+
+
+# ---------------------------------------------------------------------------
+# share_photos_with_claude
+# ---------------------------------------------------------------------------
+
+
+def _session_with_matches(*hashes: str, backend: str = "testlib") -> dict[str, Any]:
+    """Build a minimal session dict for share_photos tests."""
+    return {
+        "matches": [
+            {
+                "contentHash": h,
+                "partition": "2024/01",
+                "filename": f"{h}.jpg",
+                "filePath": f"2024/01/{h}.jpg",
+            }
+            for h in hashes
+        ],
+        "backend": backend,
+        "httpPort": 9999,
+        "querySummary": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_share_photos_returns_resource_links(server: WoofServer) -> None:
+    """Each photo is returned as a ResourceLink pointing to photos://preview/..."""
+    server._sessions.sessions["tok"] = _session_with_matches("h1", "h2")
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    result = await tool_fn(session_token="tok", content_hashes=["h1", "h2"])
+    links = [item for item in result if isinstance(item, ResourceLink)]
+    assert len(links) == 2
+    assert str(links[0].uri) == "photos://preview/tok/h1"
+    assert links[0].mimeType == "image/jpeg"
+    assert links[0].name == "h1.jpg"
+    assert str(links[1].uri) == "photos://preview/tok/h2"
+
+
+@pytest.mark.asyncio
+async def test_share_photos_includes_metadata_text(server: WoofServer) -> None:
+    session = _session_with_matches("h1")
+    session["matches"][0].update(
+        {"dateTaken": "2024-07-15T14:32:00", "make": "Canon", "model": "EOS R5"}
+    )
+    server._sessions.sessions["tok"] = session
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    result = await tool_fn(session_token="tok", content_hashes=["h1"])
+    texts = [item.text for item in result if isinstance(item, TextContent)]
+    meta = next(t for t in texts if "h1.jpg" in t)
+    assert "2024-07-15" in meta
+    assert "Canon EOS R5" in meta
+
+
+@pytest.mark.asyncio
+async def test_share_photos_includes_tags_in_metadata(server: WoofServer) -> None:
+    session = _session_with_matches("h1")
+    session["matches"][0]["tags"] = ["beach", "sunset"]
+    server._sessions.sessions["tok"] = session
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    result = await tool_fn(session_token="tok", content_hashes=["h1"])
+    texts = [item.text for item in result if isinstance(item, TextContent)]
+    meta = next(t for t in texts if "h1.jpg" in t)
+    assert "beach" in meta and "sunset" in meta
+
+
+@pytest.mark.asyncio
+async def test_share_photos_unknown_token_raises(server: WoofServer) -> None:
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    with pytest.raises(ValueError, match="Unknown session token"):
+        await tool_fn(session_token="ghost", content_hashes=["h1"])
+
+
+@pytest.mark.asyncio
+async def test_share_photos_empty_hashes_raises(server: WoofServer) -> None:
+    server._sessions.sessions["tok"] = _session_with_matches("h1")
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    with pytest.raises(ValueError, match="No photos selected"):
+        await tool_fn(session_token="tok", content_hashes=[])
+
+
+@pytest.mark.asyncio
+async def test_share_photos_too_many_hashes_raises(server: WoofServer) -> None:
+    hashes = [f"h{i}" for i in range(11)]
+    server._sessions.sessions["tok"] = _session_with_matches(*hashes)
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    with pytest.raises(ValueError, match="10 photos"):
+        await tool_fn(session_token="tok", content_hashes=hashes)
+
+
+@pytest.mark.asyncio
+async def test_share_photos_unmatched_hashes_raises(server: WoofServer) -> None:
+    server._sessions.sessions["tok"] = _session_with_matches("h1")
+    tool_fn = await _get_tool(server, "share_photos_with_claude")
+    with pytest.raises(ValueError, match="found in this session"):
+        await tool_fn(session_token="tok", content_hashes=["ghost"])
 
 
 # ---------------------------------------------------------------------------

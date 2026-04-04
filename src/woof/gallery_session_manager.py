@@ -54,6 +54,18 @@ class GallerySessionManager:
         """Return the subset of *tokens* not present in the session store."""
         return [t for t in tokens if t not in self._sessions]
 
+    def get_matches_by_hashes(self, token: str, content_hashes: list[str]) -> list[Any]:
+        """Return matches from *token*'s session filtered to *content_hashes*.
+
+        Preserves the order of *content_hashes*.  Returns an empty list if the
+        token is unknown or none of the hashes are found.
+        """
+        session = self.get(token)
+        if not session:
+            return []
+        by_hash = {m["contentHash"]: m for m in session["matches"] if m.get("contentHash")}
+        return [by_hash[h] for h in content_hashes if h in by_hash]
+
     def merge(
         self,
         tokens: list[str],

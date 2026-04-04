@@ -8,8 +8,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 from fastmcp import Context, FastMCP
 from fastmcp.server.apps import AppConfig, ResourceCSP
+from mcp.types import ResourceLink, TextContent
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
@@ -57,6 +59,7 @@ class WoofServer:
         self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
         self._register_tools()
         self._register_gallery_resource()
+        self._register_photo_resource()
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -256,8 +259,67 @@ class WoofServer:
                 "backend": data["backend"],
                 "querySummary": query_summary,
                 "httpPort": self.http_port,
-                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={merged_token}",
+                "sessionToken": merged_token,
+                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery/{merged_token}",
             }
+
+        @mcp.tool()
+        async def share_photos_with_claude(
+            session_token: str,
+            content_hashes: list[str],
+        ) -> list[TextContent | ResourceLink]:
+            """Share selected photos from the gallery into the Claude conversation.
+
+            Returns resource links that Claude Desktop resolves via resources/read.
+            Maximum 10 photos per share action.
+
+            Args:
+                session_token: sessionToken value from browse_gallery.
+                content_hashes: List of contentHash values of the photos to share.
+            """
+            if not content_hashes:
+                raise ValueError("No photos selected.")
+            if len(content_hashes) > 10:
+                raise ValueError("Cannot share more than 10 photos at a time.")
+
+            session = self._sessions.get(session_token)
+            if session is None:
+                raise ValueError(
+                    f"Unknown session token: {session_token!r}. Call browse_gallery first."
+                )
+
+            matches = self._sessions.get_matches_by_hashes(session_token, content_hashes)
+            if not matches:
+                raise ValueError("None of the requested photos were found in this session.")
+
+            content: list[TextContent | ResourceLink] = [
+                TextContent(type="text", text=f"Sharing {len(matches)} photo(s) from the gallery:"),
+            ]
+            for match in matches:
+                content_hash = match["contentHash"]
+                filename = match.get("filename", content_hash)
+                content.append(
+                    ResourceLink(
+                        type="resource_link",
+                        uri=f"photos://preview/{session_token}/{content_hash}",
+                        mimeType="image/jpeg",
+                        name=filename,
+                    )
+                )
+                parts: list[str] = []
+                date_taken = match.get("dateTaken")
+                if date_taken:
+                    parts.append(str(date_taken)[:10])
+                camera = " ".join(filter(None, [match.get("make"), match.get("model")]))
+                if camera:
+                    parts.append(camera)
+                tags = match.get("tags")
+                if tags:
+                    parts.append(f"tags: {', '.join(tags)}")
+                meta_line = filename + (" • " + " • ".join(parts) if parts else "")
+                content.append(TextContent(type="text", text=meta_line))
+
+            return content
 
     # ------------------------------------------------------------------
     # Gallery resource
@@ -278,6 +340,47 @@ class WoofServer:
         )
         async def gallery_resource() -> str:
             return get_gallery_html(self.http_port)
+
+    # ------------------------------------------------------------------
+    # Photo preview resource
+    # ------------------------------------------------------------------
+
+    def _register_photo_resource(self) -> None:
+        agent = self._agent
+        sessions = self._sessions
+
+        @self.mcp.resource("photos://preview/{session_token}/{content_hash}")
+        async def photo_preview_resource(session_token: str, content_hash: str) -> bytes:
+            """Serve a photo preview JPEG on demand via the MCP resource protocol."""
+            session = sessions.get(session_token)
+            if session is None:
+                raise ValueError(f"Unknown session token: {session_token!r}")
+
+            matches = sessions.get_matches_by_hashes(session_token, [content_hash])
+            if not matches:
+                raise ValueError(f"Photo {content_hash!r} not found in session.")
+
+            match = matches[0]
+            partition = match["partition"]
+            backend_name = session["backend"].split(", ")[0]
+
+            wally_port = agent.get_wally_http_port(backend_name)
+            wally_token = agent.get_wally_token(backend_name)
+            if wally_port is None:
+                raise RuntimeError(f"Wally is not available for backend {backend_name!r}")
+
+            url = (
+                f"http://127.0.0.1:{wally_port}/previews"
+                f"/{backend_name}/{partition}/{content_hash}.jpg"
+            )
+            headers: dict[str, str] = {}
+            if wally_token:
+                headers["Authorization"] = f"Bearer {wally_token}"
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, timeout=120.0)
+                resp.raise_for_status()
+                return resp.content
 
     # ------------------------------------------------------------------
     # Helpers

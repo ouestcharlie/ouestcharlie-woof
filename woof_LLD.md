@@ -34,8 +34,28 @@ Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude ca
 
 - **Library management**: `index_backend`, `list_backends`, `get_status`
 - **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference)
+- **Gallery sharing**: `share_photos_with_claude` (invoked from the gallery by the user)
 - **Album operations**: `list_albums`, `create_album`, `add_to_album`
 - **Configuration**: `add_backend`, `configure_credentials`
+
+### Gallery photo sharing flow
+
+The gallery allows the user to select photos and share them directly into the Claude conversation (e.g. to write a blog post, generate captions, or create labels). Sharing is initiated from inside the gallery iframe and surfaces photos as MCP resources in Claude's context.
+
+**Flow:**
+
+1. The user selects photos in the gallery (checkboxes on thumbnail tiles, or the share button in the preview panel).
+2. The gallery calls `share_photos_with_claude(session_token, content_hashes)` via `mcpApp.callServerTool()` (MCP Apps SDK).
+3. Woof looks up the selected matches in the session, builds a content list of `TextContent` (metadata summary) + `ResourceLink` entries — one per photo — and returns it as the tool result.
+4. Each `ResourceLink` carries a `photos://preview/{session_token}/{content_hash}` URI and `mimeType: image/jpeg`. No binary data is embedded in the tool response.
+5. When the MCP host resolves a resource link, it calls `resources/read` on Woof. Woof's resource handler fetches the preview JPEG from Wally on demand and returns it as `BlobResourceContents`. Wally generates the JPEG if not yet cached (blocking up to 120 s for RAW decode).
+
+**Limits:** Maximum 10 photos per share action.
+
+**Metadata per photo** (included as `TextContent` after each `ResourceLink`):
+```
+filename.jpg • YYYY-MM-DD • Camera Make Model • tags: tag1, tag2
+```
 
 ### Search → Gallery session flow
 
@@ -66,8 +86,10 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 **Progressive preview loading**: When the user opens the preview panel, the gallery immediately displays the corresponding thumbnail tile (already cached locally) scaled up and blurred as a placeholder. The full-resolution JPEG preview is fetched in the background and fades in once loaded, with no layout shift (the container is pre-sized using the photo's `width`/`height` from manifest EXIF data).
 
 **Bidirectional flow**:
-- Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
+- Gallery → Woof: tool calls for search, navigation, album actions, and photo sharing (via `mcpApp.callServerTool()` from the MCP Apps SDK)
 - Woof → Gallery: push fresh results as search completes, update indexing progress indicators
+
+**Photo selection and sharing**: The grid view shows a checkbox overlay on each tile (visible on hover or when any photo is selected). A share icon button in the top-left toolbar (tooltip: "Share to host") is enabled when one or more photos are selected. In the preview panel a corresponding per-photo share button is also present. Share state (`selectedHashes`) persists across page changes. The button is disabled when the gallery is accessed outside Claude Desktop (`mcpApp === null`).
 
 **Pagination**: The gallery renders photos in pages of 20 to avoid iframe height overflow (the iframe expands to content height in Claude Desktop, making CSS scroll unreliable). Prev/Next navigation is rendered above and below the grid when `pageCount > 1`.
 
@@ -84,6 +106,12 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 | `GET /gallery/<token>` | Gallery HTML (MCP App) |
 | `GET /gallery-static/<path>` | Vite-built JS/CSS assets |
 | `GET /api/results/<token>` | JSON session data (matches + metadata) |
+
+**MCP Resources** (served via `resources/read` on `WoofServer.mcp`):
+
+| URI | Handler |
+|---|---|
+| `photos://preview/{session_token}/{content_hash}` | Fetches preview JPEG from Wally on demand; returns `BlobResourceContents` (image/jpeg) |
 
 The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
 
