@@ -2,17 +2,20 @@
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
 
-Woof is the gateway to **OuEstCharlie**, a media management system that keeps your photos exactly where they are — on your own drives — while giving you a modern, searchable gallery powered by your AI assistant.
+Woof is the gateway to **OuEstCharlie**, a photo management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable gallery powered by your AI assistant.
+
+No cloud subscription. No proprietary lock-in. Your library, your way.
 
 ## What makes it different
 
-Most photo managers either lock your library into a cloud service (Google Photos, iCloud) or require a database server that becomes a single point of failure. Woof takes a different approach:
+Most photo managers lock your library into a cloud service (Google Photos, iCloud) or require a database server that becomes a single point of failure. Woof takes a different approach:
 
-- **AI-native interface.** Woof runs as an MCP server. Your AI assistant becomes your gallery UI — browse, search, and query your photos in natural conversation.
-- **No database.** Metadata is stored as XMP sidecars alongside your photos and in lightweight JSON manifests. Copy the folder, move the drive — your organization travels with your photos.
-- **Open formats.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. If you ever stop using OuEstCharlie, every other tool (Lightroom, darktable, ExifTool) can still read your metadata.
-- **No cloud dependency.** Your photos stay on your own storage: a local drive, a mounted cloud drive (iCloud, OneDrive), or anything accessible as a filesystem.
-- **No deep AI dependency.** Only part of the metadata is shared with the AI tool (e.g. Claude Desktop), the pictures are served locally by Woof, the full metadata is managed by Woof and its companions (Wally, Whitebeard).
+- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
+- **Privacy by design.** Only metadata travels to your AI assistant — your actual photos are served locally by Woof. Your pictures are never uploaded to any AI service unless you explicitly ask.
+- **No database.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
+- **Open formats, forever.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. Every tool you already use — Lightroom, darktable, ExifTool — can read your metadata today and long after OuEstCharlie is gone.
+- **Your photos are never touched.** Woof reads your library as-is. It never modifies, moves, or deletes your original files. It also honors existing XMP metadata from Lightroom, darktable, or any other tool — rather than overwriting it.
+- **Works with your existing folder structure.** Just point Woof at your photos folder. No migration, no reorganization required.
 
 ---
 
@@ -68,39 +71,49 @@ extensions:
 
 ## First Steps
 
-### 1. Register a local backend
+### 1. Register your photos folder
 
 Once Woof is connected to your AI client, ask it to register your photo folder:
 
 > *"Add a local backend to Woof pointing to /Users/yourname/Pictures"*
 
-Woof will create a configuration entry for this folder and prepare it for indexing.
+Woof supports any folder on a local drive — including folders synced from iCloud Drive, OneDrive, or Google Drive, as long as the files are locally available.
 
-### 2. Index the backend
+### 2. Index your library
 
-Trigger the indexer (Whitebeard) to scan your photos and build the metadata index:
+Trigger the indexer to scan your photos and build the metadata index:
 
 > *"Index my local backend"*
 
 Woof will launch the indexing agent, which will:
-- Extract EXIF/XMP metadata from each photo
-- Write XMP sidecar files alongside your originals
+- Read EXIF/XMP metadata from each photo
+- Write XMP sidecar files alongside your originals (never modifying the originals)
 - Generate thumbnails and previews
-- Build a hierarchical manifest for fast querying
+- Build a fast index for querying
 
-Indexing a large library takes time, from 10 to 100 millisecond per picture. 
+Indexing speed is roughly 10 to 100 seconds per 1,000 photos depending on format and hardware.
 
-### 3. Test your first queries
+### 3. Start browsing
 
-Once indexing is complete, start browsing:
+Once indexing is complete, just ask:
 
 > *"Show me photos in Woof from last July"*
 
-> *"In Woof, Show me pictures located close to Paris"*
+> *"In Woof, show me pictures taken near Paris"*
 
 > *"How many photos do I have in Woof?"*
 
 The gallery panel will appear inline in your conversation with matching results.
+
+---
+
+## Storage
+
+V1 supports **local filesystem** backends on macOS, Linux, and Windows. This includes:
+- A standard local hard drive or SSD
+- A folder synced from iCloud Drive, OneDrive, Google Drive, or Infomaniak kDrive — as long as files are downloaded and locally accessible
+
+Native cloud storage (S3, Azure, GCS, OneDrive API) is planned for V2.
 
 ---
 
@@ -111,17 +124,20 @@ Woof is an **early preview** targeting a focused V1 scope:
 | Feature | Status |
 |---|---|
 | Local filesystem indexing (macOS, Linux, Windows) | Working |
+| Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
 | JPEG, HEIC, RAW, PNG support | Working |
 | Date-based search | Working |
 | Gallery view (Claude Desktop) | Working |
-| Cloud backends (S3, OneDrive, iCloud Drive) | Planned for V2 |
+| Native cloud backends (S3, OneDrive, GCS…) | Planned for V2 |
 | Enrichment agents (faces, scene recognition) | Planned for V2 |
 | Albums and smart filters | Planned for V2 |
 | Change detection / automatic re-indexing | Planned for V2 |
 | Mobile companion app | Planned for V2 |
 | Video support | Planned |
 
-**What this means for you**: V1 works well for browsing and searching a local photo library on macOS, Linux or Windows. If you hit a bug or unexpected behavior, that's expected — please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+**What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+---
 
 ## Developers' corner
 
