@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from woof.gallery_session_manager import GallerySessionManager
+from woof.gallery_session_manager import _MAX_SESSIONS, GallerySessionManager
 
 
 def _manager_with_sessions(*sessions: dict) -> tuple[GallerySessionManager, list[str]]:
@@ -167,3 +167,44 @@ def test_merge_empty_sessions() -> None:
     _, data = mgr.merge([tok_a, tok_b], "", 9999)
     assert data["matches"] == []
     assert data["backend"] == ""
+
+
+# ---------------------------------------------------------------------------
+# eviction (cap = _MAX_SESSIONS)
+# ---------------------------------------------------------------------------
+
+
+def test_create_evicts_oldest_when_full() -> None:
+    mgr = GallerySessionManager()
+    tokens = [mgr.create("lib", [], 9999) for _ in range(_MAX_SESSIONS)]
+    oldest = tokens[0]
+    assert oldest in mgr.sessions
+
+    mgr.create("lib", [], 9999)  # triggers eviction
+
+    assert oldest not in mgr.sessions
+    assert len(mgr.sessions) == _MAX_SESSIONS
+
+
+def test_create_keeps_newest_sessions_when_full() -> None:
+    mgr = GallerySessionManager()
+    tokens = [mgr.create("lib", [], 9999) for _ in range(_MAX_SESSIONS)]
+    new_token = mgr.create("lib", [], 9999)
+
+    assert new_token in mgr.sessions
+    # all but the first original token should still be present
+    for tok in tokens[1:]:
+        assert tok in mgr.sessions
+
+
+def test_merge_evicts_oldest_when_full() -> None:
+    mgr = GallerySessionManager()
+    tokens = [mgr.create("lib", [], 9999) for _ in range(_MAX_SESSIONS)]
+    oldest = tokens[0]
+
+    # merge two of the existing sessions to trigger eviction
+    merged_token, _ = mgr.merge([tokens[-2], tokens[-1]], "q", 9999)
+
+    assert oldest not in mgr.sessions
+    assert merged_token in mgr.sessions
+    assert len(mgr.sessions) == _MAX_SESSIONS

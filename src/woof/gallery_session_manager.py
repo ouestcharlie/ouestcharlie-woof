@@ -10,6 +10,8 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+_MAX_SESSIONS = 100
+
 
 class GallerySessionManager:
     """Stores and retrieves gallery sessions keyed by URL-safe tokens.
@@ -28,7 +30,13 @@ class GallerySessionManager:
     """
 
     def __init__(self) -> None:
-        self._sessions: dict[str, Any] = {}
+        self._sessions: dict[str, Any] = {}  # insertion-ordered (Python 3.7+)
+
+    def _add_session(self, token: str, data: dict[str, Any]) -> None:
+        """Evict the oldest session if at capacity, then store *data* under *token*."""
+        while len(self._sessions) >= _MAX_SESSIONS:
+            del self._sessions[next(iter(self._sessions))]
+        self._sessions[token] = data
 
     @property
     def sessions(self) -> dict[str, Any]:
@@ -38,12 +46,15 @@ class GallerySessionManager:
     def create(self, backend_name: str, matches: list[Any], http_port: int) -> str:
         """Store a new search-result session and return its token."""
         token = secrets.token_urlsafe(16)
-        self._sessions[token] = {
-            "matches": matches,
-            "backend": backend_name,
-            "httpPort": http_port,
-            "querySummary": "",
-        }
+        self._add_session(
+            token,
+            {
+                "matches": matches,
+                "backend": backend_name,
+                "httpPort": http_port,
+                "querySummary": "",
+            },
+        )
         return token
 
     def get(self, token: str) -> dict[str, Any] | None:
@@ -94,5 +105,5 @@ class GallerySessionManager:
             "httpPort": http_port,
             "querySummary": query_summary,
         }
-        self._sessions[merged_token] = session_data
+        self._add_session(merged_token, session_data)
         return merged_token, session_data
