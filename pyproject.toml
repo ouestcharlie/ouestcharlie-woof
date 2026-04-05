@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ouestcharlie-woof"
 version = "0.1.0"
 description = "OuEstCharlie Woof — central controller and UI backend"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE*"]
@@ -54,7 +54,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
@@ -64,7 +64,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 "src/woof/__main__.py" = ["E402"]  # logging must be configured before woof modules are imported
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 
 [dependency-groups]

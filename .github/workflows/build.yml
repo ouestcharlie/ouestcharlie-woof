@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run unit tests after building"
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -22,13 +28,19 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install hatch
         run: pip install hatch
 
       - name: Build
         run: hatch build
+
+      - name: Install package and run tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+        run: |
+          pip install --find-links dist/ ouestcharlie-woof pytest pytest-asyncio
+          python -m pytest tests/ -v
 
       - uses: actions/upload-artifact@v6
         with:
