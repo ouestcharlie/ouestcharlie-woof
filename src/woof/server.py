@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig

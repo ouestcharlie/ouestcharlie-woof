@@ -19,12 +19,12 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.27",
-    "fastmcp>=3.0",
+    "fastmcp>=3.2",
     "httpx>=0.27",
-    "starlette>=0.40",
-    "uvicorn>=0.30",
-    "ouestcharlie-py-toolkit>=0.1.0",
+    "starlette>=1.0",
+    "uvicorn>=0.40",
     "platformdirs>=4.0",
+    "ouestcharlie-py-toolkit>=0.2.1",
     "ouestcharlie-whitebeard>=0.2.0",
     "ouestcharlie-wally>=0.2.0",
 ]
@@ -43,6 +43,7 @@ ouestcharlie-wally = { path = "../ouestcharlie-wally", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/woof"]
+artifacts = ["src/woof/gallery/dist"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
