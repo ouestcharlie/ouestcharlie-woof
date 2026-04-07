@@ -8,10 +8,9 @@
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
-   *   onClose: () => void,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile, onClose } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile } = $props();
 
   let match = $derived(matches[selectedIndex]);
   let thumbTile = $derived(thumbnailTile(match));
@@ -21,16 +20,25 @@
   let previewLoaded = $state(false);
   $effect(() => { jpegUrl; previewLoaded = false; });
 
+  // Track viewport size reactively so containerSize updates on resize and fullscreen entry.
+  let windowW = $state(window.innerWidth);
+  let windowH = $state(window.innerHeight);
+
   // Compute explicit pixel dimensions so the container is never 0×0.
   // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
+  // CHROME_RESERVED accounts for all vertical chrome outside the image:
+  //   header (~50px) + status bar (~30px) + meta block + gap (~75px) + Claude prompt overlay (~80px)
+  const CHROME_RESERVED = 235;
   let containerSize = $derived(
     (() => {
-      const max = Math.min(window.innerWidth * 0.85, window.innerHeight * 0.82);
+      const maxH = Math.max(100, windowH - CHROME_RESERVED);
+      const maxW = windowW;
       const w = match?.width, h = match?.height;
-      if (!w || !h) return { width: max, height: max };
-      return w >= h
-        ? { width: max,           height: max / (w / h) }
-        : { width: max * (w / h), height: max };
+      if (!w || !h) return { width: Math.min(maxH, maxW), height: Math.min(maxH, maxW) };
+      let height = maxH;
+      let width = height * (w / h);
+      if (width > maxW) { width = maxW; height = width / (w / h); }
+      return { width, height };
     })()
   );
 
@@ -43,7 +51,6 @@
   function onKeydown(e) {
     if (e.key === 'ArrowLeft')  { e.preventDefault(); prev(); }
     if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
-    if (e.key === 'Escape')     { onClose(); }
   }
 
   // Format ISO datetime string to a locale-aware human-readable form.
@@ -66,100 +73,90 @@
     return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * tileSize}px;`;
   }
 
-  onMount(() => window.addEventListener('keydown', onKeydown));
-  onDestroy(() => window.removeEventListener('keydown', onKeydown));
+  function onResize() { windowW = window.innerWidth; windowH = window.innerHeight; }
+
+  onMount(() => {
+    window.addEventListener('keydown', onKeydown);
+    window.addEventListener('resize', onResize);
+  });
+  onDestroy(() => {
+    window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', onResize);
+  });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="overlay" onclick={onClose}>
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="panel" onclick={(e) => e.stopPropagation()}>
-    <button class="close" onclick={onClose}>✕</button>
-
-    <div class="viewer">
-      <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
+<div class="panel">
+  <div class="viewer">
+    <!--
+      Container pre-sized to the photo's actual aspect ratio.
+      Height capped at 90vh; width follows aspect ratio, capped at 100vw.
+      Nav buttons are overlaid on the image edges.
+    -->
+    <div
+      class="preview-container"
+      style="width: {containerSize.width}px; height: {containerSize.height}px;"
+    >
+      <!--
+        Image is always in the DOM (when jpegUrl is available) so the browser
+        fetches it and fires onload reliably — display:none suppresses onload
+        in some sandboxed environments (e.g. Claude Desktop iframe).
+      -->
+      {#if jpegUrl}
+        <img
+          src={jpegUrl}
+          class="preview-img"
+          onload={() => (previewLoaded = true)}
+          alt={match.filename}
+        />
+      {/if}
 
       <!--
-        Container pre-sized to the photo's actual aspect ratio.
-        Max dimension capped at 85vw / 82vh; the other axis follows aspect ratio.
+        Placeholder rendered on top (later in DOM = higher stacking order).
+        Removed once the image has loaded, revealing the img underneath.
       -->
-      <div
-        class="preview-container"
-        style="width: {containerSize.width}px; height: {containerSize.height}px;"
-      >
-        <!--
-          Image is always in the DOM (when jpegUrl is available) so the browser
-          fetches it and fires onload reliably — display:none suppresses onload
-          in some sandboxed environments (e.g. Claude Desktop iframe).
-        -->
-        {#if jpegUrl}
-          <img
-            src={jpegUrl}
-            class="preview-img"
-            onload={() => (previewLoaded = true)}
-            alt={match.filename}
-          />
+      {#if !previewLoaded}
+        {#if thumbTile}
+          <div class="thumb-placeholder" style={thumbBgStyle(thumbTile)}></div>
+        {:else if jpegUrl}
+          <div class="placeholder"><span>Loading…</span></div>
+        {:else}
+          <div class="placeholder"><span>{match.filename}</span></div>
         {/if}
+      {/if}
 
-        <!--
-          Placeholder rendered on top (later in DOM = higher stacking order).
-          Removed once the image has loaded, revealing the img underneath.
-        -->
-        {#if !previewLoaded}
-          {#if thumbTile}
-            <div class="thumb-placeholder" style={thumbBgStyle(thumbTile)}></div>
-          {:else if jpegUrl}
-            <div class="placeholder"><span>Loading…</span></div>
-          {:else}
-            <div class="placeholder"><span>{match.filename}</span></div>
-          {/if}
-        {/if}
-      </div>
-
+      <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
       <button class="nav next" onclick={next} disabled={!hasNext}>›</button>
     </div>
+  </div>
 
-    <div class="meta">
-      <div class="filename">{match.filename}</div>
-      <div class="counter">{selectedIndex + 1} / {matches.length}</div>
-      {#if match.dateTaken}
-        <div class="detail">{formatDate(match.dateTaken)}</div>
-      {/if}
-      {#if match.make || match.model}
-        <div class="detail">{[match.make, match.model].filter(Boolean).join(' ')}</div>
-      {/if}
-      {#if match.tags?.length}
-        <div class="detail">Tags: {match.tags.join(', ')}</div>
-      {/if}
-    </div>
+  <div class="meta">
+    <div class="filename">{match.filename}</div>
+    <div class="counter">{selectedIndex + 1} / {matches.length}</div>
+    {#if match.dateTaken}
+      <div class="detail">{formatDate(match.dateTaken)}</div>
+    {/if}
+    {#if match.make || match.model}
+      <div class="detail">{[match.make, match.model].filter(Boolean).join(' ')}</div>
+    {/if}
+    {#if match.tags?.length}
+      <div class="detail">Tags: {match.tags.join(', ')}</div>
+    {/if}
   </div>
 </div>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-
   .panel {
-    position: relative;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0.75rem;
   }
 
   .viewer {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
 
   .preview-container {
@@ -197,37 +194,33 @@
     background: #222;
   }
 
-  .close {
-    position: absolute;
-    top: -2rem;
-    right: 0;
-    background: #333;
-    border: none;
-    color: #eee;
-    padding: 0.3rem 0.6rem;
-    cursor: pointer;
-    border-radius: 4px;
-  }
-
   .nav {
-    background: rgba(255, 255, 255, 0.1);
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
     border: none;
     color: #eee;
     font-size: 2rem;
     line-height: 1;
-    padding: 0.4rem 0.7rem;
     cursor: pointer;
-    border-radius: 4px;
     transition: background 0.15s;
-    flex-shrink: 0;
+    z-index: 1;
   }
 
+  .nav.prev { left: 0; border-radius: 4px 0 0 4px; }
+  .nav.next { right: 0; border-radius: 0 4px 4px 0; }
+
   .nav:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.45);
   }
 
   .nav:disabled {
-    opacity: 0.2;
+    opacity: 0.15;
     cursor: default;
   }
 

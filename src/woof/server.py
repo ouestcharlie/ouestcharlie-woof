@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from collections import Counter
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastmcp import Context, FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
+from .gallery_session_manager import GallerySessionManager
 from .http_server import get_gallery_html
 
 _log = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ _GALLERY_URI = "ui://gallery/ouestcharlie"
 class WoofServer:
     """Woof MCP server.
 
-    Exposes six tools to Claude Desktop and registers the gallery
+    Exposes tools to Claude Desktop and registers the gallery
     as an MCP App resource.
 
     Roles:
@@ -37,12 +37,13 @@ class WoofServer:
         config: WoofConfig,
         http_port: int,
         agent_client: AgentClient | None = None,
-        gallery_sessions: dict[str, Any] | None = None,
+        session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
         self.http_port = http_port
         self._agent = agent_client or AgentClient()
-        self._gallery_sessions: dict[str, Any] = gallery_sessions if gallery_sessions is not None else {}
+        self._sessions = session_manager if session_manager is not None else GallerySessionManager()
+        self._backend_fields: dict[str, list[Any]] = {}  # backend name → field defs, loaded lazily
 
         agent = self._agent
 
@@ -82,37 +83,30 @@ class WoofServer:
             """List all registered photo library backends."""
             return {
                 "backends": [
-                    {"name": b.name, "type": b.type, "path": b.path}
-                    for b in self.config.backends
+                    {"name": b.name, "type": b.type, "path": b.path} for b in self.config.backends
                 ]
             }
 
         @mcp.tool()
-        async def get_status() -> dict[str, Any]:
-            """Get the status of all registered backends and the searchable field list.
+        async def list_search_fields(backend_name: str = "") -> dict:
+            """Get the searchable field definitions for a backend.
 
-            Returns basic information about each backend (path, existence) and
-            the field definitions available for filtering in search_photos.
-            Indexing status requires reading manifests — use index_backend
-            to trigger indexing and search_photos to verify results.
+            Returns the field definitions available for filtering in search_photos.
+
+            Args:
+                backend_name: Name of the backend to query. Defaults to the
+                    first registered backend when omitted.
             """
-            statuses = [
-                {"name": b.name, "path": b.path, "exists": Path(b.path).is_dir()}
-                for b in self.config.backends
-            ]
-            fields: list[Any] = []
-            if self.config.backends:
-                try:
-                    result = await self._agent.call_tool(
-                        "wally", "list_search_fields_tool", {}, self.config.backends[0]
-                    )
-                    fields = result.get("fields", [])  # type: ignore[union-attr]
-                except AgentError as exc:
-                    _log.warning("get_status: could not fetch search fields: %s", exc)
-            return {"backends": statuses, "fields": fields}
+            if not self.config.backends:
+                return {}
+            if backend_name:
+                backend = self._require_backend(backend_name)
+            else:
+                backend = self.config.backends[0]
+            return {"name": backend.name, "fields": await self._get_fields(backend)}
 
         @mcp.tool()
-        async def get_root_manifests() -> list[Any]:
+        async def get_partition_summaries() -> list[Any]:
             """Return the root summary of each registered backend.
 
             The summary contains a flat list of all indexed partitions with
@@ -123,13 +117,11 @@ class WoofServer:
             result = []
             for b in self.config.backends:
                 try:
-                    manifest = await self._agent.call_tool(
-                        "wally", "get_root_manifest_tool", {}, b
-                    )
+                    summary = await self._agent.call_tool("wally", "get_partition_summaries", {}, b)
                 except AgentError as exc:
-                    _log.warning("get_root_manifests: failed for %r: %s", b.name, exc)
-                    manifest = None
-                result.append({"name": b.name, "manifest": manifest})
+                    _log.warning("get_partition_summaries: failed for %r: %s", b.name, exc)
+                    summary = None
+                result.append({"name": b.name, "summary": summary})
             return result
 
         @mcp.tool()
@@ -156,7 +148,7 @@ class WoofServer:
                     AVIF grids. Defaults to True.
             """
             backend = self._require_backend(backend_name)
-            tool = "index_partition_tool" if partition else "index_library_tool"
+            tool = "index_partition" if partition else "index_library"
             args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
@@ -184,13 +176,13 @@ class WoofServer:
             Traverses the manifest tree with two-level pruning for efficiency.
             Omitting ``filters`` (or passing None) returns all indexed photos.
 
-            Use ``get_status`` to discover available filter fields and
+            Use ``list_search_fields`` to discover available filter fields and
             their expected formats before constructing a query.
 
             Args:
                 backend_name: Name of the backend to search.
                 filters: Optional dict mapping field names to filter values.
-                    Call ``get_status`` to get valid fields and formats.
+                    Call ``list_search_fields`` to get valid fields and formats.
                     Examples::
 
                         # Photos taken in 2024 rated 4–5 stars
@@ -211,19 +203,11 @@ class WoofServer:
             if filters is not None:
                 args["filters"] = filters
 
-            # Fetch field definitions to drive stats computation.
-            try:
-                fields_result = await self._agent.call_tool(
-                    "wally", "list_search_fields_tool", {}, backend
-                )
-                fields: list[Any] = fields_result.get("fields", [])  # type: ignore[union-attr]
-            except AgentError as exc:
-                _log.warning("list_search_fields_tool failed, stats will be empty: %s", exc)
-                fields = []
+            fields = await self._get_fields(backend)
 
             try:
                 result = await self._agent.call_tool(
-                    "wally", "search_photos_tool", args, backend, progress_ctx=ctx
+                    "wally", "search_photos", args, backend, progress_ctx=ctx
                 )
             except AgentError as exc:
                 _log.error("search_photos(%r) failed: %s", backend_name, exc)
@@ -231,13 +215,7 @@ class WoofServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            token = secrets.token_urlsafe(16)
-            self._gallery_sessions[token] = {
-                "matches": matches,
-                "backend": backend_name,
-                "httpPort": self.http_port,
-                "querySummary": "",
-            }
+            token = self._sessions.create(backend_name, matches, self.http_port)
             return {
                 **self._search_stats(matches, fields),
                 "session_token": token,
@@ -245,30 +223,40 @@ class WoofServer:
 
         @mcp.tool(app=AppConfig(resource_uri=_GALLERY_URI))
         async def browse_gallery(
-            session_token: str,
+            session_tokens: list[str],
             query_summary: str = "",
         ) -> dict[str, Any]:
-            """Display photos from a search result in the gallery viewer.
+            """Display photos from one or more search results in the gallery viewer.
 
-            Call search_photos first, then pass its session_token here to
-            open the gallery pre-loaded with the results.
+            Call search_photos one or more times, then pass all returned
+            session_tokens here.  Matches are merged and deduplicated by
+            content hash so the same photo never appears twice even when it
+            is returned by several queries.
 
             Args:
-                session_token: The session_token returned by search_photos.
-                query_summary: Short human-readable description of the query
-                    shown in the gallery header (e.g. "Nikon photos, July 2024").
+                session_tokens: List of session_token values returned by
+                    search_photos.  Pass a single-element list when showing
+                    one query's results.
+                query_summary: Short human-readable description shown in the
+                    gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            session = self._gallery_sessions.get(session_token)
-            if session is None:
-                return {"error": f"Unknown session_token {session_token!r}. Call search_photos first."}
-            session["querySummary"] = query_summary
+            unknown = self._sessions.unknown_tokens(session_tokens)
+            if unknown:
+                return {
+                    "error": (
+                        f"Unknown session_token(s): {', '.join(repr(t) for t in unknown)}. "
+                        "Call search_photos first."
+                    )
+                }
+
+            merged_token, data = self._sessions.merge(session_tokens, query_summary, self.http_port)
             return {
-                "matches": session["matches"],
-                "backend": session["backend"],
+                "matches": data["matches"],
+                "backend": data["backend"],
                 "querySummary": query_summary,
                 "httpPort": self.http_port,
-                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={session_token}",
+                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={merged_token}",
             }
 
     # ------------------------------------------------------------------
@@ -277,9 +265,10 @@ class WoofServer:
 
     def _register_gallery_resource(self) -> None:
         origin = f"http://127.0.0.1:{self.http_port}"
+
         @self.mcp.resource(
             _GALLERY_URI,
-            mime_type='text/html;profile=mcp-app',
+            mime_type="text/html;profile=mcp-app",
             app=AppConfig(
                 csp=ResourceCSP(
                     resource_domains=[origin],
@@ -299,7 +288,7 @@ class WoofServer:
         """Compute summary statistics over a list of match dicts.
 
         ``fields`` is the descriptor list returned by Wally's
-        ``list_search_fields_tool``. For each DATE_RANGE or INT_RANGE field
+        ``list_search_fields``. For each DATE_RANGE or INT_RANGE field
         a ``{name}: {min, max}`` entry is added. Field name and match dict
         key are the same by convention.
 
@@ -311,7 +300,7 @@ class WoofServer:
             "count": len(matches),
             "partitions": dict(sorted(by_partition.items())),
         }
-        for fdef in (fields or []):
+        for fdef in fields or []:
             field_type = fdef.get("type", "")
             if field_type in ("DATE_RANGE", "INT_RANGE"):
                 name = fdef.get("name", "")
@@ -324,11 +313,27 @@ class WoofServer:
                     stats[name] = {"min": min(values), "max": max(values)}
         return stats
 
+    async def _get_fields(self, backend: BackendConfig) -> list[Any]:
+        """Return field definitions for a backend, fetching from Wally on first call.
+
+        The result is cached per backend name for the lifetime of the server.
+        Returns an empty list if the agent call fails.
+        """
+        if backend.name not in self._backend_fields:
+            try:
+                result = await self._agent.call_tool("wally", "list_search_fields", {}, backend)
+                self._backend_fields[backend.name] = result.get("fields", [])  # type: ignore[union-attr]
+            except AgentError as exc:
+                _log.warning(
+                    "list_search_fields failed for %r, stats will be empty: %s",
+                    backend.name,
+                    exc,
+                )
+                return []
+        return self._backend_fields[backend.name]
+
     def _require_backend(self, name: str) -> BackendConfig:
         backend = self.config.get_backend(name)
         if backend is None:
-            raise ValueError(
-                f"Backend {name!r} not found. "
-                f"Use add_backend to register it first."
-            )
+            raise ValueError(f"Backend {name!r} not found. Use add_backend to register it first.")
         return backend

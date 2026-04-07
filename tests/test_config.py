@@ -18,6 +18,7 @@ def config_dir(tmp_path: Path) -> Path:
 # load()
 # ------------------------------------------------------------------
 
+
 def test_load_missing_file(config_dir: Path) -> None:
     config = WoofConfig.load(config_dir=config_dir)
     assert config.backends == []
@@ -47,6 +48,7 @@ def test_load_invalid_json(config_dir: Path) -> None:
 # save()
 # ------------------------------------------------------------------
 
+
 def test_save_creates_directory(config_dir: Path) -> None:
     assert not config_dir.exists()
     WoofConfig(
@@ -59,6 +61,7 @@ def test_save_creates_directory(config_dir: Path) -> None:
 # ------------------------------------------------------------------
 # add_backend()
 # ------------------------------------------------------------------
+
 
 def test_add_backend_persists(config_dir: Path) -> None:
     config = WoofConfig.load(config_dir=config_dir)
@@ -82,6 +85,7 @@ def test_add_backend_replaces_existing(config_dir: Path) -> None:
 # get_backend()
 # ------------------------------------------------------------------
 
+
 def test_get_backend_missing_returns_none() -> None:
     config = WoofConfig()
     assert config.get_backend("nonexistent") is None
@@ -90,6 +94,7 @@ def test_get_backend_missing_returns_none() -> None:
 # ------------------------------------------------------------------
 # BackendConfig
 # ------------------------------------------------------------------
+
 
 def test_to_agent_env() -> None:
     b = BackendConfig(name="x", type="local", path="/mnt/photos")
@@ -100,7 +105,9 @@ def test_to_agent_env() -> None:
 # default config_dir
 # ------------------------------------------------------------------
 
+
 def test_default_config_dir_is_platform_specific() -> None:
     from platformdirs import user_config_dir
+
     cfg = WoofConfig()
     assert cfg.config_dir == Path(user_config_dir("ouestcharlie"))

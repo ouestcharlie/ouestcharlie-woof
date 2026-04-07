@@ -1,152 +1,144 @@
-# OuEstCharlie — Woof
+# Woof — Your Photos, Your Storage, Your Rules
 
-Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with the indexing and search agents (Whitebeard, Wally) via the Model Context Protocol.
+> **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
 
-## Roles
+Woof is the gateway to **OuEstCharlie**, a photo management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable gallery powered by your AI assistant.
 
-1. **MCP server** → Claude Desktop: exposes `add_backend`, `list_backends`, `get_status`, `index_backend`, `search_photos`, `browse_gallery`
-2. **MCP client** → agents: launches Whitebeard and Wally as stdio child processes and calls their tools
-3. **HTTP server**: serves thumbnail/preview AVIF containers on `127.0.0.1:<random port>` for the gallery iframe
+No cloud subscription. No proprietary lock-in. Your library, your way.
 
-## Design Documents
+## What makes it different
 
-| Document | Purpose |
-|----------|---------|
-| [woof_LLR.md](woof_LLR.md) | Low-level requirements |
-| [woof_LLD.md](woof_LLD.md) | Low-level design |
-| [woof_LLD_rationale.md](woof_LLD_rationale.md) | Design rationale and alternatives |
+Most photo managers lock your library into a cloud service (Google Photos, iCloud) or require a database server that becomes a single point of failure. Woof takes a different approach:
 
-## Repository Structure
+- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
+- **Privacy by design.** Only metadata travels to your AI assistant — your actual photos are served locally by Woof. Your pictures are never uploaded to any AI service unless you explicitly ask.
+- **No database.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
+- **Open formats, forever.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. Every tool you already use — Lightroom, darktable, ExifTool — can read your metadata today and long after OuEstCharlie is gone.
+- **Your photos are never touched.** Woof reads your library as-is. It never modifies, moves, or deletes your original files. It also honors existing XMP metadata from Lightroom, darktable, or any other tool — rather than overwriting it.
+- **Works with your existing folder structure.** Just point Woof at your photos folder. No migration, no reorganization required.
 
-```
-src/woof/
-├── __main__.py       # Entry point (stdio MCP server)
-├── server.py         # WoofServer — FastMCP tool registration
-├── agent_client.py   # AgentClient — MCP client to Whitebeard / Wally
-├── http_server.py    # Thumbnail HTTP server (stdlib, daemon thread)
-├── config.py         # WoofConfig — ~/.ouestcharlie/config.json
-└── gallery/dist/     # Pre-built Svelte gallery bundle
-
-gallery/              # Svelte source (npm run build → dist/)
-  src/
-    App.svelte
-    components/
-      SearchForm.svelte
-      PhotoGrid.svelte
-      PreviewPanel.svelte
-    lib/bridge.js     # MCP App postMessage bridge
-
-tests/
-  test_config.py
-  test_http_server.py
-  test_server.py
-```
+---
 
 ## Installation
 
-### From PyPI (recommended)
+Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects to your AI desktop client and exposes your photo library as a set of tools.
 
-```bash
-pip install ouestcharlie-woof
-```
+### Prerequisites
 
-### From source (development)
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — handles Python automatically, `uvx` is included
 
-Requires sibling repositories:
+> **Early preview**: Woof is currently published on [Test PyPI](https://test.pypi.org/project/ouestcharlie-woof/). The `--extra-index-url` flag in the configs below points there. This flag will be dropped once Woof is published on the main PyPI index.
 
-```
-../ouestcharlie-py-toolkit/
-../ouestcharlie-whitebeard/
-../ouestcharlie-wally/
-```
+### Connect to Claude Desktop
 
-```bash
-cd ouestcharlie-woof
-uv venv
-uv sync
-```
-
-#### Rebuild the gallery (only needed when editing Svelte source)
-
-```bash
-cd gallery
-npm install
-npm run build
-# Produces src/woof/gallery/dist/index.html (self-contained Svelte bundle)
-```
-
-## Running Tests
-
-**Always use `.venv/bin/python -m pytest`:**
-
-```bash
-.venv/bin/python -m pytest tests/ -v
-```
-
-## Claude Desktop Integration
-
-### With uvx (recommended — no manual install)
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Add Woof to your Claude Desktop MCP configuration. Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
 
 ```json
 {
   "mcpServers": {
-    "ouestcharlie": {
+    "woof": {
       "command": "uvx",
-      "args": ["ouestcharlie-woof"]
+      "args": ["--extra-index-url", "https://test.pypi.org/simple/", "--extra-index-url", "https://pypi.org/simple/", "--from", "ouestcharlie-woof", "woof"]
     }
   }
 }
 ```
 
-`uvx` fetches the package from PyPI into an isolated environment on first run — no prior install needed.
+Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery will render as an interactive panel inside your conversation.
 
-### With a local venv (development)
+### Connect to ChatGPT Desktop
 
-```json
-{
-  "mcpServers": {
-    "ouestcharlie": {
-      "command": "/path/to/ouestcharlie-woof/.venv/bin/python",
-      "args": ["-m", "woof"]
-    }
-  }
-}
+ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → Add MCP Server**:
+
+- **Name**: Woof
+- **Command**: `uvx`
+- **Arguments**: `--extra-index-url https://test.pypi.org/simple/ --from ouestcharlie-woof woof`
+
+### Connect to Goose
+
+[Goose](https://github.com/block/goose) supports MCP servers via its extension system. Add the following to your Goose configuration (`~/.config/goose/config.yaml`):
+
+```yaml
+extensions:
+  woof:
+    type: stdio
+    cmd: uvx
+    args: ["--extra-index-url", "https://test.pypi.org/simple/", "--extra-index-url", "https://pypi.org/simple/", "--from", "ouestcharlie-woof", "woof"]
+    enabled: true
 ```
 
-Restart Claude Desktop after editing the config. Woof is launched on demand when Claude Desktop starts.
+---
 
-### First use
+## First Steps
 
-```
-add_backend name="My Photos" path="/Users/you/Pictures"
-index_backend backend_name="My Photos"
-search_photos backend_name="My Photos" date_min="2024-07"
-# → returns count, per-partition breakdown, date range, and a session_token
-browse_gallery session_token="<token from search_photos>" query_summary="July 2024"
-```
+### 1. Register your photos folder
 
-`search_photos` stores matches server-side and returns a lightweight `session_token`. Pass that token to `browse_gallery` — the full photo list is never echoed back through Claude's tool arguments.
+Once Woof is connected to your AI client, ask it to register your photo folder:
 
-## MCP Inspector (development)
+> *"Add a local backend to Woof pointing to /Users/yourname/Pictures"*
 
-```bash
-mcp dev src/woof/__main__.py
-```
+Woof supports any folder on a local drive — including folders synced from iCloud Drive, OneDrive, or Google Drive, as long as the files are locally available.
 
-## Context
+### 2. Index your library
 
-| Repository | Purpose |
-|------------|---------|
-| [ouestcharlie](https://github.com/ouestcharlie/ouestcharlie/) | Architecture docs, HLR/HLD, MCP interface |
-| [**ouestcharlie-woof** *(this repo)*](https://github.com/ouestcharlie/ouestcharlie-woof/) | Woof controller |
-| [ouestcharlie-py-toolkit](https://github.com/ouestcharlie/ouestcharlie-py-toolkit) | Python toolkit for agents |
-| [ouestcharlie-whitebeard](https://github.com/ouestcharlie/ouestcharlie-whitebeard) | Indexing agent |
-| [ouestcharlie-wally](https://github.com/ouestcharlie/ouestcharlie-wally) | Search/consumption agent |
+Trigger the indexer to scan your photos and build the metadata index:
 
-See [ouestcharlie/HLD.md](https://github.com/ouestcharlie/ouestcharlie/blob/master/HLD.md) for the overall system architecture.
+> *"Index my local backend"*
 
-## License
+Woof will launch the indexing agent, which will:
+- Read EXIF/XMP metadata from each photo
+- Write XMP sidecar files alongside your originals (never modifying the originals)
+- Generate thumbnails and previews
+- Build a fast index for querying
 
-MIT license
+Indexing speed is roughly 10 to 100 seconds per 1,000 photos depending on format and hardware.
+
+### 3. Start browsing
+
+Once indexing is complete, just ask:
+
+> *"Show me photos in Woof from last July"*
+
+> *"In Woof, show me pictures taken near Paris"*
+
+> *"How many photos do I have in Woof?"*
+
+The gallery panel will appear inline in your conversation with matching results.
+
+---
+
+## Storage
+
+V1 supports **local filesystem** backends on macOS, Linux, and Windows. This includes:
+- A standard local hard drive or SSD
+- A folder synced from iCloud Drive, OneDrive, Google Drive, or Infomaniak kDrive — as long as files are downloaded and locally accessible
+
+Native cloud storage (S3, Azure, GCS, OneDrive API) is planned for V2.
+
+---
+
+## Status
+
+Woof is an **early preview** targeting a focused V1 scope:
+
+| Feature | Status |
+|---|---|
+| Local filesystem indexing (macOS, Linux, Windows) | Working |
+| Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
+| JPEG, HEIC, RAW, PNG support | Working |
+| Date-based search | Working |
+| Gallery view (Claude Desktop) | Working |
+| Native cloud backends (S3, OneDrive, GCS…) | Planned for V2 |
+| Enrichment agents (faces, scene recognition) | Planned for V2 |
+| Albums and smart filters | Planned for V2 |
+| Change detection / automatic re-indexing | Planned for V2 |
+| Mobile companion app | Planned for V2 |
+| Video support | Planned |
+
+**What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+---
+
+## Developers' corner
+
+For developer and architecture documentation, see [README_DEV.md](README_DEV.md).

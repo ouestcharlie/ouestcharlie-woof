@@ -12,10 +12,10 @@ import sys
 from typing import Any
 
 import httpx
+from fastmcp import Context
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from fastmcp import Context
 
 from .config import BackendConfig
 
@@ -64,9 +64,7 @@ class _WallySidecar:
         self.token: str | None = None
 
     async def start(self, command: list[str], env: dict[str, str]) -> None:
-        self._task = asyncio.create_task(
-            self._session_loop(command, env), name="wally-sidecar"
-        )
+        self._task = asyncio.create_task(self._session_loop(command, env), name="wally-sidecar")
         await asyncio.wait_for(self._ready_event.wait(), timeout=_SIDECAR_INIT_TIMEOUT)
         if self._start_error is not None:
             raise self._start_error
@@ -77,7 +75,7 @@ class _WallySidecar:
             await self._call_queue.put(_STOP)
             try:
                 await asyncio.wait_for(self._task, timeout=10.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            except (TimeoutError, asyncio.CancelledError, Exception):
                 self._task.cancel()
                 with contextlib.suppress(Exception, asyncio.CancelledError):
                     await self._task
@@ -102,7 +100,8 @@ class _WallySidecar:
         proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
-                *command, env=env,
+                *command,
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=None,  # inherit → goes to system log
             )
@@ -124,41 +123,41 @@ class _WallySidecar:
 
             # All three context managers stay in this task — cancel scopes are
             # entered and exited in LIFO order within the same asyncio task.
-            async with httpx.AsyncClient(headers=headers, timeout=None) as http_client:
-                async with streamable_http_client(url, http_client=http_client) as (read, write, _):
-                    async with ClientSession(read, write) as session:
-                        try:
-                            await session.initialize()
-                        except Exception as exc:
-                            self._start_error = exc
-                            self._ready_event.set()
-                            return
+            async with (
+                httpx.AsyncClient(headers=headers, timeout=None) as http_client,
+                streamable_http_client(url, http_client=http_client) as (read, write, _),
+                ClientSession(read, write) as session,
+            ):
+                try:
+                    await session.initialize()
+                except Exception as exc:
+                    self._start_error = exc
+                    self._ready_event.set()
+                    return
 
-                        self.alive = True
-                        self._ready_event.set()
-                        _log.info("Wally sidecar ready (port=%d)", port)
+                self.alive = True
+                self._ready_event.set()
+                _log.info("Wally sidecar ready (port=%d)", port)
 
-                        # Serve tool calls until the stop sentinel or an exception.
-                        while True:
-                            item = await self._call_queue.get()
-                            if item is _STOP:
-                                break
-                            tool_name, args, progress_cb, future = item
-                            try:
-                                result = await session.call_tool(
-                                    tool_name, args, progress_callback=progress_cb
-                                )
-                                if not future.done():
-                                    future.set_result(result)
-                            except Exception as exc:
-                                if not future.done():
-                                    future.set_exception(exc)
+                # Serve tool calls until the stop sentinel or an exception.
+                while True:
+                    item = await self._call_queue.get()
+                    if item is _STOP:
+                        break
+                    tool_name, args, progress_cb, future = item
+                    try:
+                        result = await session.call_tool(
+                            tool_name, args, progress_callback=progress_cb
+                        )
+                        if not future.done():
+                            future.set_result(result)
+                    except Exception as exc:
+                        if not future.done():
+                            future.set_exception(exc)
 
         except BaseException as exc:
             if not self._ready_event.is_set():
-                self._start_error = (
-                    exc if isinstance(exc, Exception) else RuntimeError(str(exc))
-                )
+                self._start_error = exc if isinstance(exc, Exception) else RuntimeError(str(exc))
                 self._ready_event.set()
             _log.debug("Wally session loop exited: %s", exc)
         finally:
@@ -288,10 +287,12 @@ class AgentClient:
         )
         _log.info("Launching %s → %s(%s)", module, tool_name, list(args))
 
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(tool_name, args, progress_callback=progress_cb)
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool(tool_name, args, progress_callback=progress_cb)
 
         if result.isError:
             content = _extract_text(result.content)
@@ -314,6 +315,7 @@ def _extract_text(content: list[Any]) -> str:
 
 def _make_progress_forwarder(ctx: Context) -> Any:
     """Return a progress_callback that relays agent progress to the caller's context."""
+
     async def _handler(progress: float, total: float | None, message: str | None) -> None:
         try:
             await ctx.report_progress(

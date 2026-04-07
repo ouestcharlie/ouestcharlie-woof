@@ -4,15 +4,21 @@ on:
   pull_request:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run unit tests after building"
+        type: boolean
+        default: true
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -20,9 +26,9 @@ jobs:
         working-directory: gallery
         run: npm ci && npm run build
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install hatch
         run: pip install hatch
@@ -30,7 +36,43 @@ jobs:
       - name: Build
         run: hatch build
 
-      - uses: actions/upload-artifact@v4
+      - name: Install package and run tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+        run: |
+          pip install --find-links dist/ ouestcharlie-woof pytest pytest-asyncio
+          python -m pytest tests/ -v
+
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
+
+  integration-test:
+    name: Integration tests on ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+          - os: macos-latest
+          - os: ubuntu-22.04
+          - os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install packages and run integration tests
+        run: |
+          pip install --find-links dist/ ouestcharlie-woof ouestcharlie-whitebeard ouestcharlie-wally pytest pytest-asyncio httpx
+          python -m pytest tests_integration/ -v
