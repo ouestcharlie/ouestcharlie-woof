@@ -46,3 +46,33 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  integration-test:
+    name: Integration tests on ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+          - os: macos-latest
+          - os: ubuntu-22.04
+          - os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install packages and run integration tests
+        run: |
+          pip install --find-links dist/ ouestcharlie-woof ouestcharlie-whitebeard ouestcharlie-wally pytest pytest-asyncio httpx
+          python -m pytest tests_integration/ -v
