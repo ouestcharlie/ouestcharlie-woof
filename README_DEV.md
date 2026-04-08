@@ -12,9 +12,9 @@ Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with 
 
 | Document | Purpose |
 |----------|---------|
-| [woof_LLR.md](woof_LLR.md) | Low-level requirements |
-| [woof_LLD.md](woof_LLD.md) | Low-level design |
-| [woof_LLD_rationale.md](woof_LLD_rationale.md) | Design rationale and alternatives |
+| [woof_LLR.md](doc/design/woof_LLR.md) | Low-level requirements |
+| [woof_LLD.md](doc/design/woof_LLD.md) | Low-level design |
+| [woof_LLD_rationale.md](doc/design/woof_LLD_rationale.md) | Design rationale and alternatives |
 
 ## Repository Structure
 

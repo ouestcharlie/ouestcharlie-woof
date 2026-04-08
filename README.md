@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/woof_large_850.png" alt="Woof" height="360"></p>
+
 # Woof — Your Photos, Your Storage, Your Rules
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
@@ -30,7 +32,13 @@ Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects
 
 ### Connect to Claude Desktop
 
-Add Woof to your Claude Desktop MCP configuration. Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update the 'mcpServers':
+**Option A — Bundle install (recommended)**
+
+Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases) page and double-click it. Claude Desktop will prompt you to install Woof in one click — no configuration file to edit.
+
+**Option B — Manual `uvx` configuration**
+
+Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update `mcpServers`:
 
 ```json
 {
