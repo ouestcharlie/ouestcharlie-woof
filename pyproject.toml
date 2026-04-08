@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ouestcharlie-woof"
-version = "0.2.0"
+version = "0.3.0"
 description = "OuEstCharlie Woof — central controller and UI backend"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -24,9 +24,9 @@ dependencies = [
     "starlette>=1.0",
     "uvicorn>=0.40",
     "platformdirs>=4.0",
-    "ouestcharlie-py-toolkit>=0.2.1",
-    "ouestcharlie-whitebeard>=0.2.0",
-    "ouestcharlie-wally>=0.2.0",
+    "ouestcharlie-py-toolkit>=0.3.0",
+    "ouestcharlie-whitebeard>=0.3.0",
+    "ouestcharlie-wally>=0.3.0",
 ]
 
 [project.urls]

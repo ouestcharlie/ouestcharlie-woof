@@ -730,7 +730,7 @@ wheels = [
 
 [[package]]
 name = "ouestcharlie-py-toolkit"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "../ouestcharlie-py-toolkit" }
 dependencies = [
     { name = "blake3" },
@@ -757,7 +757,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-wally"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "../ouestcharlie-wally" }
 dependencies = [
     { name = "mcp" },
@@ -784,7 +784,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-whitebeard"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "../ouestcharlie-whitebeard" }
 dependencies = [
     { name = "mcp" },
@@ -808,7 +808,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-woof"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

@@ -2,7 +2,7 @@
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
 
-Woof is the gateway to **OuEstCharlie**, a photo management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable gallery powered by your AI assistant.
+Woof is the gateway to **"Ou Est Charlie ?"** ("Where is Wally?" in French), a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable gallery powered by your AI assistant (Claude, OpenGPT, Goose...).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
@@ -27,18 +27,17 @@ Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects
 
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — handles Python automatically, `uvx` is included
 
-> **Early preview**: Woof is currently published on [Test PyPI](https://test.pypi.org/project/ouestcharlie-woof/). The `--extra-index-url` flag in the configs below points there. This flag will be dropped once Woof is published on the main PyPI index.
 
 ### Connect to Claude Desktop
 
-Add Woof to your Claude Desktop MCP configuration. Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
+Add Woof to your Claude Desktop MCP configuration. Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update the 'mcpServers':
 
 ```json
 {
   "mcpServers": {
     "woof": {
       "command": "uvx",
-      "args": ["--extra-index-url", "https://test.pypi.org/simple/", "--extra-index-url", "https://pypi.org/simple/", "--from", "ouestcharlie-woof", "woof"]
+      "args": ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
     }
   }
 }
@@ -52,7 +51,7 @@ ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → 
 
 - **Name**: Woof
 - **Command**: `uvx`
-- **Arguments**: `--extra-index-url https://test.pypi.org/simple/ --from ouestcharlie-woof woof`
+- **Arguments**: `--python 3.12 --from ouestcharlie-woof woof`
 
 ### Connect to Goose
 
@@ -63,7 +62,7 @@ extensions:
   woof:
     type: stdio
     cmd: uvx
-    args: ["--extra-index-url", "https://test.pypi.org/simple/", "--extra-index-url", "https://pypi.org/simple/", "--from", "ouestcharlie-woof", "woof"]
+    args: ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
     enabled: true
 ```
 
@@ -125,15 +124,16 @@ Woof is an **early preview** targeting a focused V1 scope:
 |---|---|
 | Local filesystem indexing (macOS, Linux, Windows) | Working |
 | Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
-| JPEG, HEIC, RAW, PNG support | Working |
-| Date-based search | Working |
+| JPEG, PNG, TIFF, HEIC, RAW support | Working (HEIC and RAW dependant on the build options) |
+| Date, GPS bounding box, camera make and model, dimensions search | Working |
 | Gallery view (Claude Desktop) | Working |
-| Native cloud backends (S3, OneDrive, GCS…) | Planned for V2 |
-| Enrichment agents (faces, scene recognition) | Planned for V2 |
+| Video support | Planned for V2 |
 | Albums and smart filters | Planned for V2 |
+| Share pictures with host (Claude Desktop, ChatGPT, Goose...) | Planned for V2 |
+| Enrichment agents (faces, scene recognition) | Planned for V2 |
 | Change detection / automatic re-indexing | Planned for V2 |
-| Mobile companion app | Planned for V2 |
-| Video support | Planned |
+| Mobile companion app | Planned for V3 |
+| Native cloud backends (S3, OneDrive, GCS…) | Planned for V3 |
 
 **What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 
@@ -142,3 +142,9 @@ Woof is an **early preview** targeting a focused V1 scope:
 ## Developers' corner
 
 For developer and architecture documentation, see [README_DEV.md](README_DEV.md).
+
+---
+
+## License
+
+MIT license
