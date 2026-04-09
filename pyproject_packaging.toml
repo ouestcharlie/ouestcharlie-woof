@@ -1,0 +1,33 @@
+[project]
+name = "ouestcharlie-woof"
+version = "0.3.0"
+description = "The MCP-App Photo Gallery"
+requires-python = "==3.12.*"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE*"]
+authors = [
+    { name = "Antoine Hue" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mcp>=1.27",
+    "fastmcp>=3.2",
+    "httpx>=0.27",
+    "starlette>=1.0",
+    "uvicorn>=0.40",
+    "platformdirs>=4.0",
+    "ouestcharlie-py-toolkit>=0.3.0",
+    "ouestcharlie-whitebeard>=0.3.0",
+    "ouestcharlie-wally>=0.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ouestcharlie/ouestcharlie-woof"
+Issues = "https://github.com/ouestcharlie/ouestcharlie-woof/issues"
+
+[project.scripts]
+woof = "woof.__main__:main"

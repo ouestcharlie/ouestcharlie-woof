@@ -10,10 +10,10 @@
   "icon": "icon.png",
   "server": {
     "type": "uv",
-    "entry_point": "pyproject.toml",
+    "entry_point": "pyproject_packaging.toml",
     "mcp_config": {
       "command": "uv",
-      "args": ["run", "--directory", "${__dirname}", "woof"]
+      "args": ["tool", "run", "--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
     }
   },
   "compatibility": {

@@ -18,3 +18,4 @@ doc
 /assets
 .claude
 .pre-commit-config.yaml
+pyproject.toml
