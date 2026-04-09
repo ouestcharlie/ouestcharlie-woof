@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/woof_large_850.png" alt="Woof" height="360"></p>
+
 # Woof — Your Photos, Your Storage, Your Rules
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
@@ -30,7 +32,13 @@ Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects
 
 ### Connect to Claude Desktop
 
-Add Woof to your Claude Desktop MCP configuration. Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update the 'mcpServers':
+**Option A — Bundle install (recommended)**
+
+Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases) page and double-click it. Claude Desktop will prompt you to install Woof in one click — no configuration file to edit.
+
+**Option B — Manual `uvx` configuration**
+
+Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update `mcpServers`:
 
 ```json
 {
@@ -136,6 +144,27 @@ Woof is an **early preview** targeting a focused V1 scope:
 | Native cloud backends (S3, OneDrive, GCS…) | Planned for V3 |
 
 **What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+---
+
+## Privacy Policy
+
+Woof is designed with privacy as a core principle.
+
+- **Data collected**: Only photo metadata (EXIF, GPS coordinates, camera make/model, dates, file paths) is read and indexed. No account or personal information is collected.
+- **Data storage**: All metadata is stored locally on your own device as XMP sidecar files and JSON manifests alongside your photos. No data is stored on any remote server.
+- **AI assistant**: Only metadata and thumbnail images are sent to your AI assistant (Claude, ChatGPT, Goose…) when you perform a search. Your original photo files are never uploaded to any AI service unless you explicitly share them.
+- **Third parties**: No metadata or usage data is shared with any third party.
+- **Retention**: All data remains under your full control. Deleting the XMP sidecars and `.ouestcharlie/` folders from your photo library completely removes all Woof metadata.
+
+For privacy questions, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+---
+
+## Support
+
+- **Bug reports and feature requests**: [GitHub Issues](https://github.com/ouestcharlie/ouestcharlie-woof/issues)
+- **Developer documentation**: [README_DEV.md](README_DEV.md)
 
 ---
 

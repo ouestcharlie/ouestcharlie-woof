@@ -1,0 +1,30 @@
+{
+  "manifest_version": "0.4",
+  "name": "ouestcharlie-woof",
+  "display_name": "OuEstCharlie Woof",
+  "version": "0.3.0",
+  "description": "OuEstCharlie Woof — central MCP Server, UI and backend for decentralized photo management",
+  "author": {
+    "name": "Antoine Hue"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "pyproject_packaging.toml",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["tool", "run", "--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": "3.12"
+    }
+  },
+  "keywords": ["photos", "mcp", "ouestcharlie"],
+  "license": "MIT",
+  "privacy_policies": [
+    "https://github.com/ouestcharlie/ouestcharlie-woof#privacy-policy"
+  ]
+}
