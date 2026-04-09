@@ -147,6 +147,27 @@ Woof is an **early preview** targeting a focused V1 scope:
 
 ---
 
+## Privacy Policy
+
+Woof is designed with privacy as a core principle.
+
+- **Data collected**: Only photo metadata (EXIF, GPS coordinates, camera make/model, dates, file paths) is read and indexed. No account or personal information is collected.
+- **Data storage**: All metadata is stored locally on your own device as XMP sidecar files and JSON manifests alongside your photos. No data is stored on any remote server.
+- **AI assistant**: Only metadata and thumbnail images are sent to your AI assistant (Claude, ChatGPT, Goose…) when you perform a search. Your original photo files are never uploaded to any AI service unless you explicitly share them.
+- **Third parties**: No metadata or usage data is shared with any third party.
+- **Retention**: All data remains under your full control. Deleting the XMP sidecars and `.ouestcharlie/` folders from your photo library completely removes all Woof metadata.
+
+For privacy questions, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+---
+
+## Support
+
+- **Bug reports and feature requests**: [GitHub Issues](https://github.com/ouestcharlie/ouestcharlie-woof/issues)
+- **Developer documentation**: [README_DEV.md](README_DEV.md)
+
+---
+
 ## Developers' corner
 
 For developer and architecture documentation, see [README_DEV.md](README_DEV.md).

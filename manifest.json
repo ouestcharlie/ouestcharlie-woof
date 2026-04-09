@@ -23,5 +23,8 @@
     }
   },
   "keywords": ["photos", "mcp", "ouestcharlie"],
-  "license": "MIT"
+  "license": "MIT",
+  "privacy_policies": [
+    "https://github.com/ouestcharlie/ouestcharlie-woof#privacy-policy"
+  ]
 }

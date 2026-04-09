@@ -10,6 +10,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
+from mcp.types import ToolAnnotations
 
 from .agent_client import AgentClient, AgentError
 from .config import BackendConfig, WoofConfig
@@ -65,7 +66,7 @@ class WoofServer:
     def _register_tools(self) -> None:
         mcp = self.mcp
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
         async def add_backend(name: str, path: str) -> dict[str, Any]:
             """Register a local folder as a photo library backend.
 
@@ -78,7 +79,7 @@ class WoofServer:
             _log.info("Backend %r added at %s", name, path)
             return {"name": name, "path": path, "status": "added"}
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_backends() -> dict[str, Any]:
             """List all registered photo library backends."""
             return {
@@ -87,7 +88,7 @@ class WoofServer:
                 ]
             }
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_search_fields(backend_name: str = "") -> dict:
             """Get the searchable field definitions for a backend.
 
@@ -105,7 +106,7 @@ class WoofServer:
                 backend = self.config.backends[0]
             return {"name": backend.name, "fields": await self._get_fields(backend)}
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def get_partition_summaries() -> list[Any]:
             """Return the root summary of each registered backend.
 
@@ -124,7 +125,7 @@ class WoofServer:
                 result.append({"name": b.name, "summary": summary})
             return result
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
         async def index_backend(
             ctx: Context,
             backend_name: str,
@@ -164,7 +165,7 @@ class WoofServer:
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
-        @mcp.tool()
+        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def search_photos(
             ctx: Context,
             backend_name: str,
@@ -221,7 +222,9 @@ class WoofServer:
                 "session_token": token,
             }
 
-        @mcp.tool(app=AppConfig(resource_uri=_GALLERY_URI))
+        @mcp.tool(
+            annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
+        )
         async def browse_gallery(
             session_tokens: list[str],
             query_summary: str = "",
