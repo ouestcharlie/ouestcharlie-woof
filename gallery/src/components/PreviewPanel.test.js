@@ -10,6 +10,14 @@ const MATCH = {
   height: 3000,
 };
 
+const MATCH2 = {
+  contentHash: 'xyz789',
+  partition: '2024/2024-07',
+  filename: 'IMG_002.jpg',
+  width: 3000,
+  height: 2000,
+};
+
 const previewUrl = (m) =>
   m?.contentHash
     ? `http://127.0.0.1:8080/previews/test/${m.partition}/${m.contentHash}.jpg`
@@ -24,7 +32,6 @@ function makeProps(matches, selectedIndex = 0) {
     onNavigate: vi.fn(),
     previewUrl,
     thumbnailTile,
-    onClose: vi.fn(),
   };
 }
 
@@ -60,18 +67,77 @@ describe('PreviewPanel — loading placeholder / swap', () => {
   });
 
   it('resets to loading when navigating to a different photo', async () => {
-    const match2 = { ...MATCH, contentHash: 'xyz789', filename: 'IMG_002.jpg' };
     const { getByAltText, getByText, rerender } = render(
       PreviewPanel,
-      makeProps([MATCH, match2]),
+      makeProps([MATCH, MATCH2]),
     );
 
     await fireEvent.load(getByAltText('IMG_001.jpg'));
-    expect(getByAltText('IMG_001.jpg')).toBeTruthy();
 
-    // Navigate to a different photo — must go back to loading state.
-    await rerender(makeProps([MATCH, match2], 1));
+    await rerender(makeProps([MATCH, MATCH2], 1));
 
     expect(getByText('Loading…')).toBeTruthy();
+  });
+});
+
+describe('PreviewPanel — navigation buttons', () => {
+  it('disables prev on first photo', () => {
+    const { getAllByRole } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));
+    const [prev] = getAllByRole('button');
+    expect(prev).toBeDisabled();
+  });
+
+  it('disables next on last photo', () => {
+    const { getAllByRole } = render(PreviewPanel, makeProps([MATCH, MATCH2], 1));
+    const buttons = getAllByRole('button');
+    const next = buttons[buttons.length - 1];
+    expect(next).toBeDisabled();
+  });
+
+  it('calls onNavigate(-1) when prev is clicked', async () => {
+    const onNavigate = vi.fn();
+    const { getAllByRole } = render(PreviewPanel, {
+      ...makeProps([MATCH, MATCH2], 1),
+      onNavigate,
+    });
+    const [prev] = getAllByRole('button');
+    await fireEvent.click(prev);
+    expect(onNavigate).toHaveBeenCalledWith(0);
+  });
+
+  it('calls onNavigate(+1) when next is clicked', async () => {
+    const onNavigate = vi.fn();
+    const { getAllByRole } = render(PreviewPanel, {
+      ...makeProps([MATCH, MATCH2], 0),
+      onNavigate,
+    });
+    const buttons = getAllByRole('button');
+    const next = buttons[buttons.length - 1];
+    await fireEvent.click(next);
+    expect(onNavigate).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('PreviewPanel — metadata', () => {
+  it('renders filename', () => {
+    const { getByText } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));
+    expect(getByText('IMG_001.jpg')).toBeTruthy();
+  });
+
+  it('renders camera make/model when present', () => {
+    const match = { ...MATCH, make: 'Canon', model: 'EOS R5' };
+    const { getByText } = render(PreviewPanel, makeProps([match]));
+    expect(getByText('Canon EOS R5')).toBeTruthy();
+  });
+
+  it('renders tags when present', () => {
+    const match = { ...MATCH, tags: ['holiday', 'sunset'] };
+    const { getByText } = render(PreviewPanel, makeProps([match]));
+    expect(getByText('Tags: holiday, sunset')).toBeTruthy();
+  });
+
+  it('omits camera line when make/model absent', () => {
+    const { queryByText } = render(PreviewPanel, makeProps([MATCH]));
+    expect(queryByText(/Canon/)).toBeNull();
   });
 });

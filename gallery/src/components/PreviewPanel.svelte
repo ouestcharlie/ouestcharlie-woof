@@ -27,8 +27,8 @@
   // Compute explicit pixel dimensions so the container is never 0×0.
   // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
   // CHROME_RESERVED accounts for all vertical chrome outside the image:
-  //   header (~50px) + status bar (~30px) + meta block + gap (~75px) + Claude prompt overlay (~80px)
-  const CHROME_RESERVED = 235;
+  //   header (~50px) + status bar (~30px) + meta block + gap (~75px) + Claude prompt overlay (~105px)
+  const CHROME_RESERVED = 260;
   let containerSize = $derived(
     (() => {
       const maxH = Math.max(100, windowH - CHROME_RESERVED);
@@ -131,7 +131,6 @@
 
   <div class="meta">
     <div class="filename">{match.filename}</div>
-    <div class="counter">{selectedIndex + 1} / {matches.length}</div>
     {#if match.dateTaken}
       <div class="detail">{formatDate(match.dateTaken)}</div>
     {/if}
@@ -162,9 +161,9 @@
   .preview-container {
     position: relative;
     overflow: hidden;
-    border-radius: 4px;
+    border-radius: var(--border-radius-xs, 4px);
     flex-shrink: 0;
-    background: #222;
+    background: var(--color-background-secondary);
   }
 
   .thumb-placeholder {
@@ -189,11 +188,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #888;
+    color: var(--color-text-tertiary);
     font-size: 0.8rem;
-    background: #222;
+    background: var(--color-background-secondary);
   }
 
+  /* Nav arrows overlay the image — keep semi-transparent black regardless of theme */
   .nav {
     position: absolute;
     top: 0;
@@ -204,7 +204,7 @@
     justify-content: center;
     background: rgba(0, 0, 0, 0.25);
     border: none;
-    color: #eee;
+    color: #fff;
     font-size: 2rem;
     line-height: 1;
     cursor: pointer;
@@ -212,8 +212,8 @@
     z-index: 1;
   }
 
-  .nav.prev { left: 0; border-radius: 4px 0 0 4px; }
-  .nav.next { right: 0; border-radius: 0 4px 4px 0; }
+  .nav.prev { left: 0; border-radius: var(--border-radius-xs, 4px) 0 0 var(--border-radius-xs, 4px); }
+  .nav.next { right: 0; border-radius: 0 var(--border-radius-xs, 4px) var(--border-radius-xs, 4px) 0; }
 
   .nav:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.45);
@@ -227,17 +227,12 @@
   .meta {
     text-align: center;
     font-size: 0.85rem;
-    color: #aaa;
+    color: var(--color-text-secondary);
   }
 
   .filename {
-    color: #eee;
-    font-weight: 500;
-  }
-
-  .counter {
-    font-size: 0.75rem;
-    color: #666;
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium, 500);
   }
 
   .detail {

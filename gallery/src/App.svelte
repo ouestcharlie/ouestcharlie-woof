@@ -169,7 +169,13 @@
     </div>
   {/if}
 
-  <div class="status">{status}</div>
+  <div class="status">
+    {#if view === 'preview' && selectedIndex !== null}
+      {selectedIndex + 1} / {matches.length}
+    {:else}
+      {status}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -185,24 +191,24 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: #111;
-    color: #eee;
-    font-family: system-ui, sans-serif;
+    background: var(--color-background-tertiary);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans, system-ui, sans-serif);
   }
-  
+
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    background: #1a1a1a;
-    border-bottom: 1px solid #333;
+    background: var(--color-background-secondary);
+    border-bottom: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
   }
 
   header h1 {
     margin: 0;
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold, 600);
   }
 
   .header-actions {
@@ -213,18 +219,17 @@
 
   .view-btn {
     background: none;
-    border: 1px solid #444;
-    color: #aaa;
+    border: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
+    color: var(--color-text-secondary);
     cursor: pointer;
     padding: 0.3rem 0.4rem;
-    border-radius: 4px;
+    border-radius: var(--border-radius-xs, 4px);
     line-height: 0;
   }
 
   .view-btn:hover {
-    background: #222;
-    color: #eee;
-    border-color: #666;
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
   }
 
   .view {
@@ -238,8 +243,8 @@
   .status {
     padding: 0.4rem 1rem;
     font-size: 0.8rem;
-    color: #888;
-    background: #1a1a1a;
-    border-top: 1px solid #333;
+    color: var(--color-text-tertiary);
+    background: var(--color-background-secondary);
+    border-top: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
   }
 </style>
