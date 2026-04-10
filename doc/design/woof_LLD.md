@@ -77,6 +77,12 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 
 **Loading state**: A shimmer skeleton grid is shown while `loading = true` (between the MCP App connection and the first tool result arriving).
 
+**Theming**: The gallery uses Claude's MCP App design tokens (`--color-text-*`, `--color-background-*`, `--color-border-*`, etc.) exclusively — no hardcoded colors. Two layers ensure correct colors in all contexts:
+
+1. **Inside AI host (Claude Desktop...)**: on `connect()` and on every `onhostcontextchanged` event, the gallery calls `applyDocumentTheme(ctx.theme)` and `applyHostStyleVariables(ctx.styles.variables)` from the `@modelcontextprotocol/ext-apps` SDK. These write host-provided token values as inline styles on `<html>`, which take precedence over any stylesheet.
+
+2. **Standalone (dev server / `?token=` path)**: `src/global.css` defines the same token names on `:root` using the design guidelines' canonical hex values, with a `@media (prefers-color-scheme: dark)` block for dark mode. Because inline styles always beat stylesheet rules, these definitions are no-ops when the host has already applied its own values.
+
 ## Local HTTP Server
 
 Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, serving:
