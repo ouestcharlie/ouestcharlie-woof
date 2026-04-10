@@ -20,19 +20,17 @@
   let previewLoaded = $state(false);
   $effect(() => { jpegUrl; previewLoaded = false; });
 
-  // Track viewport size reactively so containerSize updates on resize and fullscreen entry.
-  let windowW = $state(window.innerWidth);
-  let windowH = $state(window.innerHeight);
+  // Bind .viewer (the flex child between .panel and .preview-container).
+  // .viewer has flex:1 + min-height:0 + overflow:hidden, so the browser sets its size
+  // purely from the flex algorithm — it cannot be inflated by its children.
+  // This avoids feedback loops while correctly tracking fullscreen ↔ inline transitions.
+  let viewerW = $state(0);
+  let viewerH = $state(0);
 
-  // Compute explicit pixel dimensions so the container is never 0×0.
-  // (max-width + aspect-ratio alone collapses to 0 when all children are position:absolute.)
-  // CHROME_RESERVED accounts for all vertical chrome outside the image:
-  //   header (~50px) + status bar (~30px) + meta block + gap (~75px) + Claude prompt overlay (~105px)
-  const CHROME_RESERVED = 260;
   let containerSize = $derived(
     (() => {
-      const maxH = Math.max(100, windowH - CHROME_RESERVED);
-      const maxW = windowW;
+      const maxW = viewerW || window.innerWidth;
+      const maxH = Math.max(100, viewerH || window.innerHeight);
       const w = match?.width, h = match?.height;
       if (!w || !h) return { width: Math.min(maxH, maxW), height: Math.min(maxH, maxW) };
       let height = maxH;
@@ -73,20 +71,12 @@
     return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * tileSize}px;`;
   }
 
-  function onResize() { windowW = window.innerWidth; windowH = window.innerHeight; }
-
-  onMount(() => {
-    window.addEventListener('keydown', onKeydown);
-    window.addEventListener('resize', onResize);
-  });
-  onDestroy(() => {
-    window.removeEventListener('keydown', onKeydown);
-    window.removeEventListener('resize', onResize);
-  });
+  onMount(() => window.addEventListener('keydown', onKeydown));
+  onDestroy(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <div class="panel">
-  <div class="viewer">
+  <div class="viewer" bind:clientWidth={viewerW} bind:clientHeight={viewerH}>
     <!--
       Container pre-sized to the photo's actual aspect ratio.
       Height capped at 90vh; width follows aspect ratio, capped at 100vw.
@@ -149,13 +139,16 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     gap: 0.75rem;
   }
 
   .viewer {
     display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
   }
 
   .preview-container {
