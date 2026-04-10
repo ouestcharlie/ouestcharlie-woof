@@ -1,0 +1,59 @@
+/*
+ * Design token fallbacks — used when running outside the AI host.
+ * Inside AI host, these variables are injected; these definitions
+ * only kick in when the host tokens are absent (e.g. dev server, direct HTTP).
+ *
+ * Values follow the MCP Apps design guidelines:
+ * https://claude.com/docs/connectors/building/mcp-apps/design-guidelines
+ */
+
+:root {
+  --color-background-primary:   #FFFFFF;
+  --color-background-secondary: #F5F4ED;
+  --color-background-tertiary:  #FAF9F5;
+  --color-background-inverse:   #141413;
+
+  --color-text-primary:   #141413;
+  --color-text-secondary: #3D3D3A;
+  --color-text-tertiary:  #73726C;
+  --color-text-inverse:   #FAF9F5;
+
+  --color-border-primary:   rgba(20, 20, 19, 0.15);
+  --color-border-secondary: rgba(20, 20, 19, 0.10);
+  --color-border-tertiary:  rgba(20, 20, 19, 0.06);
+
+  --font-sans: "Anthropic Sans", system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --border-radius-xs:   4px;
+  --border-radius-sm:   6px;
+  --border-radius-md:   8px;
+  --border-radius-lg:   12px;
+  --border-radius-xl:   16px;
+  --border-radius-full: 9999px;
+
+  --border-width-regular: 0.5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary:   #30302E;
+    --color-background-secondary: #262624;
+    --color-background-tertiary:  #141413;
+    --color-background-inverse:   #FAF9F5;
+
+    --color-text-primary:   #FAF9F5;
+    --color-text-secondary: #C2C0B6;
+    --color-text-tertiary:  #9C9A92;
+    --color-text-inverse:   #141413;
+
+    --color-border-primary:   rgba(250, 249, 245, 0.15);
+    --color-border-secondary: rgba(250, 249, 245, 0.10);
+    --color-border-tertiary:  rgba(250, 249, 245, 0.06);
+  }
+}

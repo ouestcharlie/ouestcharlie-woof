@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { App } from '@modelcontextprotocol/ext-apps';
+  import { App, applyHostStyleVariables, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
 
@@ -60,11 +60,15 @@
         if (ctx?.displayMode !== undefined) {
           isFullscreen = ctx.displayMode === 'fullscreen';
         }
+        if (ctx?.theme) applyDocumentTheme(ctx.theme);
+        if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       };
       app.connect().then(() => {
         const ctx = app.getHostContext();
         canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
         isFullscreen = ctx?.displayMode === 'fullscreen';
+        if (ctx?.theme) applyDocumentTheme(ctx.theme);
+        if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       }).catch(() => {});
     } catch { /* not running inside MCP host */ }
   });
