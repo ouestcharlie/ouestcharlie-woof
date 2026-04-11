@@ -42,6 +42,30 @@ async def _read_wally_ready(stdout: asyncio.StreamReader) -> int:
     raise RuntimeError("Wally subprocess exited before reporting WALLY_READY")
 
 
+async def _wait_for_port(port: int, *, retries: int = 20, delay: float = 0.1) -> None:
+    """Probe *port* until a TCP connection succeeds.
+
+    Wally prints WALLY_READY as soon as it knows its port, but uvicorn may
+    not have finished binding the socket yet (especially on Linux).  Without
+    this check, the immediately-following streamable_http_client open raises
+    ConnectError on the first attempt.
+    """
+    for attempt in range(retries):
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection("127.0.0.1", port), timeout=1.0
+            )
+            writer.close()
+            await writer.wait_closed()
+            return
+        except (ConnectionRefusedError, OSError) as err:
+            if attempt == retries - 1:
+                raise RuntimeError(
+                    f"Wally port {port} did not accept connections after {retries} attempts"
+                ) from err
+            await asyncio.sleep(delay)
+
+
 class _WallySidecar:
     """Persistent Wally subprocess with a dedicated asyncio task owning all MCP contexts.
 
@@ -116,6 +140,13 @@ class _WallySidecar:
                 return
 
             self.http_port = port
+            try:
+                await _wait_for_port(port)
+            except Exception as exc:
+                self._start_error = exc
+                self._ready_event.set()
+                return
+
             token = env.get("WOOF_AGENT_TOKEN", "")
             self.token = token or None
             headers = {"Authorization": f"Bearer {token}"} if token else {}
