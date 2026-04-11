@@ -1,0 +1,39 @@
+name: Build (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Build gallery
+        working-directory: gallery
+        run: npm ci && npm test && npm run build
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install hatch
+        run: pip install hatch
+
+      - name: Build
+        run: hatch build
+
+      - name: Install package and run tests
+        run: |
+          pip install --find-links dist/ ouestcharlie-woof pytest pytest-asyncio
+          python -m pytest tests/ -v
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist/
