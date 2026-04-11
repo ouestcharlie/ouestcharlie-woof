@@ -123,6 +123,9 @@ Once indexing is complete, just ask:
 
 The gallery panel will appear inline in your conversation with matching results.
 
+<p align="center"><img src="assets/screenshot_2024-07-05.jpg" alt="Woof" height="500">
+Ouestcharlie Woof photo gallery inside Claude Desktop</p>
+
 ---
 
 ## Storage
