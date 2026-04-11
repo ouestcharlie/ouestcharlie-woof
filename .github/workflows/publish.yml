@@ -1,36 +1,26 @@
 name: Publish ouestcharlie-woof
 
 on:
-  workflow_dispatch:
-    inputs:
-      run-id:
-        description: 'Build workflow run ID whose artifacts to publish'
-        required: true
-      target:
-        description: 'Publish target'
-        required: true
-        default: 'test-pypi'
-        type: choice
-        options:
-          - test-pypi
-          - pypi
+  push:
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
 
 jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+
   publish:
-    name: Publish to ${{ inputs.target }}
+    name: Publish to PyPI
+    needs: build
     runs-on: ubuntu-22.04
-    environment: ${{ inputs.target }}
+    environment: pypi
     permissions:
       id-token: write  # trusted publishing
-      actions: read    # needed to download artifacts from another run
+      actions: read    # needed to download artifacts from another job
     steps:
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
-          run-id: ${{ inputs.run-id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: ${{ vars.PUBLISH_URL }}
           verbose: true
