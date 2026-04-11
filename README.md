@@ -1,12 +1,14 @@
 <p align="center"><img src="assets/woof_large_850.png" alt="Woof" height="360"></p>
 
-# Woof — Your Photos, Your Storage, Your Rules
+# Woof — See your Photo Gallery in your AI assistant
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
 
-Woof is the gateway to **"Ou Est Charlie ?"** ("Where is Wally?" in French), a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable gallery powered by your AI assistant (Claude, OpenGPT, Goose...).
+Woof is the MCP App to **"Où Est Charlie ?"**, a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable gallery view powered by your AI assistant (Claude, OpenGPT, Goose...).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
+
+Où est Charlie?? That's "Where is Wally?" in French.
 
 ## What makes it different
 
@@ -25,18 +27,21 @@ Most photo managers lock your library into a cloud service (Google Photos, iClou
 
 Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects to your AI desktop client and exposes your photo library as a set of tools.
 
-### Prerequisites
+
+### Option A — Bundle install (recommended but Claude Desktop only)
+
+#### Connect to Claude Desktop
+
+Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases) page and double-click it. Claude Desktop will prompt you to install Woof in one click — no configuration file to edit.
+
+### Option B — Manual `uvx` configuration
+
+#### Prerequisites
 
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — handles Python automatically, `uvx` is included
 
 
-### Connect to Claude Desktop
-
-**Option A — Bundle install (recommended)**
-
-Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases) page and double-click it. Claude Desktop will prompt you to install Woof in one click — no configuration file to edit.
-
-**Option B — Manual `uvx` configuration**
+#### Connect to Claude Desktop
 
 Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update `mcpServers`:
 
@@ -53,7 +58,7 @@ Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.jso
 
 Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery will render as an interactive panel inside your conversation.
 
-### Connect to ChatGPT Desktop
+#### Connect to ChatGPT Desktop
 
 ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → Add MCP Server**:
 
@@ -61,7 +66,7 @@ ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → 
 - **Command**: `uvx`
 - **Arguments**: `--python 3.12 --from ouestcharlie-woof woof`
 
-### Connect to Goose
+#### Connect to Goose
 
 [Goose](https://github.com/block/goose) supports MCP servers via its extension system. Add the following to your Goose configuration (`~/.config/goose/config.yaml`):
 
@@ -73,6 +78,12 @@ extensions:
     args: ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
     enabled: true
 ```
+
+#### Other supported AI Assistants
+
+Other clients support MCP Apps, for example VSCode Github Copilot or Codex.
+
+See the [MCP Extension Support Matrix](https://modelcontextprotocol.io/extensions/client-matrix)
 
 ---
 
@@ -111,6 +122,9 @@ Once indexing is complete, just ask:
 > *"How many photos do I have in Woof?"*
 
 The gallery panel will appear inline in your conversation with matching results.
+
+<p align="center"><img src="assets/screenshot_2024-07-05.jpg" alt="Woof" height="500">
+Ouestcharlie Woof photo gallery inside Claude Desktop</p>
 
 ---
 

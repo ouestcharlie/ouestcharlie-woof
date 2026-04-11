@@ -12,6 +12,14 @@ from typing import Any
 
 _MAX_SESSIONS = 100
 
+# Sentinel that sorts after any ISO datetime string so undated photos go last.
+_NO_DATE = "\uffff"
+
+
+def _sort_by_date(matches: list[Any]) -> list[Any]:
+    """Return *matches* sorted by ``dateTaken`` ascending; undated photos last."""
+    return sorted(matches, key=lambda m: m.get("dateTaken") or _NO_DATE)
+
 
 class GallerySessionManager:
     """Stores and retrieves gallery sessions keyed by URL-safe tokens.
@@ -49,7 +57,7 @@ class GallerySessionManager:
         self._add_session(
             token,
             {
-                "matches": matches,
+                "matches": _sort_by_date(matches),
                 "backend": backend_name,
                 "httpPort": http_port,
                 "querySummary": "",
@@ -100,7 +108,7 @@ class GallerySessionManager:
         merged_backend = ", ".join(backend_names) if backend_names else ""
         merged_token = secrets.token_urlsafe(16)
         session_data: dict[str, Any] = {
-            "matches": merged_matches,
+            "matches": _sort_by_date(merged_matches),
             "backend": merged_backend,
             "httpPort": http_port,
             "querySummary": query_summary,

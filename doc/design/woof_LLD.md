@@ -2,6 +2,10 @@
 
 This document details the internal design of Woof. For requirements, see [woof_LLR.md](woof_LLR.md). For MCP tool definitions, see [controller_api.json](https://github.com/ouestcharlie/ouestcharlie/blob/master/controller_api.json).
 
+## Implementation status
+
+Woof V1 implements the core search/browse/index loop. Sections marked **[Planned]** describe requirements from `woof_LLR.md` that are not yet implemented.
+
 ## Architecture Overview
 
 Woof runs as a long-lived background process (launchd agent on macOS) on the user's device. It serves three roles:
@@ -15,27 +19,25 @@ Claude Desktop is the conversational UI shell. Woof is the security and operatio
 ```
 Claude Desktop (MCP client)
   └── Woof MCP server (background daemon)
-        ├── MCP tools: search, browse, index, enrich, status, configure ...
+        ├── MCP tools: search, browse, index, configure ...
         ├── MCP App resource: gallery HTML/JS (iframe in Claude Desktop conversation)
         │     └── calls back to Woof MCP tools (bidirectional via postMessage)
         ├── Local HTTP server (127.0.0.1, random port): thumbnails + preview proxy
-        ├── Credential vault (OS keychain)
         ├── Configuration (~/.ouestcharlie/)
         └── Agent controller (Woof as MCP client to agents)
               ├── Whitebeard — indexing agent (MCP server, ephemeral stdio child process)
               ├── Wally — consumption agent (MCP server, persistent Streamable HTTP sidecar)
-              │     └── HTTP server (127.0.0.1, pre-assigned port): serve media
+              │     └── HTTP server (127.0.0.1, dynamic port): serve media
               └── [future enrichment agents]
 ```
 
 ## MCP Server (Claude-facing)
 
-Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Tool categories:
+Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Currently registered tools:
 
-- **Library management**: `index_backend`, `list_backends`, `get_status`
-- **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference)
-- **Album operations**: `list_albums`, `create_album`, `add_to_album`
-- **Configuration**: `add_backend`, `configure_credentials`
+- **Library management**: `index_backend`
+- **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_partition_summaries`
+- **Configuration**: `add_backend`, `list_backends`, `list_search_fields`
 
 ### Search → Gallery session flow
 
@@ -51,9 +53,9 @@ The gallery display uses a two-step flow to avoid passing large match payloads b
      "session_token": "<22-char opaque token>"
    }
    ```
-2. **`browse_gallery`** receives only the `session_token` (a 22-character string), looks up the session, and returns the full match list to the gallery iframe via the MCP App tool result mechanism.
+2. **`browse_gallery`** receives one or more `session_token` values, looks up the sessions, merges them (deduplicating by `contentHash`), and returns the combined match list to the gallery iframe via the MCP App tool result mechanism.
 
-Gallery sessions are stored in `WoofServer._gallery_sessions` (in-memory dict). Sessions persist for the lifetime of the Woof process and are not pruned in V1.
+Gallery sessions are managed by `GallerySessionManager` (in-memory). Sessions are sorted by `dateTaken` ascending; photos with no `dateTaken` field sort last. When the number of sessions reaches the capacity limit (100), the oldest session is evicted. Sessions are not persisted across Woof restarts.
 
 The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLERY_URI)` which causes Claude Desktop to open the gallery MCP App resource and push the tool result into it via postMessage.
 
@@ -69,9 +71,17 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 - Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
 - Woof → Gallery: push fresh results as search completes, update indexing progress indicators
 
-**Pagination**: The gallery renders photos in pages of 20 to avoid iframe height overflow (the iframe expands to content height in Claude Desktop, making CSS scroll unreliable). Prev/Next navigation is rendered above and below the grid when `pageCount > 1`.
+**Pagination**: The gallery renders 3 rows per page, with the number of columns calculated from the viewport width. Prev/Next navigation is rendered above and below the grid when `pageCount > 1`. The currently selected photo index and total count are shown in the status bar.
+
+**Fullscreen**: The gallery supports fullscreen mode via `mcpApp.requestDisplayMode()`.
 
 **Loading state**: A shimmer skeleton grid is shown while `loading = true` (between the MCP App connection and the first tool result arriving).
+
+**Theming**: The gallery uses Claude's MCP App design tokens (`--color-text-*`, `--color-background-*`, `--color-border-*`, etc.) exclusively — no hardcoded colors. Two layers ensure correct colors in all contexts:
+
+1. **Inside AI host (Claude Desktop...)**: on `connect()` and on every `onhostcontextchanged` event, the gallery calls `applyDocumentTheme(ctx.theme)` and `applyHostStyleVariables(ctx.styles.variables)` from the `@modelcontextprotocol/ext-apps` SDK. These write host-provided token values as inline styles on `<html>`, which take precedence over any stylesheet.
+
+2. **Standalone (dev server / `?token=` path)**: `src/global.css` defines the same token names on `:root` using the design guidelines' canonical hex values, with a `@media (prefers-color-scheme: dark)` block for dark mode. Because inline styles always beat stylesheet rules, these definitions are no-ops when the host has already applied its own values.
 
 ## Local HTTP Server
 
@@ -109,7 +119,7 @@ Woof acts as an MCP client to agents. Each agent is an MCP server that exposes i
 | Whitebeard | Ephemeral — spawned per tool call, exits on completion | Indexing is infrequent; no persistent server needed |
 | Wally | Persistent sidecar — started on first search, kept alive for the Woof session | Wally's HTTP preview server must remain up to serve preview JPEGs between tool calls |
 
-`AgentClient` uses `contextlib.AsyncExitStack` to hold the `stdio_client` and `ClientSession` context managers open for persistent agents. The sidecar is started lazily on the first tool call for a given backend and restarted automatically if the process dies. Tool calls to persistent agents are serialized via an `asyncio.Lock`.
+`AgentClient` manages the Wally sidecar via a dedicated `asyncio` session task backed by an `asyncio.Queue`. All tool calls to Wally are posted to this queue and executed serially inside the session task, which owns all context managers (`httpx`, `streamable_http_client`, `ClientSession`). This design avoids "exit cancel scope in different task" errors from `anyio`. The sidecar is started lazily on the first tool call for a given backend.
 
 ### Agent launch (stdio transport)
 
@@ -119,10 +129,13 @@ When Woof launches an agent as a child process, it passes backend credentials an
 WOOF_BACKEND_CONFIG=<JSON backend connection info>
 WOOF_AGENT_TOKEN=<scoped-storage-token>
 WALLY_BACKEND_NAME=<backend name>        # Wally only — validates URL path segment
-WALLY_HTTP_PORT=<pre-assigned port>      # Wally only — binds HTTP server to stable port
 ```
 
 Woof then performs the MCP `initialize` handshake over stdio, receiving the agent's tool definitions and capabilities.
+
+### Wally port discovery
+
+Wally prints a `WALLY_READY port=<n>` line to stdout once its HTTP server is bound. `AgentClient` reads this line before completing the MCP handshake and stores the port for use by the media proxy. This avoids a pre-assigned port (which could conflict with other processes).
 
 ## Background Daemon
 
@@ -133,7 +146,7 @@ Woof runs as a launchd agent (macOS) started at login, independently of Claude D
 
 When Claude Desktop opens, it connects to the already-running Woof instance via the MCP transport declared in the Desktop Extension manifest.
 
-## Agent Lifecycle State Machine
+## Agent Lifecycle State Machine [Planned]
 
 ```
                  launch
@@ -147,20 +160,20 @@ When Claude Desktop opens, it connects to the already-running Woof instance via 
                                       for 5 min)
 ```
 
-Woof maintains the state of each agent run in memory and persists it to `activity.json` on state transitions.
+Woof will maintain the state of each agent run in memory and persist it to `activity.json` on state transitions.
 
-### Timeout detection
+### Timeout detection [Planned]
 
-Woof runs a periodic check (every 60 seconds) against all `running` agents. If an agent's last `notifications/progress` is older than the configured timeout (default: 5 minutes):
+Woof will run a periodic check (every 60 seconds) against all `running` agents. If an agent's last `notifications/progress` is older than the configured timeout (default: 5 minutes):
 
 1. Woof sends `notifications/cancelled` to the agent's MCP server
 2. Agent state transitions to `timeout`
 3. Woof revokes the agent's scoped storage token (if the backend supports revocation) or lets it expire
 4. The activity log entry is updated with status `timeout` and the last known progress
 
-### Agent chaining
+### Agent chaining [Planned]
 
-After an agent completes successfully, Woof evaluates whether dependent agents should be triggered:
+After an agent completes successfully, Woof will evaluate whether dependent agents should be triggered:
 
 | Completed agent | Next agent(s) | Condition |
 |---|---|---|
@@ -170,11 +183,11 @@ After an agent completes successfully, Woof evaluates whether dependent agents s
 
 Chaining is configured declaratively, not hardcoded — new agent types can declare their dependencies during the MCP `initialize` handshake.
 
-## Activity Log
+## Activity Log [Planned]
 
 ### Storage
 
-The activity log is stored as a JSON file at `~/.ouestcharlie/activity.json`. Each entry is a self-contained record:
+The activity log will be stored as a JSON file at `~/.ouestcharlie/activity.json`. Each entry is a self-contained record:
 
 ```json
 {
@@ -202,11 +215,11 @@ The activity log is stored as a JSON file at `~/.ouestcharlie/activity.json`. Ea
 
 ### Pruning
 
-Woof prunes entries older than the retention period (default: 30 days) on startup and daily thereafter. The log is append-only during normal operation — no concurrent write conflicts.
+Woof will prune entries older than the retention period (default: 30 days) on startup and daily thereafter. The log is append-only during normal operation — no concurrent write conflicts.
 
-## Dirty Partition Queue
+## Dirty Partition Queue [Planned]
 
-Woof maintains an in-memory queue of partitions marked dirty by the change detection pipeline. Each entry tracks:
+Woof will maintain an in-memory queue of partitions marked dirty by the change detection pipeline. Each entry tracks:
 
 - Backend name
 - Partition path
@@ -216,11 +229,11 @@ Woof maintains an in-memory queue of partitions marked dirty by the change detec
 
 The debounce logic: a partition is eligible for housekeeping when `now - lastChangeTimestamp > debounceWindow` (default: 10 minutes). Woof evaluates the queue every 60 seconds.
 
-The dirty queue is persisted to `~/.ouestcharlie/dirty_partitions.json` so that pending work survives a Woof restart.
+The dirty queue will be persisted to `~/.ouestcharlie/dirty_partitions.json` so that pending work survives a Woof restart.
 
-## Partition Health
+## Partition Health [Planned]
 
-Woof computes partition health indicators by reading manifest metadata. These are cached in memory and refreshed when manifests change:
+Woof will compute partition health indicators by reading manifest metadata. These will be cached in memory and refreshed when manifests change:
 
 | Indicator | Source | Computation |
 |---|---|---|
@@ -233,7 +246,7 @@ Woof computes partition health indicators by reading manifest metadata. These ar
 
 Agent errors in `index_backend` and `search_photos` are logged at `ERROR` level via the `woof.server` logger before being returned to Claude as `{"error": "..."}` dicts. This ensures errors are visible in the Woof process log even when Claude's response summarizes them briefly.
 
-Agent errors are categorized for the user surface:
+### Error categorization [Planned]
 
 | Category | Example | User action |
 |---|---|---|
@@ -241,4 +254,4 @@ Agent errors are categorized for the user surface:
 | Permanent | Corrupt image file, unsupported format | Flagged to user; photo skipped |
 | Configuration | Invalid credentials, missing permissions | Flagged to user; agent paused until resolved |
 
-Permanent errors are recorded per-photo in the activity log. Woof does not retry permanent errors — the user must resolve the root cause.
+Permanent errors will be recorded per-photo in the activity log. Woof will not retry permanent errors — the user must resolve the root cause.

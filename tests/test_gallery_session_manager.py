@@ -19,13 +19,16 @@ def _manager_with_sessions(*sessions: dict) -> tuple[GallerySessionManager, list
     return mgr, tokens
 
 
-def _match(content_hash: str, partition: str = "2024/01") -> dict:
-    return {
+def _match(content_hash: str, partition: str = "2024/01", date_taken: str | None = None) -> dict:
+    m: dict = {
         "contentHash": content_hash,
         "partition": partition,
         "filename": f"{content_hash}.jpg",
         "filePath": f"{partition}/{content_hash}.jpg",
     }
+    if date_taken is not None:
+        m["dateTaken"] = date_taken
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -208,3 +211,60 @@ def test_merge_evicts_oldest_when_full() -> None:
     assert oldest not in mgr.sessions
     assert merged_token in mgr.sessions
     assert len(mgr.sessions) == _MAX_SESSIONS
+
+
+# ---------------------------------------------------------------------------
+# date sorting
+# ---------------------------------------------------------------------------
+
+
+def test_create_sorts_by_date_taken() -> None:
+    matches = [
+        _match("h3", date_taken="2024-03-01T10:00:00"),
+        _match("h1", date_taken="2024-01-01T10:00:00"),
+        _match("h2", date_taken="2024-02-01T10:00:00"),
+    ]
+    mgr = GallerySessionManager()
+    token = mgr.create("lib", matches, 9999)
+    hashes = [m["contentHash"] for m in mgr.sessions[token]["matches"]]
+    assert hashes == ["h1", "h2", "h3"]
+
+
+def test_create_undated_photos_sort_last() -> None:
+    matches = [
+        _match("undated"),
+        _match("dated", date_taken="2024-01-01T00:00:00"),
+    ]
+    mgr = GallerySessionManager()
+    token = mgr.create("lib", matches, 9999)
+    hashes = [m["contentHash"] for m in mgr.sessions[token]["matches"]]
+    assert hashes == ["dated", "undated"]
+
+
+def test_merge_sorts_by_date_taken_across_backends() -> None:
+    mgr, [tok_a, tok_b] = _manager_with_sessions(
+        {"matches": [_match("h3", date_taken="2024-03-01T00:00:00")]},
+        {
+            "matches": [
+                _match("h1", date_taken="2024-01-01T00:00:00"),
+                _match("h2", date_taken="2024-02-01T00:00:00"),
+            ]
+        },
+    )
+    _, data = mgr.merge([tok_a, tok_b], "", 9999)
+    hashes = [m["contentHash"] for m in data["matches"]]
+    assert hashes == ["h1", "h2", "h3"]
+
+
+def test_merge_undated_photos_sort_last() -> None:
+    mgr, [tok] = _manager_with_sessions(
+        {
+            "matches": [
+                _match("undated"),
+                _match("dated", date_taken="2024-06-01T00:00:00"),
+            ]
+        }
+    )
+    _, data = mgr.merge([tok], "", 9999)
+    hashes = [m["contentHash"] for m in data["matches"]]
+    assert hashes == ["dated", "undated"]

@@ -24,7 +24,7 @@ jobs:
 
       - name: Build gallery
         working-directory: gallery
-        run: npm ci && npm run build
+        run: npm ci && npm test && npm run build
 
       - uses: actions/setup-python@v6
         with:
