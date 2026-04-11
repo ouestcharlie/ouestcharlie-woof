@@ -14,6 +14,9 @@
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
   const TILE_STRIDE = DISPLAY_SIZE + 4; // tile width + gap
   const ROWS = 3;
+  // Min-height for the grid so the SDK can measure a meaningful intrinsic height:
+  // ROWS tiles + (ROWS-1) gaps + top/bottom padding (1rem = 16px each).
+  const GRID_MIN_HEIGHT = ROWS * DISPLAY_SIZE + (ROWS - 1) * 4 + 32;
 
   let gridWidth = $state(0);
   let columns = $derived(gridWidth > 0 ? Math.max(1, Math.floor((gridWidth + 4) / TILE_STRIDE)) : 1);
@@ -30,22 +33,21 @@
 </script>
 
 {#if loading}
-  <div class="grid" bind:clientWidth={gridWidth}>
+  <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
     {#each { length: pageSize } as _, i (i)}
       <div class="tile skeleton" style="animation-delay: {(i % columns) * 0.1}s"></div>
     {/each}
   </div>
 {:else}
 
-{#if pageCount > 1}
-  <div class="nav nav-top">
-    <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
-    <span>{page + 1} / {pageCount}</span>
-    <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
-  </div>
-{/if}
+<!-- Always rendered so height stays constant; invisible when single-page -->
+<div class="nav nav-top" aria-hidden={pageCount <= 1} class:nav-hidden={pageCount <= 1}>
+  <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
+  <span>{page + 1} / {pageCount}</span>
+  <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+</div>
 
-<div class="grid" bind:clientWidth={gridWidth}>
+<div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
   {#each pageMatches as match, i (match.contentHash ?? i)}
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -80,13 +82,12 @@
   {/each}
 </div>
 
-{#if pageCount > 1}
-  <div class="nav nav-bottom">
-    <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
-    <span>{page + 1} / {pageCount}</span>
-    <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
-  </div>
-{/if}
+<!-- Always rendered so height stays constant; invisible when single-page -->
+<div class="nav nav-bottom" aria-hidden={pageCount <= 1} class:nav-hidden={pageCount <= 1}>
+  <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
+  <span>{page + 1} / {pageCount}</span>
+  <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+</div>
 
 {/if}
 
@@ -115,6 +116,8 @@
 
   .nav-top { border-bottom: var(--border-width-regular, 0.5px) solid var(--color-border-primary); }
   .nav-bottom { border-top: var(--border-width-regular, 0.5px) solid var(--color-border-primary); }
+
+  .nav-hidden { visibility: hidden; pointer-events: none; }
 
   .nav button {
     background: var(--color-background-tertiary);
