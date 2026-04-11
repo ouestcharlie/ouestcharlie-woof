@@ -47,9 +47,11 @@ describe('PhotoGrid — page size (3 rows × columns)', () => {
 
 describe('PhotoGrid — pagination controls', () => {
   it('shows no nav when all photos fit on one page', () => {
-    const { queryByText } = render(PhotoGrid, makeProps({ matches: makeMatches(3) }));
-    expect(queryByText(/Previous/)).toBeNull();
-    expect(queryByText(/Next/)).toBeNull();
+    const { container } = render(PhotoGrid, makeProps({ matches: makeMatches(3) }));
+    expect(container.querySelectorAll('.nav')).toHaveLength(2);
+    container.querySelectorAll('.nav').forEach((el) => {
+      expect(el.classList.contains('nav-hidden')).toBe(true);
+    });
   });
 
   it('shows nav when photos exceed one page', () => {
