@@ -21,6 +21,8 @@ Most photo managers lock your library into a cloud service (Google Photos, iClou
 - **Your photos are never touched.** Woof reads your library as-is. It never modifies, moves, or deletes your original files. It also honors existing XMP metadata from Lightroom, darktable, or any other tool — rather than overwriting it.
 - **Works with your existing folder structure.** Just point Woof at your photos folder. No migration, no reorganization required.
 
+> **More about OuEstCharlie and Woof on the [OuEstCharlie Blog](https://ouestcharlie.github.io/ouestcharlie/)**
+
 ---
 
 ## Installation
@@ -38,7 +40,7 @@ Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.
 
 #### Prerequisites
 
-Python packages of OuEstCharlie Woof are managed by [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and the command `uvx`.
+Python packages of OuEstCharlie Woof are managed by [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and the command `uvx`. uv might be already available on your system.
 
 
 #### Connect to Claude Desktop
@@ -74,7 +76,12 @@ ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → 
 
 > **Reference:** [Goose MCP extensions documentation](https://goose-docs.ai/docs/getting-started/using-extensions/#mcp-servers)
 
-[Goose](https://github.com/block/goose) supports MCP servers via its extension system. Add the following to your Goose configuration (`~/.config/goose/config.yaml`):
+[Goose](https://github.com/block/goose) supports MCP servers via its extension system. 
+
+Either add through the user interface as a Custom Extension:
+<p align="center"><img src="assets/goose_custom_extension_setup.jpg" alt="Setup Woof extension in Goose" height="360"></p>
+
+Or add the following to your Goose configuration (`~/.config/goose/config.yaml`):
 
 ```yaml
 extensions:
@@ -84,6 +91,7 @@ extensions:
     args: ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
     enabled: true
 ```
+
 
 #### Other supported AI Assistants
 
