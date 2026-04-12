@@ -38,10 +38,12 @@ Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.
 
 #### Prerequisites
 
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — handles Python automatically, `uvx` is included
+Python packages of OuEstCharlie Woof are managed by [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and the command `uvx`.
 
 
 #### Connect to Claude Desktop
+
+> **Reference:** [Getting Started with Local MCP Servers on Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
 
 Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.json` and add or update `mcpServers`:
 
@@ -60,6 +62,8 @@ Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery 
 
 #### Connect to ChatGPT Desktop
 
+> **Reference:** [ChatGPT MCP integration guide](https://openai.com/index/introducing-the-model-context-protocol-in-chatgpt/)
+
 ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → Add MCP Server**:
 
 - **Name**: Woof
@@ -67,6 +71,8 @@ ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → 
 - **Arguments**: `--python 3.12 --from ouestcharlie-woof woof`
 
 #### Connect to Goose
+
+> **Reference:** [Goose MCP extensions documentation](https://goose-docs.ai/docs/getting-started/using-extensions/#mcp-servers)
 
 [Goose](https://github.com/block/goose) supports MCP servers via its extension system. Add the following to your Goose configuration (`~/.config/goose/config.yaml`):
 
