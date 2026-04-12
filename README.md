@@ -192,8 +192,7 @@ For privacy questions, please [open an issue](https://github.com/ouestcharlie/ou
 
 ## Support
 
-- **Bug reports and feature requests**: [GitHub Issues](https://github.com/ouestcharlie/ouestcharlie-woof/issues)
-- **Developer documentation**: [README_DEV.md](README_DEV.md)
+**Bug reports and feature requests**: [GitHub Issues](https://github.com/ouestcharlie/ouestcharlie-woof/issues)
 
 ---
 
