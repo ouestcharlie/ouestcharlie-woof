@@ -80,6 +80,7 @@ ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → 
 
 Either add through the user interface as a Custom Extension:
 <p align="center"><img src="assets/goose_custom_extension_setup.jpg" alt="Setup Woof extension in Goose" height="360"></p>
+<p align="center"><i>Setup Woof extension in Goose</i></p>
 
 Or add the following to your Goose configuration (`~/.config/goose/config.yaml`):
 
@@ -137,8 +138,8 @@ Once indexing is complete, just ask:
 
 The gallery panel will appear inline in your conversation with matching results.
 
-<p align="center"><img src="assets/screenshot_2024-07-05.jpg" alt="Woof" height="500">
-Ouestcharlie Woof photo gallery inside Claude Desktop</p>
+<p align="center"><img src="assets/screenshot_2024-07-05.jpg" alt="Woof in Claude Desktop" height="500"></p>
+<p align="center"><i>Ouestcharlie Woof photo gallery inside Claude Desktop</i></p>
 
 ---
 
