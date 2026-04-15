@@ -27,7 +27,7 @@ class BackendConfig:
 
     def to_agent_env(self) -> dict[str, str]:
         """Serialise to the dict expected by WOOF_BACKEND_CONFIG."""
-        return {"type": "filesystem", "root": self.path}
+        return {"name": self.name, "type": "filesystem", "root": self.path}
 
 
 @dataclass
