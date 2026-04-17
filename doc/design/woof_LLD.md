@@ -101,7 +101,7 @@ The Woof HTTP port is communicated to the gallery iframe via the MCP App tool re
 
 All media requests (`/thumbnails/...` and `/previews/...`) are forwarded to Wally's HTTP server. Woof has no direct access to backend storage — it is a pure proxy for media. This keeps the storage abstraction entirely within Wally and enables a future remote backend without any Woof changes.
 
-Wally's HTTP port is discovered dynamically via `AgentClient.get_wally_http_port()` on every request, so port changes after a sidecar restart are picked up automatically. If Wally's port is not yet known (sidecar not started), Woof returns `503`.
+The proxy route is `/{kind}/{backend}/{rest:path}`. The `{backend}` segment identifies which Wally sidecar to route to via `AgentClient.get_wally_connection(backend_name)`, which returns `(http_port, token)`. Both are discovered dynamically on every request so sidecar restarts are picked up automatically. If the named backend's sidecar is not yet running, Woof returns `503`.
 
 ## MCP Client (Agent-facing)
 

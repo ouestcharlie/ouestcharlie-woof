@@ -109,7 +109,7 @@ class _WallySidecar:
                 env=env,
                 stdin=asyncio.subprocess.DEVNULL,  # explicitly close stdin
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT    # merge into stdout
+                stderr=asyncio.subprocess.STDOUT,  # merge into stdout
             )
             try:
                 port = await asyncio.wait_for(
@@ -120,13 +120,16 @@ class _WallySidecar:
                 rc = proc.returncode
                 if rc is not None:
                     _log.error(
-                        "Failed to read Wally ready signal from PID=%d (process exited returncode=%d): %s",
-                        proc.pid, rc, exc
+                        "Failed to read Wally ready signal PID=%d (process exited code=%d): %s",
+                        proc.pid,
+                        rc,
+                        exc,
                     )
                 else:
                     _log.error(
-                        "Failed to read Wally ready signal from PID=%d (process still running): %s",
-                        proc.pid, exc
+                        "Failed to read Wally ready signal PID=%d (process still running): %s",
+                        proc.pid,
+                        exc,
                     )
                 self._start_error = exc
                 self._ready_event.set()
@@ -213,15 +216,12 @@ class AgentClient:
         self._wally_sidecars: dict[str, _WallySidecar] = {}
         self._sidecar_init_lock: asyncio.Lock | None = None  # created lazily
 
-    def get_wally_http_port(self, backend_name: str) -> int | None:
-        """Return the HTTP port of the live Wally sidecar for *backend_name*, or None."""
+    def get_wally_connection(self, backend_name: str) -> tuple[int | None, str | None]:
+        """Return (http_port, token) for the live Wally sidecar, or (None, None)."""
         sidecar = self._wally_sidecars.get(backend_name)
-        return sidecar.http_port if sidecar and sidecar.alive else None
-
-    def get_wally_token(self, backend_name: str) -> str | None:
-        """Return the Bearer token for the live Wally sidecar for *backend_name*, or None."""
-        sidecar = self._wally_sidecars.get(backend_name)
-        return sidecar.token if sidecar and sidecar.alive else None
+        if sidecar and sidecar.alive:
+            return sidecar.http_port, sidecar.token
+        return None, None
 
     async def shutdown(self) -> None:
         """Stop all persistent agent sidecars gracefully."""
@@ -284,7 +284,8 @@ class AgentClient:
                 except Exception as exc:
                     _log.error(
                         "Wally sidecar failed to start for %r: %s",
-                        backend.name, exc,
+                        backend.name,
+                        exc,
                         exc_info=True,
                     )
                     raise

@@ -107,20 +107,20 @@ class TestWallySidecar:
                 pytest.fail(f"Could not connect to Wally HTTP port {sidecar.http_port}: {exc}")
 
     @pytest.mark.asyncio
-    async def test_get_wally_http_port_returns_none_before_start(
+    async def test_get_wally_connection_returns_none_before_start(
         self, agent_client: AgentClient, backend: BackendConfig
     ) -> None:
-        """get_wally_http_port() returns None before the sidecar is started."""
-        assert agent_client.get_wally_http_port(backend.name) is None
+        """get_wally_connection() returns (None, None) before the sidecar is started."""
+        assert agent_client.get_wally_connection(backend.name) == (None, None)
 
     @pytest.mark.asyncio
-    async def test_get_wally_http_port_returns_port_after_start(
+    async def test_get_wally_connection_returns_port_after_start(
         self, agent_client: AgentClient, backend: BackendConfig
     ) -> None:
-        """get_wally_http_port() returns the live port after the sidecar has started."""
+        """get_wally_connection() returns a live port after the sidecar has started."""
         await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
 
-        port = agent_client.get_wally_http_port(backend.name)
+        port, _token = agent_client.get_wally_connection(backend.name)
         assert isinstance(port, int)
         assert 1024 <= port <= 65535
 
@@ -200,9 +200,9 @@ class TestFullStack:
             tool = await server.mcp.get_tool("list_search_fields")
             await tool.fn(backend_name="integration-test")
 
-            wally_port = agent.get_wally_http_port("integration-test")
+            wally_port, _token = agent.get_wally_connection("integration-test")
             assert isinstance(wally_port, int), (
-                "Wally did not start: get_wally_http_port() returned None after "
+                "Wally did not start: get_wally_connection() returned (None, None) after "
                 "list_search_fields was called"
             )
         finally:
@@ -228,9 +228,9 @@ class TestFullStack:
             result = await tool.fn()
 
             # Wally must have started
-            wally_port = agent.get_wally_http_port("integration-test")
+            wally_port, _token = agent.get_wally_connection("integration-test")
             assert isinstance(wally_port, int), (
-                "Wally did not start: get_wally_http_port() returned None after "
+                "Wally did not start: get_wally_connection() returned (None, None) after "
                 "get_partition_summaries was called"
             )
             # Result is a list of backend summaries
@@ -246,20 +246,12 @@ class TestFullStack:
         try:
             session_manager = GallerySessionManager()
 
-            def _wally_port_fn() -> int | None:
-                if not config.backends:
-                    return None
-                return agent.get_wally_http_port(config.backends[0].name)
-
-            def _wally_token_fn() -> str | None:
-                if not config.backends:
-                    return None
-                return agent.get_wally_token(config.backends[0].name)
+            def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
+                return agent.get_wally_connection(backend_name)
 
             http_port = start_http_server(
                 session_manager=session_manager,
-                wally_port_fn=_wally_port_fn,
-                wally_token_fn=_wally_token_fn,
+                wally_connection_fn=_wally_connection_fn,
             )
             server = WoofServer(
                 config,

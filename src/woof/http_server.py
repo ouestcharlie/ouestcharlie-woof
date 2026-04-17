@@ -57,8 +57,7 @@ def get_gallery_html(http_port: int) -> str:
 
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
-    wally_port_fn: Any | None = None,
-    wally_token_fn: Any | None = None,
+    wally_connection_fn: Any | None = None,
 ) -> int:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -66,11 +65,9 @@ def start_http_server(
         session_manager: Gallery session manager shared with WoofServer.
             Provides token-keyed session lookup for the gallery and results
             endpoints.  A new empty manager is created when omitted.
-        wally_port_fn: Zero-argument callable returning the current Wally HTTP
-            port (int or None).  Called on every request so dynamic port
+        wally_connection_fn: Callable ``(backend_name: str) -> (http_port, token)``
+            for the named Wally sidecar.  Called on every request so dynamic
             changes (e.g. after sidecar restart) are picked up automatically.
-        wally_token_fn: Zero-argument callable returning the current Wally Bearer
-            token (str or None).  Forwarded as Authorization header on proxy requests.
 
     Returns:
         The port number the server is listening on.
@@ -83,7 +80,7 @@ def start_http_server(
     sock.bind(("127.0.0.1", 0))
     port: int = sock.getsockname()[1]
 
-    app = _build_app(mgr, wally_port_fn, wally_token_fn, http_port=port)
+    app = _build_app(mgr, wally_connection_fn, http_port=port)
     ready = threading.Event()
 
     def _run() -> None:
@@ -116,8 +113,7 @@ async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
 
 def _build_app(
     session_manager: GallerySessionManager,
-    wally_port_fn: Any | None,
-    wally_token_fn: Any | None,
+    wally_connection_fn: Any | None,
     http_port: int,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
@@ -142,22 +138,26 @@ def _build_app(
         return JSONResponse(session)
 
     async def proxy_media(request: Request) -> Response:
-        wally_port = wally_port_fn() if wally_port_fn is not None else None
-        if wally_port is None:
-            return Response("Wally preview server not available", status_code=503)
         kind = request.path_params["kind"]
+        backend = request.path_params["backend"]
         rest = request.path_params["rest"]
+        wally_port, wally_token = (
+            wally_connection_fn(backend) if wally_connection_fn is not None else (None, None)
+        )
+        if wally_port is None:
+            return Response(
+                f"Wally preview server not available for backend '{backend}'", status_code=503
+            )
         safe = "/:@!$&'()*+,;="
-        url = f"http://127.0.0.1:{wally_port}/{quote(f'{kind}/{rest}', safe=safe)}"
+        url = f"http://127.0.0.1:{wally_port}/{quote(f'{kind}/{backend}/{rest}', safe=safe)}"
         headers: dict[str, str] = {}
-        wally_token = wally_token_fn() if wally_token_fn is not None else None
         if wally_token:
             headers["Authorization"] = f"Bearer {wally_token}"
         async with httpx.AsyncClient() as client:
             try:
                 upstream = await client.get(url, headers=headers, timeout=120.0)
             except Exception as exc:
-                _log.error("Proxy to Wally failed for %r/%r: %s", kind, rest, exc)
+                _log.error("Proxy to Wally failed for %r/%r/%r: %s", kind, backend, rest, exc)
                 return Response(status_code=503)
         return Response(
             content=upstream.content,
@@ -169,7 +169,7 @@ def _build_app(
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}", api_results),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
-        Route("/{kind}/{rest:path}", proxy_media),
+        Route("/{kind}/{backend}/{rest:path}", proxy_media),
     ]
     app = Starlette(routes=routes)
     return CORSMiddleware(app, allow_origins=["*"])
