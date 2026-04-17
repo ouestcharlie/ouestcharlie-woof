@@ -123,13 +123,7 @@ Woof acts as an MCP client to agents. Each agent is an MCP server that exposes i
 
 ### Agent launch (stdio transport)
 
-When Woof launches an agent as a child process, it passes backend credentials and scope as environment variables:
-
-```
-WOOF_BACKEND_CONFIG=<JSON backend connection info>
-WOOF_AGENT_TOKEN=<scoped-storage-token>
-WALLY_BACKEND_NAME=<backend name>        # Wally only — validates URL path segment
-```
+When Woof launches an agent as a child process, it passes backend credentials and scope as environment variables.
 
 Woof then performs the MCP `initialize` handshake over stdio, receiving the agent's tool definitions and capabilities.
 
@@ -137,7 +131,7 @@ Woof then performs the MCP `initialize` handshake over stdio, receiving the agen
 
 Wally prints a `WALLY_READY port=<n>` line to stdout once its HTTP server is bound. `AgentClient` reads this line before completing the MCP handshake and stores the port for use by the media proxy. This avoids a pre-assigned port (which could conflict with other processes).
 
-## Background Daemon
+## Background Daemon [Planned]
 
 Woof runs as a launchd agent (macOS) started at login, independently of Claude Desktop. This enables:
 - OS file watching (FSEvents) to detect changes while Claude Desktop is closed
