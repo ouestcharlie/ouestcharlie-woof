@@ -34,6 +34,7 @@ jobs:
 
       - name: Install packages
         working-directory: dist
+        shell: bash
         run: pip install ouestcharlie_woof-*.whl pytest pytest-asyncio httpx
 
       - name: Run integration tests

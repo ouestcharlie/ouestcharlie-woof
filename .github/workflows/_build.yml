@@ -30,6 +30,7 @@ jobs:
 
       - name: Install package
         working-directory: dist
+        shell: bash
         run: pip install ouestcharlie_woof-*.whl pytest pytest-asyncio
 
       - name: Run tests
