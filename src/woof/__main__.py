@@ -34,26 +34,16 @@ _agent = AgentClient()
 _session_manager = GallerySessionManager()
 
 
-# Wally's HTTP port is discovered dynamically after sidecar init via get_http_port_tool.
-# The wally_port_fn callable is evaluated on every preview request so port changes
-# (e.g. after sidecar restart) are picked up automatically.
-# For now previews are all routed through the first configured backend's sidecar.
-def _wally_port_fn() -> int | None:
-    if not _config.backends:
-        return None
-    return _agent.get_wally_http_port(_config.backends[0].name)
-
-
-def _wally_token_fn() -> str | None:
-    if not _config.backends:
-        return None
-    return _agent.get_wally_token(_config.backends[0].name)
+# Wally connection info is discovered dynamically after sidecar init.
+# Called on every preview request so changes (e.g. after sidecar restart)
+# are picked up automatically.
+def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
+    return _agent.get_wally_connection(backend_name)
 
 
 _http_port = start_http_server(
     session_manager=_session_manager,
-    wally_port_fn=_wally_port_fn,
-    wally_token_fn=_wally_token_fn,
+    wally_connection_fn=_wally_connection_fn,
 )
 _server = WoofServer(_config, _http_port, agent_client=_agent, session_manager=_session_manager)
 

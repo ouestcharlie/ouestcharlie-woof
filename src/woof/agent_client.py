@@ -39,31 +39,10 @@ async def _read_wally_ready(stdout: asyncio.StreamReader) -> int:
         if line.startswith("WALLY_READY"):
             parts = dict(p.split("=") for p in line.split()[1:])
             return int(parts["port"])
+        if line:
+            _log.warning("Wally stdout: %s", line)
+    _log.error("Wally subprocess exited before reporting WALLY_READY")
     raise RuntimeError("Wally subprocess exited before reporting WALLY_READY")
-
-
-async def _wait_for_port(port: int, *, retries: int = 20, delay: float = 0.1) -> None:
-    """Probe *port* until a TCP connection succeeds.
-
-    Wally prints WALLY_READY as soon as it knows its port, but uvicorn may
-    not have finished binding the socket yet (especially on Linux).  Without
-    this check, the immediately-following streamable_http_client open raises
-    ConnectError on the first attempt.
-    """
-    for attempt in range(retries):
-        try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection("127.0.0.1", port), timeout=1.0
-            )
-            writer.close()
-            await writer.wait_closed()
-            return
-        except (ConnectionRefusedError, OSError) as err:
-            if attempt == retries - 1:
-                raise RuntimeError(
-                    f"Wally port {port} did not accept connections after {retries} attempts"
-                ) from err
-            await asyncio.sleep(delay)
 
 
 class _WallySidecar:
@@ -99,7 +78,8 @@ class _WallySidecar:
             await self._call_queue.put(_STOP)
             try:
                 await asyncio.wait_for(self._task, timeout=10.0)
-            except (TimeoutError, asyncio.CancelledError, Exception):
+            except (TimeoutError, asyncio.CancelledError, Exception) as exc:
+                _log.warning("Wally sidecar did not stop cleanly: %s", exc)
                 self._task.cancel()
                 with contextlib.suppress(Exception, asyncio.CancelledError):
                     await self._task
@@ -123,11 +103,13 @@ class _WallySidecar:
         """
         proc: asyncio.subprocess.Process | None = None
         try:
+            _log.info("Launching Wally: %s", command)
             proc = await asyncio.create_subprocess_exec(
                 *command,
                 env=env,
+                stdin=asyncio.subprocess.DEVNULL,  # explicitly close stdin
                 stdout=asyncio.subprocess.PIPE,
-                stderr=None,  # inherit → goes to system log
+                stderr=asyncio.subprocess.STDOUT,  # merge into stdout
             )
             try:
                 port = await asyncio.wait_for(
@@ -135,18 +117,25 @@ class _WallySidecar:
                     timeout=_SIDECAR_INIT_TIMEOUT,
                 )
             except Exception as exc:
+                rc = proc.returncode
+                if rc is not None:
+                    _log.error(
+                        "Failed to read Wally ready signal PID=%d (process exited code=%d): %s",
+                        proc.pid,
+                        rc,
+                        exc,
+                    )
+                else:
+                    _log.error(
+                        "Failed to read Wally ready signal PID=%d (process still running): %s",
+                        proc.pid,
+                        exc,
+                    )
                 self._start_error = exc
                 self._ready_event.set()
                 return
 
             self.http_port = port
-            try:
-                await _wait_for_port(port)
-            except Exception as exc:
-                self._start_error = exc
-                self._ready_event.set()
-                return
-
             token = env.get("WOOF_AGENT_TOKEN", "")
             self.token = token or None
             headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -162,6 +151,7 @@ class _WallySidecar:
                 try:
                     await session.initialize()
                 except Exception as exc:
+                    _log.error("Failed to initialize Wally MCP session: %s", exc)
                     self._start_error = exc
                     self._ready_event.set()
                     return
@@ -183,6 +173,7 @@ class _WallySidecar:
                         if not future.done():
                             future.set_result(result)
                     except Exception as exc:
+                        _log.error("Wally tool call %r failed: %s", tool_name, exc)
                         if not future.done():
                             future.set_exception(exc)
 
@@ -225,15 +216,12 @@ class AgentClient:
         self._wally_sidecars: dict[str, _WallySidecar] = {}
         self._sidecar_init_lock: asyncio.Lock | None = None  # created lazily
 
-    def get_wally_http_port(self, backend_name: str) -> int | None:
-        """Return the HTTP port of the live Wally sidecar for *backend_name*, or None."""
+    def get_wally_connection(self, backend_name: str) -> tuple[int | None, str | None]:
+        """Return (http_port, token) for the live Wally sidecar, or (None, None)."""
         sidecar = self._wally_sidecars.get(backend_name)
-        return sidecar.http_port if sidecar and sidecar.alive else None
-
-    def get_wally_token(self, backend_name: str) -> str | None:
-        """Return the Bearer token for the live Wally sidecar for *backend_name*, or None."""
-        sidecar = self._wally_sidecars.get(backend_name)
-        return sidecar.token if sidecar and sidecar.alive else None
+        if sidecar and sidecar.alive:
+            return sidecar.http_port, sidecar.token
+        return None, None
 
     async def shutdown(self) -> None:
         """Stop all persistent agent sidecars gracefully."""
@@ -277,7 +265,8 @@ class AgentClient:
         raw = _extract_text(result.content)
         try:
             return json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
+            _log.debug("wally.%s response is not JSON, returning raw: %s", tool_name, exc)
             return raw
 
     async def _get_wally_sidecar(self, backend: BackendConfig) -> _WallySidecar:
@@ -290,7 +279,16 @@ class AgentClient:
             if sidecar is None or not sidecar.alive:
                 sidecar = _WallySidecar()
                 env = self._build_env(backend)
-                await sidecar.start([sys.executable, "-m", "wally"], env)
+                try:
+                    await sidecar.start([sys.executable, "-m", "wally"], env)
+                except Exception as exc:
+                    _log.error(
+                        "Wally sidecar failed to start for %r: %s",
+                        backend.name,
+                        exc,
+                        exc_info=True,
+                    )
+                    raise
                 self._wally_sidecars[backend.name] = sidecar
         return sidecar
 
@@ -299,7 +297,6 @@ class AgentClient:
             **os.environ,
             "WOOF_BACKEND_CONFIG": json.dumps(backend.to_agent_env()),
             "WOOF_AGENT_TOKEN": secrets.token_urlsafe(32),
-            "WALLY_BACKEND_NAME": backend.name,
         }
 
     async def _call_ephemeral(
@@ -332,7 +329,8 @@ class AgentClient:
         raw = _extract_text(result.content)
         try:
             return json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
+            _log.debug("%s.%s response is not JSON, returning raw: %s", module, tool_name, exc)
             return raw
 
 

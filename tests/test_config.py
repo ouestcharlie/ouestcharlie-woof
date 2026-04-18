@@ -98,7 +98,7 @@ def test_get_backend_missing_returns_none() -> None:
 
 def test_to_agent_env() -> None:
     b = BackendConfig(name="x", type="local", path="/mnt/photos")
-    assert b.to_agent_env() == {"type": "filesystem", "root": "/mnt/photos"}
+    assert b.to_agent_env() == {"name": "x", "type": "filesystem", "root": "/mnt/photos"}
 
 
 # ------------------------------------------------------------------

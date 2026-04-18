@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "ouestcharlie-woof",
   "display_name": "OuEstCharlie Woof",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "OuEstCharlie Woof — central MCP Server, UI and backend for decentralized photo management",
   "author": {
     "name": "Antoine Hue"
