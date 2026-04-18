@@ -28,10 +28,12 @@ jobs:
       - name: Build
         run: hatch build
 
-      - name: Install package and run tests
-        run: |
-          pip install dist/ouestcharlie_woof-*.whl pytest pytest-asyncio
-          python -m pytest tests/ -v
+      - name: Install package
+        working-directory: dist
+        run: pip install ouestcharlie_woof-*.whl pytest pytest-asyncio
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
 
       - uses: actions/upload-artifact@v6
         with:

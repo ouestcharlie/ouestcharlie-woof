@@ -32,7 +32,9 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Install packages and run integration tests
-        run: |
-          pip install dist/ouestcharlie_woof-*.whl ouestcharlie-whitebeard ouestcharlie-wally pytest pytest-asyncio httpx
-          python -m pytest tests_integration/ -v
+      - name: Install packages
+        working-directory: dist
+        run: pip install ouestcharlie_woof-*.whl pytest pytest-asyncio httpx
+
+      - name: Run integration tests
+        run: python -m pytest tests_integration/ -v
