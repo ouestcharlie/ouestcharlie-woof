@@ -21,8 +21,8 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "ouestcharlie-py-toolkit>=0.5.0",
-    "ouestcharlie-whitebeard>=0.5.0",
-    "ouestcharlie-wally>=0.5.0",
+    "ouestcharlie-whitebeard>=0.5.2",
+    "ouestcharlie-wally>=0.5.2",
 ]
 
 [project.urls]
