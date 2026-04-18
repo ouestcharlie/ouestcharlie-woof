@@ -34,5 +34,5 @@ jobs:
 
       - name: Install packages and run integration tests
         run: |
-          pip install --find-links dist/ ouestcharlie-woof ouestcharlie-whitebeard ouestcharlie-wally pytest pytest-asyncio httpx
+          pip install dist/ouestcharlie_woof-*.whl ouestcharlie-whitebeard ouestcharlie-wally pytest pytest-asyncio httpx
           python -m pytest tests_integration/ -v

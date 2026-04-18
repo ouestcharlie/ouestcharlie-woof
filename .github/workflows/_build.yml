@@ -30,7 +30,7 @@ jobs:
 
       - name: Install package and run tests
         run: |
-          pip install --find-links dist/ ouestcharlie-woof pytest pytest-asyncio
+          pip install dist/ouestcharlie_woof-*.whl pytest pytest-asyncio
           python -m pytest tests/ -v
 
       - uses: actions/upload-artifact@v6
