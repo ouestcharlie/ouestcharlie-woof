@@ -35,7 +35,7 @@ Claude Desktop (MCP client)
 
 Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Currently registered tools:
 
-- **Library management**: `index_backend`
+- **Library management**: `index_backend` — delegates to Whitebeard's `index_partition` or `index_library`; by default runs in incremental mode (only new photos indexed, deleted photos removed from manifest); `force_full_index=True` re-processes the entire library
 - **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_partition_summaries`
 - **Configuration**: `add_backend`, `list_backends`, `list_search_fields`
 
