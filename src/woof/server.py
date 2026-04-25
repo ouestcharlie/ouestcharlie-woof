@@ -132,12 +132,17 @@ class WoofServer:
             partition: str = "",
             force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
+            force_full_index: bool = False,
         ) -> dict[str, Any]:
             """Index photos in a backend using Whitebeard.
 
+            By default runs in incremental mode: only new photos are indexed,
+            deleted photos are removed from the manifest.  Use
+            ``force_full_index=True`` to re-process all photos.
+
             Scans the backend for photos, writes XMP sidecars with metadata
             and content hashes, builds leaf manifests, and generates
-            thumbnail/preview AVIF containers.
+            thumbnail AVIF containers.
 
             Args:
                 backend_name: Name of the backend to index (from list_backends).
@@ -145,14 +150,17 @@ class WoofServer:
                     to "" which indexes the entire library.
                 force_extract_exif: Re-extract EXIF and overwrite existing XMP
                     sidecars. Defaults to False.
-                generate_thumbnails: Generate thumbnails.avif and previews.avif
-                    AVIF grids. Defaults to True.
+                generate_thumbnails: Generate thumbnails.avif AVIF grids.
+                    Defaults to True.
+                force_full_index: Re-process all photos even if already indexed.
+                    Defaults to False (incremental).
             """
             backend = self._require_backend(backend_name)
             tool = "index_partition" if partition else "index_library"
             args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
+                "force_full_index": force_full_index,
             }
             if partition:
                 args["partition"] = partition

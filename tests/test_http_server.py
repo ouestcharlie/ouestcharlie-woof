@@ -23,7 +23,7 @@ def test_thumbnail_without_wally_returns_503() -> None:
 def test_preview_without_wally_returns_503() -> None:
     """Preview requests are proxied to Wally; without a Wally port configured → 503."""
     port = start_http_server()
-    url = f"http://127.0.0.1:{port}/previews/testlib/2024/2024-07/sha256:abc123.jpg"
+    url = f"http://127.0.0.1:{port}/previews/testlib/2024/2024-07/abc123.jpg"
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(url)
     assert exc_info.value.code == 503

@@ -13,4 +13,4 @@ test-python-int:
 	.venv/bin/python -m pytest tests_integration/ -v
 
 pack:
-	mcpb pack . dist/ouestcharlie-woof.mcpb
+	mcpb pack . dist/ouestcharlie-woof-$(shell grep '^version' pyproject_packaging.toml | sed 's/.*= *"\(.*\)"/\1/').mcpb

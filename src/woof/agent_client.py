@@ -189,6 +189,9 @@ class _WallySidecar:
                 proc.terminate()
                 with contextlib.suppress(Exception, asyncio.CancelledError):
                     await asyncio.wait_for(proc.wait(), timeout=5.0)
+                if proc.returncode is None:
+                    _log.warning("Wally process did not exit after SIGTERM; killing")
+                    proc.kill()
 
     def _drain_queue(self) -> None:
         """Fail any tool-call futures still waiting in the queue."""
