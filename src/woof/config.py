@@ -21,13 +21,13 @@ class BackendConfig:
     name: str
     """User-chosen label, unique within the config."""
     type: str
-    """Storage type. Always 'local' for V1."""
+    """Storage type: "filesystem" for a local folder, "cloud_mount" for a FUSE/CF-API mount."""
     path: str
     """Absolute path to the photo root directory."""
 
     def to_agent_env(self) -> dict[str, str]:
         """Serialise to the dict expected by WOOF_BACKEND_CONFIG."""
-        return {"name": self.name, "type": "filesystem", "root": self.path}
+        return {"name": self.name, "type": self.type, "root": self.path}
 
 
 @dataclass
@@ -53,7 +53,9 @@ class WoofConfig:
         try:
             raw = json.loads(config_file.read_text())
             backends = [BackendConfig(**b) for b in raw.get("backends", [])]
-            return cls(backends=backends, config_dir=config_dir)
+            config = cls(backends=backends, config_dir=config_dir)
+            config._migrate()
+            return config
         except Exception as exc:
             _log.warning("Failed to parse config %s: %s — starting empty", config_file, exc)
             return cls(config_dir=config_dir)
@@ -69,6 +71,17 @@ class WoofConfig:
     # ------------------------------------------------------------------
     # Lookup
     # ------------------------------------------------------------------
+
+    def _migrate(self) -> None:
+        """Upgrade legacy stored values in-place and persist if anything changed."""
+        migrated = False
+        for b in self.backends:
+            if b.type == "local":
+                _log.info("Migrating backend %r type 'local' → 'filesystem'", b.name)
+                b.type = "filesystem"
+                migrated = True
+        if migrated:
+            self.save()
 
     def get_backend(self, name: str) -> BackendConfig | None:
         """Return the backend with the given name, or None."""
