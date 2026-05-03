@@ -27,14 +27,31 @@ def test_load_missing_file(config_dir: Path) -> None:
 
 def test_save_and_reload(config_dir: Path) -> None:
     WoofConfig(
-        backends=[BackendConfig(name="test", type="local", path="/photos")],
+        backends=[BackendConfig(name="test", type="filesystem", path="/photos")],
         config_dir=config_dir,
     ).save()
 
     loaded = WoofConfig.load(config_dir=config_dir)
     assert len(loaded.backends) == 1
     assert loaded.backends[0].name == "test"
+    assert loaded.backends[0].type == "filesystem"
     assert loaded.backends[0].path == "/photos"
+
+
+def test_load_migrates_local_type_to_filesystem(config_dir: Path) -> None:
+    """Legacy 'local' type stored in config.json is upgraded to 'filesystem' on load."""
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        '{"backends": [{"name": "lib", "type": "local", "path": "/photos"}]}'
+    )
+
+    loaded = WoofConfig.load(config_dir=config_dir)
+
+    assert loaded.backends[0].type == "filesystem"
+    # Migration must be persisted so the next load also sees the correct type.
+    raw = (config_dir / "config.json").read_text()
+    assert '"local"' not in raw
+    assert '"filesystem"' in raw
 
 
 def test_load_invalid_json(config_dir: Path) -> None:
@@ -97,8 +114,13 @@ def test_get_backend_missing_returns_none() -> None:
 
 
 def test_to_agent_env() -> None:
-    b = BackendConfig(name="x", type="local", path="/mnt/photos")
+    b = BackendConfig(name="x", type="filesystem", path="/mnt/photos")
     assert b.to_agent_env() == {"name": "x", "type": "filesystem", "root": "/mnt/photos"}
+
+
+def test_to_agent_env_cloud_mount() -> None:
+    b = BackendConfig(name="kdrive", type="cloud_mount", path="/mnt/kdrive")
+    assert b.to_agent_env() == {"name": "kdrive", "type": "cloud_mount", "root": "/mnt/kdrive"}
 
 
 # ------------------------------------------------------------------

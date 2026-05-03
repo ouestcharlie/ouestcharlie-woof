@@ -25,7 +25,7 @@ from woof.config import BackendConfig, WoofConfig
 @pytest.fixture()
 def backend(tmp_path: Path) -> BackendConfig:
     """A minimal backend config pointing at an empty temporary directory."""
-    return BackendConfig(name="integration-test", type="local", path=str(tmp_path))
+    return BackendConfig(name="integration-test", type="filesystem", path=str(tmp_path))
 
 
 @pytest.fixture()

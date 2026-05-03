@@ -67,17 +67,25 @@ class WoofServer:
         mcp = self.mcp
 
         @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
-        async def add_backend(name: str, path: str) -> dict[str, Any]:
-            """Register a local folder as a photo library backend.
+        async def add_backend(
+            name: str,
+            path: str,
+            backend_type: str = "filesystem",
+        ) -> dict[str, Any]:
+            """Register a photo library backend.
 
             Args:
-                name: Unique label for this backend (e.g. "iCloud Photos").
+                name: Unique label for this backend (e.g. "kDrive Photos").
                 path: Absolute path to the photo root directory.
+                backend_type: Storage type. Use ``"filesystem"`` for a normal
+                    local folder (default) or ``"cloud_mount"`` for a
+                    FUSE/Windows-CF-API cloud-sync folder (kDrive, OneDrive,
+                    Google Drive, Dropbox).
             """
-            backend = BackendConfig(name=name, type="local", path=path)
+            backend = BackendConfig(name=name, type=backend_type, path=path)
             self.config.add_backend(backend)
-            _log.info("Backend %r added at %s", name, path)
-            return {"name": name, "path": path, "status": "added"}
+            _log.info("Backend %r added at %s (type=%s)", name, path, backend_type)
+            return {"name": name, "path": path, "type": backend_type, "status": "added"}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_backends() -> dict[str, Any]:
