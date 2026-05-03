@@ -3,6 +3,9 @@ name: Build ouestcharlie-woof
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     uses: ./.github/workflows/_build.yml
