@@ -10,6 +10,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/checkout@v6
+        with:
+          repository: ouestcharlie/ouestcharlie-py-toolkit
+          path: deps/ouestcharlie-py-toolkit
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ouestcharlie/ouestcharlie-whitebeard
+          path: deps/ouestcharlie-whitebeard
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ouestcharlie/ouestcharlie-wally
+          path: deps/ouestcharlie-wally
+
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -24,6 +39,15 @@ jobs:
 
       - name: Install hatch
         run: pip install hatch
+
+      - name: Install toolkit (editable)
+        run: pip install -e deps/ouestcharlie-py-toolkit
+
+      - name: Install whitebeard (editable)
+        run: pip install -e deps/ouestcharlie-whitebeard
+
+      - name: Install wally (editable)
+        run: pip install -e deps/ouestcharlie-wally
 
       - name: Build
         run: hatch build
