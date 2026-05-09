@@ -77,10 +77,10 @@
    * Returns tile geometry for clipping a thumbnail AVIF grid, or null if unavailable.
    */
   function thumbnailTile(match) {
-    const { avifPath, thumbnailCols: cols, thumbnailTileSize: tileSize } = match;
-    if (!httpPort || !avifPath || match.tileIndex == null || !cols || !tileSize) return null;
-    const encodedAvifPath = avifPath.split('/').map(encodeURIComponent).join('/');
-    const url = `http://127.0.0.1:${httpPort}/thumbnails/${encodeURIComponent(backendName)}/${encodedAvifPath}`;
+    const { avifHash, thumbnailCols: cols, thumbnailTileSize: tileSize } = match;
+    if (!httpPort || !avifHash || match.tileIndex == null || !cols || !tileSize) return null;
+    const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
+    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
     const col = match.tileIndex % cols;
     const row = Math.floor(match.tileIndex / cols);
     return { url, col, row, tileSize, cols };
