@@ -24,7 +24,6 @@ def _match(content_hash: str, partition: str = "2024/01", date_taken: str | None
         "contentHash": content_hash,
         "partition": partition,
         "filename": f"{content_hash}.jpg",
-        "filePath": f"{partition}/{content_hash}.jpg",
     }
     if date_taken is not None:
         m["dateTaken"] = date_taken
