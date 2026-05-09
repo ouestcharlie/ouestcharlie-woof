@@ -740,14 +740,14 @@ wheels = [
 
 [[package]]
 name = "ouestcharlie-imageproc"
-version = "1.0.0"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/13/e8/7ece28b8063efdf141707a23e6759d6d7e046b4f7106ff30998d05ac0969/ouestcharlie_imageproc-1.0.0.tar.gz", hash = "sha256:ce5dccc6483a34c30ff058a4eb2de6483dfee573f16e57f48d19943e5a4abffe", size = 3056729, upload-time = "2026-05-03T20:21:58.411Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/74/39fffccdd53eae6d61265856aefb098884d41d1b19ed0fbdc018dbebc2c9/ouestcharlie_imageproc-2.0.0.tar.gz", hash = "sha256:3d99766ba2d3f1b8145fb08616a3c1c1ee8439237e8fef1cf343df9a3cb45b54", size = 3056711, upload-time = "2026-05-09T16:35:01.625Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/3e/eb882f79d02ede3305dfed4376d30a680943c00ef5d3b764900847e0beba/ouestcharlie_imageproc-1.0.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:b39ae55bb07a04a5ed2f3098e718c9644d175df308326e18598af0a99d7b7486", size = 1583070, upload-time = "2026-05-03T20:21:51.796Z" },
-    { url = "https://files.pythonhosted.org/packages/e8/c7/68354632a69773c4af34b5bf49bb1322bffc55a29561a9b214bd8bddeb1f/ouestcharlie_imageproc-1.0.0-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:8942225ad4713bdbdb5779d0559f9c06c6d9eecdcb71c77d4560a4d8136d7ad6", size = 1917568, upload-time = "2026-05-03T20:21:53.491Z" },
-    { url = "https://files.pythonhosted.org/packages/24/ec/ca3a0fda21e96334de2a0cf96f7256e086cde6dae569ea35c1281dd0ef0e/ouestcharlie_imageproc-1.0.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:2d47f6baae0a73d2b807b362f70e7c56c1ab38c7e079f95ffd8d27159aaed9e3", size = 2036974, upload-time = "2026-05-03T20:21:54.956Z" },
-    { url = "https://files.pythonhosted.org/packages/5d/a6/d53505b53c384c05f81f3cf3b8764b99d6477c5374aaec972f6522994559/ouestcharlie_imageproc-1.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:fdfa76c9fc53c79b8246f976921753d902cad11e4ef8bb950782f42a07009782", size = 3635353, upload-time = "2026-05-03T20:21:56.685Z" },
+    { url = "https://files.pythonhosted.org/packages/49/d0/5d95123c75975ecb0a0b837aa13bf586e96f610e39e1c2439159fecb4a15/ouestcharlie_imageproc-2.0.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:4670a146f9ce92777070593cd37132bab3ae9f60b019b0aece23f001004ffbb2", size = 1579769, upload-time = "2026-05-09T16:34:52.927Z" },
+    { url = "https://files.pythonhosted.org/packages/69/fe/b6ab5d4b433808c425bad8b14f6639a7f30af9808e6fd2c44552286ab757/ouestcharlie_imageproc-2.0.0-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:954dd05a29270493bfb89b049ed613453c2caf745337ebefc955af60afa8beaa", size = 1916909, upload-time = "2026-05-09T16:34:55.152Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/c6/e809e9b7a6d677e02d220e2edc1ac3d7150cc0d64a3bc4d092aaea350fff/ouestcharlie_imageproc-2.0.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:08d70c7f19af1c06d3249ce5d248faee2ad68e4cd79b8d6ee4574c9c7b668cd5", size = 2036728, upload-time = "2026-05-09T16:34:57.308Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/2b/e61bace38d2b65cc7c4d8f777c3d92265f367fbb88aad3c84ff5b9584e98/ouestcharlie_imageproc-2.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:0f5fc7c810535f4371ba95e2904164114ee7f0cf35c709f7e347fa1d10d58e48", size = 3636546, upload-time = "2026-05-09T16:34:59.417Z" },
 ]
 
 [[package]]
@@ -766,7 +766,7 @@ dependencies = [
 requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "mcp", specifier = ">=1.27" },
-    { name = "ouestcharlie-imageproc", specifier = "~=1.0" },
+    { name = "ouestcharlie-imageproc", specifier = "~=2.0" },
     { name = "pyexiv2", specifier = ">=2.8" },
     { name = "pyjwt", specifier = ">=2.12.0" },
 ]
@@ -801,7 +801,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mcp", extras = ["cli"], specifier = ">=1.27" },
-    { name = "ouestcharlie-imageproc", specifier = "~=1.0" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

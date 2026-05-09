@@ -73,17 +73,19 @@
     } catch { /* not running inside MCP host */ }
   });
 
+  const AVIF_GRID_COLS = 8;
+
   /**
    * Returns tile geometry for clipping a thumbnail AVIF grid, or null if unavailable.
    */
   function thumbnailTile(match) {
-    const { avifHash, thumbnailCols: cols } = match;
-    if (!httpPort || !avifHash || match.tileIndex == null || !cols) return null;
+    const { avifHash } = match;
+    if (!httpPort || !avifHash || match.tileIndex == null) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
     const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
-    const col = match.tileIndex % cols;
-    const row = Math.floor(match.tileIndex / cols);
-    return { url, col, row, cols };
+    const col = match.tileIndex % AVIF_GRID_COLS;
+    const row = Math.floor(match.tileIndex / AVIF_GRID_COLS);
+    return { url, col, row, cols: AVIF_GRID_COLS };
   }
 
   function onKeydown(e) {
