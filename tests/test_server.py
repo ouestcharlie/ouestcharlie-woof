@@ -47,7 +47,6 @@ def _make_matches(
             "partition": partitions[i],
             "filename": f"photo_{i}.jpg",
             "contentHash": f"hash{i}",
-            "filePath": f"{partitions[i]}/photo_{i}.jpg",
             **({"dateTaken": dates[i]} if dates[i] is not None else {}),
             **({"rating": ratings[i]} if ratings[i] is not None else {}),
         }

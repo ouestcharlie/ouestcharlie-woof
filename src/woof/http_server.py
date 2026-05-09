@@ -7,7 +7,7 @@ URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
   GET /api/results/{token}                     — JSON session data (matches + metadata)
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
-  GET /thumbnails/{backend_name}/{partition}/thumbnails.avif  — proxied to Wally
+  GET /thumbnail/{backend_name}/{partition}/{avif_hash}        — proxied to Wally
   GET /previews/{backend_name}/{partition}/{content_hash}.jpg — proxied to Wally
 
 where {partition} may contain slashes (e.g. "2024/2024-07").

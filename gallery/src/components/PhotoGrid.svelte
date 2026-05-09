@@ -4,7 +4,7 @@
    *   matches: any[],
    *   loading: boolean,
    *   selectedIndex: number | null,
-   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
+   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, cols: number} | null,
    *   onSelect: (index: number) => void,
    *   onPageSelect: (index: number) => void,
    * }}
@@ -62,7 +62,6 @@
         <!--
           Scale the full AVIF grid to cols×DISPLAY_SIZE wide, then shift it so
           the target tile (col, row) appears at the top-left of the 160×160 clip.
-          Scale = DISPLAY_SIZE / tileSize, applied by setting img width to cols*DISPLAY_SIZE.
         -->
         <img
           src={tile.url}

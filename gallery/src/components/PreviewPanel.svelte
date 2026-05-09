@@ -1,13 +1,15 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
 
+  const THUMBNAIL_TILE_SIZE = 256; // px per tile side in the AVIF grid
+
   /**
    * @type {{
    *   matches: any[],
    *   selectedIndex: number,
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
-   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, tileSize: number, cols: number} | null,
+   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, cols: number} | null,
    * }}
    */
   let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile } = $props();
@@ -66,9 +68,9 @@
   // CSS background-position for the thumbnail tile used as blur placeholder.
   function thumbBgStyle(tile) {
     if (!tile) return '';
-    const { url, col, row, tileSize, cols } = tile;
+    const { url, col, row, cols } = tile;
     const pctX = cols > 1 ? (col / (cols - 1)) * 100 : 0;
-    return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * tileSize}px;`;
+    return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * THUMBNAIL_TILE_SIZE}px;`;
   }
 
   onMount(() => window.addEventListener('keydown', onKeydown));

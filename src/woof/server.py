@@ -236,6 +236,8 @@ class WoofServer:
             return {
                 **self._search_stats(matches, fields),
                 "session_token": token,
+                "errors": result.get("errors", 0),
+                "errorDetails": result.get("errorDetails", []),
             }
 
         @mcp.tool(
