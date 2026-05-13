@@ -36,6 +36,10 @@ Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects
 
 Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases) page and double-click it. Claude Desktop will prompt you to install Woof in one click — no configuration file to edit.
 
+##### See also in Woof Blog:
+
+>  **[Step by Step install of OuEstCharlie Woof in Claude Desktop](https://ouestcharlie.github.io/ouestcharlie/2026/05/13/claude-how-to-step-by-step/)** 
+
 ### Option B — Manual `uvx` configuration
 
 #### Prerequisites
@@ -63,6 +67,8 @@ Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.jso
 Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery will render as an interactive panel inside your conversation.
 
 #### Connect to ChatGPT Desktop
+
+**NOTE: As o May 2026, ChatGPT is no longer supporting local MCP servers. Following is not longer valid!**
 
 > **Reference:** [ChatGPT MCP integration guide](https://openai.com/index/introducing-the-model-context-protocol-in-chatgpt/)
 
