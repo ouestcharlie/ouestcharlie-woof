@@ -841,13 +841,18 @@ wheels = [
 
 [[package]]
 name = "ouestcharlie-imageproc"
-version = "2.0.0"
+version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/da/74/39fffccdd53eae6d61265856aefb098884d41d1b19ed0fbdc018dbebc2c9/ouestcharlie_imageproc-2.0.0.tar.gz", hash = "sha256:3d99766ba2d3f1b8145fb08616a3c1c1ee8439237e8fef1cf343df9a3cb45b54", size = 3056711, upload-time = "2026-05-09T16:35:01.625Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/b7/93352866510d83b9afc853a301d405f85983ecf79c8f94476ab6b7214dec/ouestcharlie_imageproc-2.1.0.tar.gz", hash = "sha256:38587da6d70d413de30d9b351da23dcc6fc26c3a5d35ff82f4c2e0d6580c8f8a", size = 3054494, upload-time = "2026-05-15T19:33:14.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/5e/5fef725a7013961f9bcc173e328233e9fdd7ae81bf4b5676433bcd85b4bb/ouestcharlie_imageproc-2.1.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:37be3ec23ef317b1f4ce3d3a50a5baf0518c90bb898af9748d60499ee14eed5c", size = 1579771, upload-time = "2026-05-15T19:33:08.537Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/39/b582cea549758c6201a5ddcdec9c6390f291223c04c653103d6c3a69a29c/ouestcharlie_imageproc-2.1.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:ce2ce6d0cca72c5c5692c57973d2196138f1092d694f00c1691f13e9cec6b730", size = 2036730, upload-time = "2026-05-15T19:33:10.468Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/0d/45fb6179daf64a5ad9b5235aa76cf94fa61cfb27a5f479202fdc05232f6a/ouestcharlie_imageproc-2.1.0-cp313-cp313-win_amd64.whl", hash = "sha256:d8830958c66002cb59c84f2d30c0e133000eae7a2fafe9bc9c6fda38ddc2a46c", size = 3636546, upload-time = "2026-05-15T19:33:12.308Z" },
+]
 
 [[package]]
 name = "ouestcharlie-py-toolkit"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "../ouestcharlie-py-toolkit" }
 dependencies = [
     { name = "blake3" },
@@ -866,7 +871,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.0" },
     { name = "lancedb", specifier = ">=0.20" },
     { name = "mcp", specifier = ">=1.27" },
-    { name = "ouestcharlie-imageproc", specifier = "~=2.0" },
+    { name = "ouestcharlie-imageproc", specifier = "~=2.1" },
     { name = "pyarrow", specifier = ">=18" },
     { name = "pyexiv2", specifier = ">=2.8" },
     { name = "pyjwt", specifier = ">=2.12.0" },
@@ -882,7 +887,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-wally"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "../ouestcharlie-wally" }
 dependencies = [
     { name = "mcp" },
@@ -909,7 +914,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-whitebeard"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "../ouestcharlie-whitebeard" }
 dependencies = [
     { name = "mcp" },
@@ -933,7 +938,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-woof"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1301,11 +1306,11 @@ wheels = [
 
 [[package]]
 name = "python-multipart"
-version = "0.0.26"
+version = "0.0.27"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/88/71/b145a380824a960ebd60e1014256dbb7d2253f2316ff2d73dfd8928ec2c3/python_multipart-0.0.26.tar.gz", hash = "sha256:08fadc45918cd615e26846437f50c5d6d23304da32c341f289a617127b081f17", size = 43501, upload-time = "2026-04-10T14:09:59.473Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/9b/f23807317a113dc36e74e75eb265a02dd1a4d9082abc3c1064acd22997c4/python_multipart-0.0.27.tar.gz", hash = "sha256:9870a6a8c5a20a5bf4f07c017bd1489006ff8836cff097b6933355ee2b49b602", size = 44043, upload-time = "2026-04-27T10:51:26.649Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/22/f1925cdda983ab66fc8ec6ec8014b959262747e58bdca26a4e3d1da29d56/python_multipart-0.0.26-py3-none-any.whl", hash = "sha256:c0b169f8c4484c13b0dcf2ef0ec3a4adb255c4b7d18d8e420477d2b1dd03f185", size = 28847, upload-time = "2026-04-10T14:09:58.131Z" },
+    { url = "https://files.pythonhosted.org/packages/99/78/4126abcbdbd3c559d43e0db7f7b9173fc6befe45d39a2856cc0b8ec2a5a6/python_multipart-0.0.27-py3-none-any.whl", hash = "sha256:6fccfad17a27334bd0193681b369f476eda3409f17381a2d65aa7df3f7275645", size = 29254, upload-time = "2026-04-27T10:51:24.997Z" },
 ]
 
 [[package]]
