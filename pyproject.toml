@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ouestcharlie-woof"
-version = "0.7.0"
+version = "0.8.0"
 description = "The MCP-App Photo Gallery"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE*"]
@@ -24,9 +24,9 @@ dependencies = [
     "starlette>=1.0",
     "uvicorn>=0.40",
     "platformdirs>=4.0",
-    "ouestcharlie-py-toolkit>=0.7.0",
-    "ouestcharlie-whitebeard>=0.7.0",
-    "ouestcharlie-wally>=0.7.0",
+    "ouestcharlie-py-toolkit>=0.8.0",
+    "ouestcharlie-whitebeard>=0.8.0",
+    "ouestcharlie-wally>=0.8.0",
 ]
 
 [project.urls]
@@ -55,7 +55,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
@@ -65,7 +65,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 "src/woof/__main__.py" = ["E402"]  # logging must be configured before woof modules are imported
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 
 [dependency-groups]
