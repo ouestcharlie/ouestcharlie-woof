@@ -5,7 +5,7 @@
   import PreviewPanel from './components/PreviewPanel.svelte';
 
   let httpPort = $state(null);
-  let backendName = $state(null);
+  let libraryName = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
   let status = $state('');
@@ -18,7 +18,7 @@
 
   function applySession(session) {
     httpPort = session.httpPort ?? httpPort;
-    backendName = session.backend;
+    libraryName = session.library;
     matches = session.matches ?? [];
     querySummary = session.querySummary ?? '';
     status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
@@ -82,7 +82,7 @@
     const { avifHash } = match;
     if (!httpPort || !avifHash || match.tileIndex == null) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
+    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(libraryName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
     const col = match.tileIndex % AVIF_GRID_COLS;
     const row = Math.floor(match.tileIndex / AVIF_GRID_COLS);
     return { url, col, row, cols: AVIF_GRID_COLS };
@@ -105,7 +105,7 @@
   function previewUrl(match) {
     if (!httpPort || !match.contentHash) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
+    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(libraryName)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
   }
 </script>
 

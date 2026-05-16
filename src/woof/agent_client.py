@@ -17,7 +17,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
-from .config import BackendConfig
+from .config import LibraryConfig
 
 _log = logging.getLogger(__name__)
 
@@ -219,9 +219,9 @@ class AgentClient:
         self._wally_sidecars: dict[str, _WallySidecar] = {}
         self._sidecar_init_lock: asyncio.Lock | None = None  # created lazily
 
-    def get_wally_connection(self, backend_name: str) -> tuple[int | None, str | None]:
+    def get_wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
         """Return (http_port, token) for the live Wally sidecar, or (None, None)."""
-        sidecar = self._wally_sidecars.get(backend_name)
+        sidecar = self._wally_sidecars.get(library_name)
         if sidecar and sidecar.alive:
             return sidecar.http_port, sidecar.token
         return None, None
@@ -237,7 +237,7 @@ class AgentClient:
         module: str,
         tool_name: str,
         args: dict[str, Any],
-        backend: BackendConfig,
+        library: LibraryConfig,
         *,
         progress_ctx: Context | None = None,
     ) -> Any:
@@ -249,18 +249,18 @@ class AgentClient:
         progress_cb = _make_progress_forwarder(progress_ctx) if progress_ctx else None
 
         if module == "wally":
-            return await self._call_wally(tool_name, args, backend, progress_cb)
+            return await self._call_wally(tool_name, args, library, progress_cb)
 
-        return await self._call_ephemeral(module, tool_name, args, backend, progress_cb)
+        return await self._call_ephemeral(module, tool_name, args, library, progress_cb)
 
     async def _call_wally(
         self,
         tool_name: str,
         args: dict[str, Any],
-        backend: BackendConfig,
+        library: LibraryConfig,
         progress_cb: Any,
     ) -> Any:
-        sidecar = await self._get_wally_sidecar(backend)
+        sidecar = await self._get_wally_sidecar(library)
         result = await sidecar.call_tool(tool_name, args, progress_cb)
         if result.isError:
             content = _extract_text(result.content)
@@ -272,33 +272,33 @@ class AgentClient:
             _log.debug("wally.%s response is not JSON, returning raw: %s", tool_name, exc)
             return raw
 
-    async def _get_wally_sidecar(self, backend: BackendConfig) -> _WallySidecar:
-        """Return the live Wally sidecar for *backend*, starting it if needed."""
+    async def _get_wally_sidecar(self, library: LibraryConfig) -> _WallySidecar:
+        """Return the live Wally sidecar for *library*, starting it if needed."""
         if self._sidecar_init_lock is None:
             self._sidecar_init_lock = asyncio.Lock()
 
         async with self._sidecar_init_lock:
-            sidecar = self._wally_sidecars.get(backend.name)
+            sidecar = self._wally_sidecars.get(library.name)
             if sidecar is None or not sidecar.alive:
                 sidecar = _WallySidecar()
-                env = self._build_env(backend)
+                env = self._build_env(library)
                 try:
                     await sidecar.start([sys.executable, "-m", "wally"], env)
                 except Exception as exc:
                     _log.error(
                         "Wally sidecar failed to start for %r: %s",
-                        backend.name,
+                        library.name,
                         exc,
                         exc_info=True,
                     )
                     raise
-                self._wally_sidecars[backend.name] = sidecar
+                self._wally_sidecars[library.name] = sidecar
         return sidecar
 
-    def _build_env(self, backend: BackendConfig) -> dict[str, str]:
+    def _build_env(self, library: LibraryConfig) -> dict[str, str]:
         return {
             **os.environ,
-            "WOOF_BACKEND_CONFIG": json.dumps(backend.to_agent_env()),
+            "WOOF_BACKEND_CONFIG": json.dumps(library.to_agent_env()),
             "WOOF_AGENT_TOKEN": secrets.token_urlsafe(32),
         }
 
@@ -307,14 +307,14 @@ class AgentClient:
         module: str,
         tool_name: str,
         args: dict[str, Any],
-        backend: BackendConfig,
+        library: LibraryConfig,
         progress_cb: Any,
     ) -> Any:
         """Spawn a fresh child process, call the tool, and exit."""
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", module],
-            env=self._build_env(backend),
+            env=self._build_env(library),
         )
         _log.info("Launching %s → %s(%s)", module, tool_name, list(args))
 

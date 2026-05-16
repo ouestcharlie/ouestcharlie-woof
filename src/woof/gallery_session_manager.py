@@ -28,7 +28,7 @@ class GallerySessionManager:
 
         {
             "matches":      list[dict],   # photo match records
-            "backend":      str,          # backend name(s)
+            "library":      str,          # library name(s)
             "httpPort":     int,          # Woof HTTP port
             "querySummary": str,          # human-readable description
         }
@@ -51,14 +51,14 @@ class GallerySessionManager:
         """Raw session dict — shared with the HTTP server."""
         return self._sessions
 
-    def create(self, backend_name: str, matches: list[Any], http_port: int) -> str:
+    def create(self, library_name: str, matches: list[Any], http_port: int) -> str:
         """Store a new search-result session and return its token."""
         token = secrets.token_urlsafe(16)
         self._add_session(
             token,
             {
                 "matches": _sort_by_date(matches),
-                "backend": backend_name,
+                "library": library_name,
                 "httpPort": http_port,
                 "querySummary": "",
             },
@@ -82,7 +82,7 @@ class GallerySessionManager:
         """Merge sessions from *tokens* into a new session and return it.
 
         Matches are deduplicated by ``contentHash`` in first-seen order.
-        Backend names are joined with ``", "`` when sessions span several backends.
+        Library names are joined with ``", "`` when sessions span several libraries.
 
         Assumes all *tokens* are valid — call :meth:`unknown_tokens` first.
 
@@ -92,24 +92,24 @@ class GallerySessionManager:
         """
         seen_hashes: set[str] = set()
         merged_matches: list[Any] = []
-        backend_names: list[str] = []
+        library_names: list[str] = []
 
         for token in tokens:
             session = self._sessions[token]
-            backend = session.get("backend", "")
-            if backend and backend not in backend_names:
-                backend_names.append(backend)
+            library = session.get("library", "")
+            if library and library not in library_names:
+                library_names.append(library)
             for match in session.get("matches", []):
                 h = match.get("contentHash", "")
                 if h not in seen_hashes:
                     seen_hashes.add(h)
                     merged_matches.append(match)
 
-        merged_backend = ", ".join(backend_names) if backend_names else ""
+        merged_library = ", ".join(library_names) if library_names else ""
         merged_token = secrets.token_urlsafe(16)
         session_data: dict[str, Any] = {
             "matches": _sort_by_date(merged_matches),
-            "backend": merged_backend,
+            "library": merged_library,
             "httpPort": http_port,
             "querySummary": query_summary,
         }

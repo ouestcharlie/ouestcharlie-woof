@@ -1,4 +1,4 @@
-"""Woof configuration — backends stored in ~/.ouestcharlie/config.json."""
+"""Woof configuration — libraries stored in ~/.ouestcharlie/config.json."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ _DEFAULT_CONFIG_DIR = Path(user_config_dir("ouestcharlie"))
 
 
 @dataclass
-class BackendConfig:
-    """A registered photo library backend."""
+class LibraryConfig:
+    """A registered photo library."""
 
     name: str
     """User-chosen label, unique within the config."""
@@ -34,7 +34,7 @@ class BackendConfig:
 class WoofConfig:
     """Device-local Woof configuration."""
 
-    backends: list[BackendConfig] = field(default_factory=list)
+    libraries: list[LibraryConfig] = field(default_factory=list)
     config_dir: Path = field(default_factory=lambda: _DEFAULT_CONFIG_DIR)
 
     # ------------------------------------------------------------------
@@ -52,9 +52,13 @@ class WoofConfig:
             return cls(config_dir=config_dir)
         try:
             raw = json.loads(config_file.read_text())
-            backends = [BackendConfig(**b) for b in raw.get("backends", [])]
-            config = cls(backends=backends, config_dir=config_dir)
-            config._migrate()
+            key_migrated = "backends" in raw and "libraries" not in raw
+            library_data = raw.get("libraries") or raw.get("backends", [])
+            libraries = [LibraryConfig(**b) for b in library_data]
+            config = cls(libraries=libraries, config_dir=config_dir)
+            type_migrated = config._migrate()
+            if key_migrated or type_migrated:
+                config.save()
             return config
         except Exception as exc:
             _log.warning("Failed to parse config %s: %s — starting empty", config_file, exc)
@@ -64,7 +68,7 @@ class WoofConfig:
         """Persist config to disk."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         config_file = self.config_dir / "config.json"
-        data: dict = {"backends": [asdict(b) for b in self.backends]}
+        data: dict = {"libraries": [asdict(b) for b in self.libraries]}
         config_file.write_text(json.dumps(data, indent=2))
         _log.debug("Config saved to %s", config_file)
 
@@ -72,26 +76,25 @@ class WoofConfig:
     # Lookup
     # ------------------------------------------------------------------
 
-    def _migrate(self) -> None:
+    def _migrate(self) -> bool:
         """Upgrade legacy stored values in-place and persist if anything changed."""
         migrated = False
-        for b in self.backends:
+        for b in self.libraries:
             if b.type == "local":
-                _log.info("Migrating backend %r type 'local' → 'filesystem'", b.name)
+                _log.info("Migrating library %r type 'local' → 'filesystem'", b.name)
                 b.type = "filesystem"
                 migrated = True
-        if migrated:
-            self.save()
+        return migrated
 
-    def get_backend(self, name: str) -> BackendConfig | None:
-        """Return the backend with the given name, or None."""
-        for b in self.backends:
+    def get_library(self, name: str) -> LibraryConfig | None:
+        """Return the library with the given name, or None."""
+        for b in self.libraries:
             if b.name == name:
                 return b
         return None
 
-    def add_backend(self, backend: BackendConfig) -> None:
-        """Add or replace a backend by name, then persist."""
-        self.backends = [b for b in self.backends if b.name != backend.name]
-        self.backends.append(backend)
+    def add_library(self, library: LibraryConfig) -> None:
+        """Add or replace a library by name, then persist."""
+        self.libraries = [b for b in self.libraries if b.name != library.name]
+        self.libraries.append(library)
         self.save()

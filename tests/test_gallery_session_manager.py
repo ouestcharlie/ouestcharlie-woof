@@ -11,7 +11,7 @@ def _manager_with_sessions(*sessions: dict) -> tuple[GallerySessionManager, list
     tokens = []
     for s in sessions:
         token = mgr.create(
-            backend_name=s.get("backend", "lib"),
+            library_name=s.get("library", "lib"),
             matches=s.get("matches", []),
             http_port=s.get("http_port", 9999),
         )
@@ -46,7 +46,7 @@ def test_create_stores_session() -> None:
     matches = [_match("h1")]
     token = mgr.create("mylib", matches, 8080)
     session = mgr.sessions[token]
-    assert session["backend"] == "mylib"
+    assert session["library"] == "mylib"
     assert session["matches"] == matches
     assert session["httpPort"] == 8080
     assert session["querySummary"] == ""
@@ -103,10 +103,10 @@ def test_unknown_tokens_empty_input() -> None:
 
 def test_merge_single_session() -> None:
     matches = [_match("h1"), _match("h2")]
-    mgr, [tok] = _manager_with_sessions({"backend": "lib", "matches": matches})
+    mgr, [tok] = _manager_with_sessions({"library": "lib", "matches": matches})
     merged_token, data = mgr.merge([tok], "My query", 9999)
     assert data["matches"] == matches
-    assert data["backend"] == "lib"
+    assert data["library"] == "lib"
     assert data["querySummary"] == "My query"
     assert data["httpPort"] == 9999
 
@@ -143,32 +143,32 @@ def test_merge_preserves_first_seen_order() -> None:
     assert hashes == ["h0", "h1", "h2", "h3", "h4"]
 
 
-def test_merge_joins_backend_names() -> None:
+def test_merge_joins_library_names() -> None:
     mgr, [tok_a, tok_b] = _manager_with_sessions(
-        {"backend": "lib1", "matches": []},
-        {"backend": "lib2", "matches": []},
+        {"library": "lib1", "matches": []},
+        {"library": "lib2", "matches": []},
     )
     _, data = mgr.merge([tok_a, tok_b], "", 9999)
-    assert data["backend"] == "lib1, lib2"
+    assert data["library"] == "lib1, lib2"
 
 
-def test_merge_deduplicates_backend_names() -> None:
+def test_merge_deduplicates_library_names() -> None:
     mgr, [tok_a, tok_b] = _manager_with_sessions(
-        {"backend": "lib1", "matches": []},
-        {"backend": "lib1", "matches": []},
+        {"library": "lib1", "matches": []},
+        {"library": "lib1", "matches": []},
     )
     _, data = mgr.merge([tok_a, tok_b], "", 9999)
-    assert data["backend"] == "lib1"
+    assert data["library"] == "lib1"
 
 
 def test_merge_empty_sessions() -> None:
     mgr, [tok_a, tok_b] = _manager_with_sessions(
-        {"backend": "", "matches": []},
-        {"backend": "", "matches": []},
+        {"library": "", "matches": []},
+        {"library": "", "matches": []},
     )
     _, data = mgr.merge([tok_a, tok_b], "", 9999)
     assert data["matches"] == []
-    assert data["backend"] == ""
+    assert data["library"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ def test_create_undated_photos_sort_last() -> None:
     assert hashes == ["dated", "undated"]
 
 
-def test_merge_sorts_by_date_taken_across_backends() -> None:
+def test_merge_sorts_by_date_taken_across_libraries() -> None:
     mgr, [tok_a, tok_b] = _manager_with_sessions(
         {"matches": [_match("h3", date_taken="2024-03-01T00:00:00")]},
         {

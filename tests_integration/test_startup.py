@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from woof.agent_client import AgentClient
-from woof.config import BackendConfig, WoofConfig
+from woof.config import LibraryConfig, WoofConfig
 from woof.gallery_session_manager import GallerySessionManager
 from woof.http_server import start_http_server
 from woof.server import WoofServer
@@ -57,7 +57,7 @@ class TestHttpServer:
         with urllib.request.urlopen(url) as resp:
             assert resp.status == 200
             data: dict[str, Any] = json.loads(resp.read())
-        assert data["backend"] == "integration-test"
+        assert data["library"] == "integration-test"
         assert data["matches"][0]["filename"] == "a.jpg"
 
     def test_thumbnail_without_wally_returns_503(self) -> None:
@@ -79,10 +79,10 @@ class TestWallySidecar:
 
     @pytest.mark.asyncio
     async def test_sidecar_is_alive_after_start(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """_get_wally_sidecar() must return a live sidecar with a valid HTTP port."""
-        sidecar = await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
+        sidecar = await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
 
         assert sidecar.alive, "Wally sidecar did not reach the alive state"
         assert isinstance(sidecar.http_port, int)
@@ -90,10 +90,10 @@ class TestWallySidecar:
 
     @pytest.mark.asyncio
     async def test_http_port_accepts_connections(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """The HTTP port announced by Wally must accept connections."""
-        sidecar = await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
+        sidecar = await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
 
         async with httpx.AsyncClient() as client:
             try:
@@ -108,29 +108,29 @@ class TestWallySidecar:
 
     @pytest.mark.asyncio
     async def test_get_wally_connection_returns_none_before_start(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """get_wally_connection() returns (None, None) before the sidecar is started."""
-        assert agent_client.get_wally_connection(backend.name) == (None, None)
+        assert agent_client.get_wally_connection(library.name) == (None, None)
 
     @pytest.mark.asyncio
     async def test_get_wally_connection_returns_port_after_start(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """get_wally_connection() returns a live port after the sidecar has started."""
-        await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
+        await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
 
-        port, _token = agent_client.get_wally_connection(backend.name)
+        port, _token = agent_client.get_wally_connection(library.name)
         assert isinstance(port, int)
         assert 1024 <= port <= 65535
 
     @pytest.mark.asyncio
     async def test_second_call_reuses_sidecar(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """Calling _get_wally_sidecar() twice must return the same running sidecar."""
-        sidecar_a = await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
-        sidecar_b = await agent_client._get_wally_sidecar(backend)  # type: ignore[attr-defined]
+        sidecar_a = await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
+        sidecar_b = await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
 
         assert sidecar_a is sidecar_b, "A new sidecar was created on the second call"
 
@@ -145,27 +145,27 @@ class TestWhitebeard:
 
     @pytest.mark.asyncio
     async def test_indexes_empty_library_without_error(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """Whitebeard should start, index an empty directory, and return a result dict."""
         result = await agent_client.call_tool(
             "whitebeard",
             "index_library",
             {"force_extract_exif": False, "generate_thumbnails": False},
-            backend,
+            library,
         )
         assert isinstance(result, dict), f"Expected dict, got {result!r}"
 
     @pytest.mark.asyncio
     async def test_result_contains_photos_processed(
-        self, agent_client: AgentClient, backend: BackendConfig
+        self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
         """The result from Whitebeard must include a photosProcessed count."""
         result = await agent_client.call_tool(
             "whitebeard",
             "index_library",
             {"force_extract_exif": False, "generate_thumbnails": False},
-            backend,
+            library,
         )
         assert "totalPhotos" in result, (
             f"Expected 'totalPhotos' key in result, got keys: {list(result)}"
@@ -198,7 +198,7 @@ class TestFullStack:
             )
 
             tool = await server.mcp.get_tool("list_search_fields")
-            await tool.fn(backend_name="integration-test")
+            await tool.fn(library_name="integration-test")
 
             wally_port, _token = agent.get_wally_connection("integration-test")
             assert isinstance(wally_port, int), (
@@ -233,7 +233,7 @@ class TestFullStack:
                 "Wally did not start: get_wally_connection() returned (None, None) after "
                 "get_partition_summaries was called"
             )
-            # Result is a list of backend summaries
+            # Result is a list of library summaries
             assert isinstance(result, list)
             assert any(s.get("name") == "integration-test" for s in result)
         finally:
@@ -246,8 +246,8 @@ class TestFullStack:
         try:
             session_manager = GallerySessionManager()
 
-            def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
-                return agent.get_wally_connection(backend_name)
+            def _wally_connection_fn(library_name: str) -> tuple[int | None, str | None]:
+                return agent.get_wally_connection(library_name)
 
             http_port = start_http_server(
                 session_manager=session_manager,
@@ -262,7 +262,7 @@ class TestFullStack:
 
             # Trigger Wally startup
             tool = await server.mcp.get_tool("list_search_fields")
-            await tool.fn(backend_name="integration-test")
+            await tool.fn(library_name="integration-test")
 
             # The proxy now knows Wally's port: a thumbnail request should reach
             # Wally and return 404 (unknown partition), not 503 (no Wally port).

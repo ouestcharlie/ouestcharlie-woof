@@ -7,11 +7,11 @@ URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
   GET /api/results/{token}                     — JSON session data (matches + metadata)
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
-  GET /thumbnail/{backend_name}/{partition}/{avif_hash}        — proxied to Wally
-  GET /previews/{backend_name}/{partition}/{content_hash}.jpg — proxied to Wally
+  GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
+  GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
 
 where {partition} may contain slashes (e.g. "2024/2024-07").
-All backend media (thumbnails and previews) is served by Wally and proxied here.
+All library media (thumbnails and previews) is served by Wally and proxied here.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def start_http_server(
         session_manager: Gallery session manager shared with WoofServer.
             Provides token-keyed session lookup for the gallery and results
             endpoints.  A new empty manager is created when omitted.
-        wally_connection_fn: Callable ``(backend_name: str) -> (http_port, token)``
+        wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
             for the named Wally sidecar.  Called on every request so dynamic
             changes (e.g. after sidecar restart) are picked up automatically.
 
@@ -139,17 +139,17 @@ def _build_app(
 
     async def proxy_media(request: Request) -> Response:
         kind = request.path_params["kind"]
-        backend = request.path_params["backend"]
+        library = request.path_params["library"]
         rest = request.path_params["rest"]
         wally_port, wally_token = (
-            wally_connection_fn(backend) if wally_connection_fn is not None else (None, None)
+            wally_connection_fn(library) if wally_connection_fn is not None else (None, None)
         )
         if wally_port is None:
             return Response(
-                f"Wally preview server not available for backend '{backend}'", status_code=503
+                f"Wally preview server not available for library '{library}'", status_code=503
             )
         safe = "/:@!$&'()*+,;="
-        url = f"http://127.0.0.1:{wally_port}/{quote(f'{kind}/{backend}/{rest}', safe=safe)}"
+        url = f"http://127.0.0.1:{wally_port}/{quote(f'{kind}/{library}/{rest}', safe=safe)}"
         headers: dict[str, str] = {}
         if wally_token:
             headers["Authorization"] = f"Bearer {wally_token}"
@@ -157,7 +157,7 @@ def _build_app(
             try:
                 upstream = await client.get(url, headers=headers, timeout=120.0)
             except Exception as exc:
-                _log.error("Proxy to Wally failed for %r/%r/%r: %s", kind, backend, rest, exc)
+                _log.error("Proxy to Wally failed for %r/%r/%r: %s", kind, library, rest, exc)
                 return Response(status_code=503)
         return Response(
             content=upstream.content,
@@ -169,7 +169,7 @@ def _build_app(
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}", api_results),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
-        Route("/{kind}/{backend}/{rest:path}", proxy_media),
+        Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
     app = Starlette(routes=routes)
     return CORSMiddleware(app, allow_origins=["*"])

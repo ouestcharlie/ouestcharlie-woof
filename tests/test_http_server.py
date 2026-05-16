@@ -31,7 +31,7 @@ def test_preview_without_wally_returns_503() -> None:
 
 def test_gallery_token_route_serves_html() -> None:
     mgr = GallerySessionManager()
-    mgr.sessions["tok123"] = {"matches": [], "backend": "testlib", "httpPort": 0}
+    mgr.sessions["tok123"] = {"matches": [], "library": "testlib", "httpPort": 0}
     port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/gallery/tok123"
     with urllib.request.urlopen(url) as resp:
@@ -54,13 +54,13 @@ def test_results_endpoint_returns_session_data() -> None:
 
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg"}]
     mgr = GallerySessionManager()
-    mgr.sessions["tok456"] = {"matches": matches, "backend": "testlib", "httpPort": 9999}
+    mgr.sessions["tok456"] = {"matches": matches, "library": "testlib", "httpPort": 9999}
     port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/api/results/tok456"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["backend"] == "testlib"
+        assert data["library"] == "testlib"
         assert data["matches"] == matches
 
 
@@ -92,7 +92,7 @@ def test_cors_header_present_on_responses() -> None:
     matching real browser behaviour.
     """
     mgr = GallerySessionManager()
-    mgr.sessions["tok789"] = {"matches": [], "backend": "testlib", "httpPort": 0}
+    mgr.sessions["tok789"] = {"matches": [], "library": "testlib", "httpPort": 0}
     port = start_http_server(session_manager=mgr)
     url = f"http://127.0.0.1:{port}/api/results/tok789"
     req = urllib.request.Request(url, headers={"Origin": "http://example.com"})
