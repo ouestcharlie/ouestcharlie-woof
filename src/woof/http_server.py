@@ -41,24 +41,23 @@ _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 
-def get_gallery_html(http_port: int) -> str:
-    """Return the gallery HTML with asset URLs rewritten to absolute localhost URLs.
+def get_gallery_html(server_url: str) -> str:
+    """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
-    those relative-rooted paths with http://127.0.0.1:{http_port}/gallery-static/
-    so the MCP Apps iframe (and direct browser access) can load JS/CSS.
+    those relative-rooted paths with {server_url}/gallery-static/ so the MCP
+    Apps iframe (and direct browser access) can load JS/CSS.
     """
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
-        base = f"http://127.0.0.1:{http_port}/gallery-static/"
-        return html.replace("/gallery-static/", base)
+        return html.replace("/gallery-static/", f"{server_url}/gallery-static/")
     return _gallery_placeholder()
 
 
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
-) -> int:
+) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
     Args:
@@ -70,7 +69,7 @@ def start_http_server(
             changes (e.g. after sidecar restart) are picked up automatically.
 
     Returns:
-        The port number the server is listening on.
+        The full server URL (e.g. ``"http://127.0.0.1:8080"``).
     """
     mgr = session_manager if session_manager is not None else GallerySessionManager()
 
@@ -79,8 +78,9 @@ def start_http_server(
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
     port: int = sock.getsockname()[1]
+    server_url = f"http://127.0.0.1:{port}"
 
-    app = _build_app(mgr, wally_connection_fn, http_port=port)
+    app = _build_app(mgr, wally_connection_fn, server_url=server_url)
     ready = threading.Event()
 
     def _run() -> None:
@@ -91,8 +91,8 @@ def start_http_server(
 
     threading.Thread(target=_run, daemon=True, name="woof-http").start()
     ready.wait(timeout=5.0)
-    _log.info("HTTP server listening on 127.0.0.1:%d", port)
-    return port
+    _log.info("HTTP server listening on %s", server_url)
+    return server_url
 
 
 async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
@@ -114,7 +114,7 @@ async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
 def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
-    http_port: int,
+    server_url: str,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
 
@@ -122,10 +122,10 @@ def _build_app(
         token = request.path_params["token"]
         if session_manager.get(token) is None:
             return Response(status_code=404)
-        html = get_gallery_html(http_port)
+        html = get_gallery_html(server_url)
         return HTMLResponse(
             html,
-            headers={"Content-Security-Policy": "default-src 'self' http://127.0.0.1:*"},
+            headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
         )
 
     async def api_results(request: Request) -> Response:

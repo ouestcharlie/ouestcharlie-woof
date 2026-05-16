@@ -36,12 +36,12 @@ class WoofServer:
     def __init__(
         self,
         config: WoofConfig,
-        http_port: int,
+        server_url: str,
         agent_client: AgentClient | None = None,
         session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
-        self.http_port = http_port
+        self.server_url = server_url
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
@@ -275,8 +275,8 @@ class WoofServer:
             return {
                 "matches": data["matches"],
                 "querySummary": query_summary,
-                "httpPort": self.http_port,
-                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={merged_token}",
+                "serverUrl": self.server_url,
+                "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
             }
 
     # ------------------------------------------------------------------
@@ -284,7 +284,7 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        origin = f"http://127.0.0.1:{self.http_port}"
+        origin = self.server_url
 
         @self.mcp.resource(
             _GALLERY_URI,
@@ -297,7 +297,7 @@ class WoofServer:
             ),
         )
         async def gallery_resource() -> str:
-            return get_gallery_html(self.http_port)
+            return get_gallery_html(self.server_url)
 
     # ------------------------------------------------------------------
     # Helpers
