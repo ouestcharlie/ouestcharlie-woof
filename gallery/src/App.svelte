@@ -4,8 +4,7 @@
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
 
-  let httpPort = $state(null);
-  let backendName = $state(null);
+  let serverUrl = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
   let status = $state('');
@@ -17,8 +16,7 @@
   let view = $state('grid'); // 'grid' | 'preview'
 
   function applySession(session) {
-    httpPort = session.httpPort ?? httpPort;
-    backendName = session.backend;
+    serverUrl = session.serverUrl ?? serverUrl;
     matches = session.matches ?? [];
     querySummary = session.querySummary ?? '';
     status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
@@ -35,10 +33,9 @@
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
     const token = new URLSearchParams(location.search).get('token');
-    const port = location.port ? parseInt(location.port) : 80;
     if (token) {
-      httpPort = port;
-      fetch(`http://127.0.0.1:${port}/api/results/${token}`)
+      serverUrl = location.origin;
+      fetch(`${serverUrl}/api/results/${token}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
         .then(data => applySession(data))
         .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
@@ -80,9 +77,9 @@
    */
   function thumbnailTile(match) {
     const { avifHash } = match;
-    if (!httpPort || !avifHash || match.tileIndex == null) return null;
+    if (!serverUrl || !match.library || !avifHash || match.tileIndex == null) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
+    const url = `${serverUrl}/thumbnail/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
     const col = match.tileIndex % AVIF_GRID_COLS;
     const row = Math.floor(match.tileIndex / AVIF_GRID_COLS);
     return { url, col, row, cols: AVIF_GRID_COLS };
@@ -103,9 +100,9 @@
    * The JPEG is generated on-demand by Wally and cached on disk.
    */
   function previewUrl(match) {
-    if (!httpPort || !match.contentHash) return null;
+    if (!serverUrl || !match.library || !match.contentHash) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(backendName)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
+    return `${serverUrl}/previews/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
   }
 </script>
 

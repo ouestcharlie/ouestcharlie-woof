@@ -13,7 +13,7 @@ from fastmcp.apps import AppConfig, ResourceCSP
 from mcp.types import ToolAnnotations
 
 from .agent_client import AgentClient, AgentError
-from .config import BackendConfig, WoofConfig
+from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager
 from .http_server import get_gallery_html
 
@@ -36,15 +36,15 @@ class WoofServer:
     def __init__(
         self,
         config: WoofConfig,
-        http_port: int,
+        server_url: str,
         agent_client: AgentClient | None = None,
         session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
-        self.http_port = http_port
+        self.server_url = server_url
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
-        self._backend_fields: dict[str, list[Any]] = {}  # backend name → field defs, loaded lazily
+        self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
 
         agent = self._agent
 
@@ -67,64 +67,64 @@ class WoofServer:
         mcp = self.mcp
 
         @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
-        async def add_backend(
+        async def add_library(
             name: str,
             path: str,
-            backend_type: str = "filesystem",
+            library_type: str = "filesystem",
         ) -> dict[str, Any]:
-            """Register a photo library backend.
+            """Register a photo library.
 
             Args:
-                name: Unique label for this backend (e.g. "kDrive Photos").
+                name: Unique label for this library (e.g. "kDrive Photos").
                 path: Absolute path to the photo root directory.
-                backend_type: Storage type. Use ``"filesystem"`` for a normal
+                library_type: Storage type. Use ``"filesystem"`` for a normal
                     local folder (default) or ``"cloud_mount"`` for a
                     FUSE/Windows-CF-API cloud-sync folder (kDrive, OneDrive,
                     Google Drive, Dropbox).
             """
-            backend = BackendConfig(name=name, type=backend_type, path=path)
-            self.config.add_backend(backend)
-            _log.info("Backend %r added at %s (type=%s)", name, path, backend_type)
-            return {"name": name, "path": path, "type": backend_type, "status": "added"}
+            library = LibraryConfig(name=name, type=library_type, path=path)
+            self.config.add_library(library)
+            _log.info("Library %r added at %s (type=%s)", name, path, library_type)
+            return {"name": name, "path": path, "type": library_type, "status": "added"}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def list_backends() -> dict[str, Any]:
-            """List all registered photo library backends."""
+        async def list_libraries() -> dict[str, Any]:
+            """List all registered photo libraries."""
             return {
-                "backends": [
-                    {"name": b.name, "type": b.type, "path": b.path} for b in self.config.backends
+                "libraries": [
+                    {"name": b.name, "type": b.type, "path": b.path} for b in self.config.libraries
                 ]
             }
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def list_search_fields(backend_name: str = "") -> dict:
-            """Get the searchable field definitions for a backend.
+        async def list_search_fields(library_name: str = "") -> dict:
+            """Get the searchable field definitions for a library.
 
             Returns the field definitions available for filtering in search_photos.
 
             Args:
-                backend_name: Name of the backend to query. Defaults to the
-                    first registered backend when omitted.
+                library_name: Name of the library to query. Defaults to the
+                    first registered library when omitted.
             """
-            if not self.config.backends:
+            if not self.config.libraries:
                 return {}
-            if backend_name:
-                backend = self._require_backend(backend_name)
+            if library_name:
+                library = self._require_library(library_name)
             else:
-                backend = self.config.backends[0]
-            return {"name": backend.name, "fields": await self._get_fields(backend)}
+                library = self.config.libraries[0]
+            return {"name": library.name, "fields": await self._get_fields(library)}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def get_partition_summaries() -> list[Any]:
-            """Return the root summary of each registered backend.
+            """Return the root summary of each registered library.
 
             The summary contains a flat list of all indexed partitions with
             photo counts and statistics (date ranges, GPS bounding boxes, etc.).
 
-            Returns ``None`` for the summary if the backend is unindexed or unreachable.
+            Returns ``None`` for the summary if the library is unindexed or unreachable.
             """
             result = []
-            for b in self.config.backends:
+            for b in self.config.libraries:
                 try:
                     summary = await self._agent.call_tool("wally", "get_partition_summaries", {}, b)
                 except AgentError as exc:
@@ -134,26 +134,26 @@ class WoofServer:
             return result
 
         @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
-        async def index_backend(
+        async def index_library(
             ctx: Context,
-            backend_name: str,
+            library_name: str,
             partition: str = "",
             force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
             force_full_index: bool = False,
         ) -> dict[str, Any]:
-            """Index photos in a backend using Whitebeard.
+            """Index photos in a library using Whitebeard.
 
             By default runs in incremental mode: only new photos are indexed,
             deleted photos are removed from the manifest.  Use
             ``force_full_index=True`` to re-process all photos.
 
-            Scans the backend for photos, writes XMP sidecars with metadata
+            Scans the library for photos, writes XMP sidecars with metadata
             and content hashes, builds leaf manifests, and generates
             thumbnail AVIF containers.
 
             Args:
-                backend_name: Name of the backend to index (from list_backends).
+                library_name: Name of the library to index (from list_libraries).
                 partition: Sub-path to index (e.g. "2024/2024-07"). Defaults
                     to "" which indexes the entire library.
                 force_extract_exif: Re-extract EXIF and overwrite existing XMP
@@ -163,7 +163,7 @@ class WoofServer:
                 force_full_index: Re-process all photos even if already indexed.
                     Defaults to False (incremental).
             """
-            backend = self._require_backend(backend_name)
+            library = self._require_library(library_name)
             tool = "index_partition" if partition else "index_library"
             args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
@@ -174,21 +174,21 @@ class WoofServer:
                 args["partition"] = partition
             try:
                 result = await self._agent.call_tool(
-                    "whitebeard", tool, args, backend, progress_ctx=ctx
+                    "whitebeard", tool, args, library, progress_ctx=ctx
                 )
             except AgentError as exc:
-                _log.error("index_backend(%r) failed: %s", backend_name, exc)
+                _log.error("index_library(%r) failed: %s", library_name, exc)
                 return {"error": str(exc)}
             return result  # type: ignore[return-value]
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def search_photos(
             ctx: Context,
-            backend_name: str,
+            library_name: str,
             filters: dict | None = None,
             root: str = "",
         ) -> dict[str, Any]:
-            """Search photos in a backend using Wally.
+            """Search photos in a library using Wally.
 
             Traverses the manifest tree with two-level pruning for efficiency.
             Omitting ``filters`` (or passing None) returns all indexed photos.
@@ -197,7 +197,7 @@ class WoofServer:
             their expected formats before constructing a query.
 
             Args:
-                backend_name: Name of the backend to search.
+                library_name: Name of the library to search.
                 filters: Optional dict mapping field names to filter values.
                     Call ``list_search_fields`` to get valid fields and formats.
                     Examples::
@@ -212,27 +212,27 @@ class WoofServer:
                         # 4K landscape photos
                         {"width": {"min": 3840}}
 
-                root: Sub-path to search within the backend (default "" = entire
+                root: Sub-path to search within the library (default "" = entire
                     library). E.g. "2024/2024-07" to restrict to one partition.
             """
-            backend = self._require_backend(backend_name)
+            library = self._require_library(library_name)
             args: dict[str, Any] = {"root": root}
             if filters is not None:
                 args["filters"] = filters
 
-            fields = await self._get_fields(backend)
+            fields = await self._get_fields(library)
 
             try:
                 result = await self._agent.call_tool(
-                    "wally", "search_photos", args, backend, progress_ctx=ctx
+                    "wally", "search_photos", args, library, progress_ctx=ctx
                 )
             except AgentError as exc:
-                _log.error("search_photos(%r) failed: %s", backend_name, exc)
+                _log.error("search_photos(%r) failed: %s", library_name, exc)
                 return {"error": str(exc)}
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            token = self._sessions.create(backend_name, matches, self.http_port)
+            token = self._sessions.create(library_name, matches)
             return {
                 **self._search_stats(matches, fields),
                 "session_token": token,
@@ -271,13 +271,12 @@ class WoofServer:
                     )
                 }
 
-            merged_token, data = self._sessions.merge(session_tokens, query_summary, self.http_port)
+            merged_token, data = self._sessions.merge(session_tokens, query_summary)
             return {
                 "matches": data["matches"],
-                "backend": data["backend"],
                 "querySummary": query_summary,
-                "httpPort": self.http_port,
-                "galleryUrl": f"http://127.0.0.1:{self.http_port}/gallery?token={merged_token}",
+                "serverUrl": self.server_url,
+                "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
             }
 
     # ------------------------------------------------------------------
@@ -285,7 +284,7 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        origin = f"http://127.0.0.1:{self.http_port}"
+        origin = self.server_url
 
         @self.mcp.resource(
             _GALLERY_URI,
@@ -298,7 +297,7 @@ class WoofServer:
             ),
         )
         async def gallery_resource() -> str:
-            return get_gallery_html(self.http_port)
+            return get_gallery_html(self.server_url)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -334,27 +333,27 @@ class WoofServer:
                     stats[name] = {"min": min(values), "max": max(values)}
         return stats
 
-    async def _get_fields(self, backend: BackendConfig) -> list[Any]:
-        """Return field definitions for a backend, fetching from Wally on first call.
+    async def _get_fields(self, library: LibraryConfig) -> list[Any]:
+        """Return field definitions for a library, fetching from Wally on first call.
 
-        The result is cached per backend name for the lifetime of the server.
+        The result is cached per library name for the lifetime of the server.
         Returns an empty list if the agent call fails.
         """
-        if backend.name not in self._backend_fields:
+        if library.name not in self._library_fields:
             try:
-                result = await self._agent.call_tool("wally", "list_search_fields", {}, backend)
-                self._backend_fields[backend.name] = result.get("fields", [])  # type: ignore[union-attr]
+                result = await self._agent.call_tool("wally", "list_search_fields", {}, library)
+                self._library_fields[library.name] = result.get("fields", [])  # type: ignore[union-attr]
             except AgentError as exc:
                 _log.warning(
                     "list_search_fields failed for %r, stats will be empty: %s",
-                    backend.name,
+                    library.name,
                     exc,
                 )
                 return []
-        return self._backend_fields[backend.name]
+        return self._library_fields[library.name]
 
-    def _require_backend(self, name: str) -> BackendConfig:
-        backend = self.config.get_backend(name)
-        if backend is None:
-            raise ValueError(f"Backend {name!r} not found. Use add_backend to register it first.")
-        return backend
+    def _require_library(self, name: str) -> LibraryConfig:
+        library = self.config.get_library(name)
+        if library is None:
+            raise ValueError(f"Library {name!r} not found. Use add_library to register it first.")
+        return library

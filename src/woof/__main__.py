@@ -41,11 +41,11 @@ def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
     return _agent.get_wally_connection(backend_name)
 
 
-_http_port = start_http_server(
+_server_url = start_http_server(
     session_manager=_session_manager,
     wally_connection_fn=_wally_connection_fn,
 )
-_server = WoofServer(_config, _http_port, agent_client=_agent, session_manager=_session_manager)
+_server = WoofServer(_config, _server_url, agent_client=_agent, session_manager=_session_manager)
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
 

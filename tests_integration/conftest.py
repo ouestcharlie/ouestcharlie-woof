@@ -19,26 +19,26 @@ import pytest
 import pytest_asyncio
 
 from woof.agent_client import AgentClient
-from woof.config import BackendConfig, WoofConfig
+from woof.config import LibraryConfig, WoofConfig
 
 
 @pytest.fixture()
-def backend(tmp_path: Path) -> BackendConfig:
+def library(tmp_path: Path) -> LibraryConfig:
     """A minimal backend config pointing at an empty temporary directory."""
-    return BackendConfig(name="integration-test", type="filesystem", path=str(tmp_path))
+    return LibraryConfig(name="integration-test", type="filesystem", path=str(tmp_path))
 
 
 @pytest.fixture()
-def config(tmp_path: Path, backend: BackendConfig) -> WoofConfig:
+def config(tmp_path: Path, library: LibraryConfig) -> WoofConfig:
     """WoofConfig with a single backend and an isolated config directory."""
     return WoofConfig(
-        backends=[backend],
+        libraries=[library],
         config_dir=tmp_path / ".woof",
     )
 
 
 @pytest_asyncio.fixture()
-async def agent_client(backend: BackendConfig) -> AgentClient:  # type: ignore[misc]
+async def agent_client(library: LibraryConfig) -> AgentClient:  # type: ignore[misc]
     """AgentClient that shuts down all sidecars after each test."""
     client = AgentClient()
     yield client  # type: ignore[misc]
