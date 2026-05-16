@@ -841,18 +841,18 @@ wheels = [
 
 [[package]]
 name = "ouestcharlie-imageproc"
-version = "2.1.0"
+version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/b7/93352866510d83b9afc853a301d405f85983ecf79c8f94476ab6b7214dec/ouestcharlie_imageproc-2.1.0.tar.gz", hash = "sha256:38587da6d70d413de30d9b351da23dcc6fc26c3a5d35ff82f4c2e0d6580c8f8a", size = 3054494, upload-time = "2026-05-15T19:33:14.207Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/04/323f52e3dec3c8832b0926870cd28c72be3330a0333057316c2c281d13d1/ouestcharlie_imageproc-2.2.0.tar.gz", hash = "sha256:690d8b4c6380a4a7da62946b97607d6a8e7b6ad794881737b3de536c18fd4597", size = 3054772, upload-time = "2026-05-16T16:50:17.13Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/5e/5fef725a7013961f9bcc173e328233e9fdd7ae81bf4b5676433bcd85b4bb/ouestcharlie_imageproc-2.1.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:37be3ec23ef317b1f4ce3d3a50a5baf0518c90bb898af9748d60499ee14eed5c", size = 1579771, upload-time = "2026-05-15T19:33:08.537Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/39/b582cea549758c6201a5ddcdec9c6390f291223c04c653103d6c3a69a29c/ouestcharlie_imageproc-2.1.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:ce2ce6d0cca72c5c5692c57973d2196138f1092d694f00c1691f13e9cec6b730", size = 2036730, upload-time = "2026-05-15T19:33:10.468Z" },
-    { url = "https://files.pythonhosted.org/packages/6e/0d/45fb6179daf64a5ad9b5235aa76cf94fa61cfb27a5f479202fdc05232f6a/ouestcharlie_imageproc-2.1.0-cp313-cp313-win_amd64.whl", hash = "sha256:d8830958c66002cb59c84f2d30c0e133000eae7a2fafe9bc9c6fda38ddc2a46c", size = 3636546, upload-time = "2026-05-15T19:33:12.308Z" },
+    { url = "https://files.pythonhosted.org/packages/db/ad/3dc5489c6385e59f18141b72817b4e5f1e4a85c6c2f1b33082e35b5fb9e2/ouestcharlie_imageproc-2.2.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:fadd6a6eaece7e5dbaf730dbab6f7b3330f6f8bdce8327013d54a13204d8ad2a", size = 1580335, upload-time = "2026-05-16T16:50:11.832Z" },
+    { url = "https://files.pythonhosted.org/packages/af/c3/5a7718666d91fc0bcd3539d721d060c0936ada9a2a35f479a74fec509f31/ouestcharlie_imageproc-2.2.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:c0c4ecb86b60f784c9ac255627211c1d1aae0208418c28e41e45fa6cd5ec2826", size = 2036494, upload-time = "2026-05-16T16:50:13.473Z" },
+    { url = "https://files.pythonhosted.org/packages/41/5b/d4fdcc5abca713d58289ebc743c2743832eb80e21db8ef854360f63e4b95/ouestcharlie_imageproc-2.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:c7994a50323b482efb500faee4c7dcc99225220878688cbf9ddac8dcd6d82065", size = 3636330, upload-time = "2026-05-16T16:50:15.333Z" },
 ]
 
 [[package]]
 name = "ouestcharlie-py-toolkit"
-version = "0.8.0"
+version = "0.8.1"
 source = { editable = "../ouestcharlie-py-toolkit" }
 dependencies = [
     { name = "blake3" },
@@ -871,7 +871,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.0" },
     { name = "lancedb", specifier = ">=0.20" },
     { name = "mcp", specifier = ">=1.27" },
-    { name = "ouestcharlie-imageproc", specifier = "~=2.1" },
+    { name = "ouestcharlie-imageproc", specifier = "~=2.2" },
     { name = "pyarrow", specifier = ">=18" },
     { name = "pyexiv2", specifier = ">=2.8" },
     { name = "pyjwt", specifier = ">=2.12.0" },
@@ -914,7 +914,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-whitebeard"
-version = "0.8.0"
+version = "0.8.1"
 source = { editable = "../ouestcharlie-whitebeard" }
 dependencies = [
     { name = "mcp" },

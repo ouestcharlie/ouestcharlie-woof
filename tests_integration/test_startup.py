@@ -33,16 +33,16 @@ from woof.server import WoofServer
 class TestHttpServer:
     """The HTTP server (daemon thread) starts synchronously and responds immediately."""
 
-    def test_binds_to_a_loopback_port(self) -> None:
-        """start_http_server() should return a valid unprivileged port."""
-        port = start_http_server()
-        assert isinstance(port, int)
-        assert 1024 <= port <= 65535
+    def test_returns_a_loopback_url(self) -> None:
+        """start_http_server() should return a valid loopback URL."""
+        server_url = start_http_server()
+        assert isinstance(server_url, str)
+        assert server_url.startswith("http://127.0.0.1:")
 
     def test_unknown_session_returns_404(self) -> None:
         """Requesting /api/results/<unknown-token> must return HTTP 404."""
-        port = start_http_server()
-        url = f"http://127.0.0.1:{port}/api/results/no-such-token"
+        server_url = start_http_server()
+        url = f"{server_url}/api/results/no-such-token"
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 404
@@ -51,9 +51,9 @@ class TestHttpServer:
         """A session created in the shared manager is served via /api/results."""
         mgr = GallerySessionManager()
         token = mgr.create("integration-test", [{"filename": "a.jpg"}])
-        port = start_http_server(session_manager=mgr)
+        server_url = start_http_server(session_manager=mgr)
 
-        url = f"http://127.0.0.1:{port}/api/results/{token}"
+        url = f"{server_url}/api/results/{token}"
         with urllib.request.urlopen(url) as resp:
             assert resp.status == 200
             data: dict[str, Any] = json.loads(resp.read())
@@ -62,8 +62,8 @@ class TestHttpServer:
 
     def test_thumbnail_without_wally_returns_503(self) -> None:
         """Media proxy returns 503 when no Wally port is configured."""
-        port = start_http_server()
-        url = f"http://127.0.0.1:{port}/thumbnails/lib/2024/thumbnails.avif"
+        server_url = start_http_server()
+        url = f"{server_url}/thumbnails/lib/2024/thumbnails.avif"
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 503
@@ -167,10 +167,10 @@ class TestWhitebeard:
             {"force_extract_exif": False, "generate_thumbnails": False},
             library,
         )
-        assert "totalPhotos" in result, (
-            f"Expected 'totalPhotos' key in result, got keys: {list(result)}"
+        assert "totalPhotosProcessed" in result, (
+            f"Expected 'totalPhotosProcessed' key in result, got keys: {list(result)}"
         )
-        assert result["totalPhotos"] == 0  # empty directory
+        assert result["totalPhotosProcessed"] == 0  # empty directory
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +189,10 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            http_port = start_http_server(session_manager=session_manager)
+            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                http_port=http_port,
+                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -216,10 +216,10 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            http_port = start_http_server(session_manager=session_manager)
+            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                http_port=http_port,
+                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -249,13 +249,13 @@ class TestFullStack:
             def _wally_connection_fn(library_name: str) -> tuple[int | None, str | None]:
                 return agent.get_wally_connection(library_name)
 
-            http_port = start_http_server(
+            server_url = start_http_server(
                 session_manager=session_manager,
                 wally_connection_fn=_wally_connection_fn,
             )
             server = WoofServer(
                 config,
-                http_port=http_port,
+                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -266,7 +266,7 @@ class TestFullStack:
 
             # The proxy now knows Wally's port: a thumbnail request should reach
             # Wally and return 404 (unknown partition), not 503 (no Wally port).
-            url = f"http://127.0.0.1:{http_port}/thumbnails/integration-test/2024/thumbnails.avif"
+            url = f"{server_url}/thumbnails/integration-test/2024/thumbnails.avif"
             try:
                 urllib.request.urlopen(url)
             except urllib.error.HTTPError as exc:
