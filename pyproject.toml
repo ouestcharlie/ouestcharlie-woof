@@ -24,8 +24,8 @@ dependencies = [
     "starlette>=1.0",
     "uvicorn>=0.40",
     "platformdirs>=4.0",
-    "ouestcharlie-py-toolkit>=0.8.1",
-    "ouestcharlie-whitebeard>=0.8.1",
+    "ouestcharlie-py-toolkit>=0.8.2",
+    "ouestcharlie-whitebeard>=0.8.2",
     "ouestcharlie-wally>=0.8.0",
 ]
 
