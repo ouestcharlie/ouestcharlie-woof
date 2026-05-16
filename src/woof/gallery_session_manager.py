@@ -27,9 +27,7 @@ class GallerySessionManager:
     A *session* is a dict with at least::
 
         {
-            "matches":      list[dict],   # photo match records
-            "library":      str,          # library name(s)
-            "httpPort":     int,          # Woof HTTP port
+            "matches":      list[dict],   # photo match records; each match carries "library": str
             "querySummary": str,          # human-readable description
         }
 
@@ -51,15 +49,14 @@ class GallerySessionManager:
         """Raw session dict — shared with the HTTP server."""
         return self._sessions
 
-    def create(self, library_name: str, matches: list[Any], http_port: int) -> str:
+    def create(self, library_name: str, matches: list[Any]) -> str:
         """Store a new search-result session and return its token."""
         token = secrets.token_urlsafe(16)
+        stamped = [{**m, "library": library_name} for m in matches]
         self._add_session(
             token,
             {
-                "matches": _sort_by_date(matches),
-                "library": library_name,
-                "httpPort": http_port,
+                "matches": _sort_by_date(stamped),
                 "querySummary": "",
             },
         )
@@ -77,12 +74,11 @@ class GallerySessionManager:
         self,
         tokens: list[str],
         query_summary: str,
-        http_port: int,
     ) -> tuple[str, dict[str, Any]]:
         """Merge sessions from *tokens* into a new session and return it.
 
         Matches are deduplicated by ``contentHash`` in first-seen order.
-        Library names are joined with ``", "`` when sessions span several libraries.
+        Each match already carries its ``"library"`` field from :meth:`create`.
 
         Assumes all *tokens* are valid — call :meth:`unknown_tokens` first.
 
@@ -92,25 +88,17 @@ class GallerySessionManager:
         """
         seen_hashes: set[str] = set()
         merged_matches: list[Any] = []
-        library_names: list[str] = []
 
         for token in tokens:
-            session = self._sessions[token]
-            library = session.get("library", "")
-            if library and library not in library_names:
-                library_names.append(library)
-            for match in session.get("matches", []):
+            for match in self._sessions[token].get("matches", []):
                 h = match.get("contentHash", "")
                 if h not in seen_hashes:
                     seen_hashes.add(h)
                     merged_matches.append(match)
 
-        merged_library = ", ".join(library_names) if library_names else ""
         merged_token = secrets.token_urlsafe(16)
         session_data: dict[str, Any] = {
             "matches": _sort_by_date(merged_matches),
-            "library": merged_library,
-            "httpPort": http_port,
             "querySummary": query_summary,
         }
         self._add_session(merged_token, session_data)

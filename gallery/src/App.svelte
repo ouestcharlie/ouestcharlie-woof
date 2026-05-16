@@ -5,7 +5,6 @@
   import PreviewPanel from './components/PreviewPanel.svelte';
 
   let httpPort = $state(null);
-  let libraryName = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
   let status = $state('');
@@ -18,7 +17,6 @@
 
   function applySession(session) {
     httpPort = session.httpPort ?? httpPort;
-    libraryName = session.library;
     matches = session.matches ?? [];
     querySummary = session.querySummary ?? '';
     status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
@@ -80,9 +78,9 @@
    */
   function thumbnailTile(match) {
     const { avifHash } = match;
-    if (!httpPort || !avifHash || match.tileIndex == null) return null;
+    if (!httpPort || !match.library || !avifHash || match.tileIndex == null) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(libraryName)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
+    const url = `http://127.0.0.1:${httpPort}/thumbnail/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
     const col = match.tileIndex % AVIF_GRID_COLS;
     const row = Math.floor(match.tileIndex / AVIF_GRID_COLS);
     return { url, col, row, cols: AVIF_GRID_COLS };
@@ -103,9 +101,9 @@
    * The JPEG is generated on-demand by Wally and cached on disk.
    */
   function previewUrl(match) {
-    if (!httpPort || !match.contentHash) return null;
+    if (!httpPort || !match.library || !match.contentHash) return null;
     const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(libraryName)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
+    return `http://127.0.0.1:${httpPort}/previews/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
   }
 </script>
 

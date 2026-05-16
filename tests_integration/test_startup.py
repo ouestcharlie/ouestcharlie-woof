@@ -50,14 +50,14 @@ class TestHttpServer:
     def test_known_session_returns_200_with_data(self) -> None:
         """A session created in the shared manager is served via /api/results."""
         mgr = GallerySessionManager()
-        token = mgr.create("integration-test", [{"filename": "a.jpg"}], http_port=0)
+        token = mgr.create("integration-test", [{"filename": "a.jpg"}])
         port = start_http_server(session_manager=mgr)
 
         url = f"http://127.0.0.1:{port}/api/results/{token}"
         with urllib.request.urlopen(url) as resp:
             assert resp.status == 200
             data: dict[str, Any] = json.loads(resp.read())
-        assert data["library"] == "integration-test"
+        assert data["matches"][0]["library"] == "integration-test"
         assert data["matches"][0]["filename"] == "a.jpg"
 
     def test_thumbnail_without_wally_returns_503(self) -> None:

@@ -366,9 +366,8 @@ async def test_search_photos_stores_session(server: WoofServer) -> None:
         result = await tool_fn(ctx=None, library_name="testlib")
     token = result["session_token"]
     session = server._sessions.sessions[token]
-    assert session["matches"] == matches
-    assert session["library"] == "testlib"
-    assert session["httpPort"] == 9999
+    assert all(m["library"] == "testlib" for m in session["matches"])
+    assert [m["partition"] for m in session["matches"]] == [m["partition"] for m in matches]
 
 
 @pytest.mark.asyncio
@@ -403,16 +402,13 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     token = "test-token"
     server._sessions.sessions[token] = {
         "matches": matches,
-        "library": "testlib",
-        "httpPort": 9999,
         "querySummary": "",
     }
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=[token], query_summary="My query")
     assert result["matches"] == matches
-    assert result["library"] == "testlib"
+    assert result["httpPort"] == 9999  # injected by browse_gallery, not from session
     assert result["querySummary"] == "My query"
-    assert result["httpPort"] == 9999
 
 
 @pytest.mark.asyncio
@@ -420,8 +416,6 @@ async def test_browse_gallery_sets_query_summary(server: WoofServer) -> None:
     token = "tok"
     server._sessions.sessions[token] = {
         "matches": [],
-        "library": "testlib",
-        "httpPort": 9999,
         "querySummary": "",
     }
     tool_fn = await _get_tool(server, "browse_gallery")
@@ -440,12 +434,10 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
 
     server._sessions.sessions["tok-a"] = {
         "matches": matches_a,
-        "library": "lib1",
         "querySummary": "",
     }
     server._sessions.sessions["tok-b"] = {
         "matches": matches_b,
-        "library": "lib2",
         "querySummary": "",
     }
 
@@ -454,7 +446,6 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
 
     hashes = [m["contentHash"] for m in result["matches"]]
     assert hashes == ["hash0", "hash1", "hash2"]
-    assert result["library"] == "lib1, lib2"
 
 
 @pytest.mark.asyncio
