@@ -4,7 +4,7 @@
 
 > **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
 
-Woof is the MCP App to **"Où Est Charlie ?"**, a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable gallery view powered by your AI assistant (Claude, OpenGPT, Goose...).
+Woof is the **MCP App** to **"Où est Charlie ?"**, a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude, Goose...).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
@@ -68,15 +68,8 @@ Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery 
 
 #### Connect to ChatGPT Desktop
 
-**NOTE: As o May 2026, ChatGPT is no longer supporting local MCP servers. Following is not longer valid!**
+**NOTE: As o May 2026, ChatGPT is no longer supporting local MCP servers. Following is not longer available!**
 
-> **Reference:** [ChatGPT MCP integration guide](https://openai.com/index/introducing-the-model-context-protocol-in-chatgpt/)
-
-ChatGPT Desktop supports MCP servers. Add Woof in **Settings → Connectors → Add MCP Server**:
-
-- **Name**: Woof
-- **Command**: `uvx`
-- **Arguments**: `--python 3.12 --from ouestcharlie-woof woof`
 
 #### Connect to Goose
 
@@ -114,7 +107,7 @@ See the [MCP Extension Support Matrix](https://modelcontextprotocol.io/extension
 
 Once Woof is connected to your AI client, ask it to register your photo folder:
 
-> *"Add a local backend to Woof pointing to /Users/yourname/Pictures"*
+> *"Add a local library to Woof pointing to /Users/yourname/Pictures"*
 
 Woof supports any folder on a local drive — including folders synced from iCloud Drive, OneDrive, or Google Drive, as long as the files are locally available.
 
@@ -122,7 +115,7 @@ Woof supports any folder on a local drive — including folders synced from iClo
 
 Trigger the indexer to scan your photos and build the metadata index:
 
-> *"Index my local backend"*
+> *"Index my local library"*
 
 Woof will launch the indexing agent, which will:
 - Read EXIF/XMP metadata from each photo
@@ -151,9 +144,9 @@ The gallery panel will appear inline in your conversation with matching results.
 
 ## Storage
 
-V1 supports **local filesystem** backends on macOS, Linux, and Windows. This includes:
-- A standard local hard drive or SSD
-- A folder synced from iCloud Drive, OneDrive, Google Drive, or Infomaniak kDrive — as long as files are downloaded and locally accessible
+V1 supports **local filesystem** and **cloud_mount** libraries on macOS, Linux, and Windows:
+- **filsystem** for a standard local hard drive or SSD, including local network drive (e.g. NAS)
+- **clound_mount** for a folder synced from iCloud Drive, OneDrive, Google Drive, or Infomaniak kDrive — as long as files are downloaded and locally accessible
 
 Native cloud storage (S3, Azure, GCS, OneDrive API) is planned for V2.
 
@@ -176,7 +169,7 @@ Woof is an **early preview** targeting a focused V1 scope:
 | Enrichment agents (faces, scene recognition) | Planned for V2 |
 | Change detection / automatic re-indexing | Planned for V2 |
 | Mobile companion app | Planned for V3 |
-| Native cloud backends (S3, OneDrive, GCS…) | Planned for V3 |
+| Native cloud libraries (S3, OneDrive, GCS…) | Planned for V3 |
 
 **What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 

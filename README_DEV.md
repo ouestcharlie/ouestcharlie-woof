@@ -4,7 +4,7 @@ Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with 
 
 ## Roles
 
-1. **MCP server** → Claude Desktop: exposes `add_backend`, `list_backends`, `get_status`, `index_backend`, `search_photos`, `browse_gallery`
+1. **MCP server** → Claude Desktop: exposes `add_library`, `list_libraries`, `get_status`, `index_library`, `search_photos`, `browse_gallery`
 2. **MCP client** → agents: launches Whitebeard and Wally as stdio child processes and calls their tools
 3. **HTTP server**: serves thumbnail/preview AVIF containers on `127.0.0.1:<random port>` for the gallery iframe
 
@@ -126,17 +126,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 Restart Claude Desktop after editing the config. Woof is launched on demand when Claude Desktop starts.
 
-### First use
-
-```
-add_backend name="My Photos" path="/Users/you/Pictures"
-index_backend backend_name="My Photos"
-search_photos backend_name="My Photos" date_min="2024-07"
-# → returns count, per-partition breakdown, date range, and a session_token
-browse_gallery session_token="<token from search_photos>" query_summary="July 2024"
-```
-
-`search_photos` stores matches server-side and returns a lightweight `session_token`. Pass that token to `browse_gallery` — the full photo list is never echoed back through Claude's tool arguments.
 
 ## MCP Inspector (development)
 
