@@ -37,7 +37,7 @@ class TestHttpServer:
         """start_http_server() should return a valid loopback URL."""
         server_url = start_http_server()
         assert isinstance(server_url, str)
-        assert server_url.startswith("http://127.0.0.1:")
+        assert server_url.startswith("http://localhost:")
 
     def test_unknown_session_returns_404(self) -> None:
         """Requesting /api/results/<unknown-token> must return HTTP 404."""

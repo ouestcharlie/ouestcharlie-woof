@@ -46,9 +46,21 @@
     try {
       const app = new App({ name: 'OuEstCharlie', version: '1.0.0' });
       mcpApp = app;
-      app.ontoolresult = ({ content }) => {
+      app.ontoolresult = async ({ content }) => {
         const text = (content ?? []).find(b => b.type === 'text')?.text;
-        if (text) applySession(JSON.parse(text));
+        if (!text) return;
+        const result = JSON.parse(text);
+        // Set serverUrl from the tool result before fetching — in the MCP iframe
+        // context location.origin is ui://… not the Woof HTTP server URL.
+        serverUrl = result.serverUrl;
+        try {
+          const data = await fetch(`${serverUrl}/api/results/${result.token}`)
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
+          applySession(data);
+        } catch (err) {
+          if (!matches.length) status = `Error loading gallery: ${err.message}`;
+          loading = false;
+        }
       };
       app.onhostcontextchanged = (ctx) => {
         if (ctx?.availableDisplayModes !== undefined) {

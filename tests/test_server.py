@@ -256,12 +256,12 @@ _ALL_FIELDS = [_DATE_FIELD, _RATING_FIELD]
 
 def test_search_stats_empty() -> None:
     stats = WoofServer._search_stats([], _ALL_FIELDS)
-    assert stats == {"count": 0, "partitions": {}, "dateTaken": None, "rating": None}
+    assert stats == {"partitions": {}, "dateTaken": None, "rating": None}
 
 
 def test_search_stats_no_fields() -> None:
     stats = WoofServer._search_stats([])
-    assert stats == {"count": 0, "partitions": {}}
+    assert stats == {"partitions": {}}
 
 
 def test_search_stats_partition_counts_sorted() -> None:
@@ -285,7 +285,6 @@ def test_search_stats_rating_range() -> None:
     matches = _make_matches(partitions=["p"] * 6, ratings=[5, 3, 5, None, 3, 1])
     stats = WoofServer._search_stats(matches, [_RATING_FIELD])
     assert stats["rating"] == {"min": 1, "max": 5}
-    assert stats["count"] == 6
 
 
 def test_search_stats_no_dates_gives_none() -> None:
@@ -347,13 +346,13 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
     with patch.object(server._agent, "call_tool", new=AsyncMock(side_effect=_side_effect)):
         tool_fn = await _get_tool(server, "search_photos")
         result = await tool_fn(ctx=None, library_name="testlib")
-    assert result["count"] == 3
-    assert result["partitions"] == {"2024/01": 2, "2024/02": 1}
-    assert result["dateTaken"] == {
+    assert result["totalCount"] == 3
+    assert result["pageStats"]["partitions"] == {"2024/01": 2, "2024/02": 1}
+    assert result["pageStats"]["dateTaken"] == {
         "min": "2024-01-05T00:00:00",
         "max": "2024-02-01T00:00:00",
     }
-    assert result["rating"] == {"min": 3, "max": 5}
+    assert result["pageStats"]["rating"] == {"min": 3, "max": 5}
     assert "session_token" in result
 
 
@@ -406,9 +405,14 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     }
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=[token], query_summary="My query")
-    assert result["matches"] == matches
+    # browse_gallery no longer returns matches inline — only a token so the
+    # gallery fetches directly from the HTTP server (OEC#19).
+    assert "matches" not in result
     assert result["serverUrl"] == "http://127.0.0.1:9999"
     assert result["querySummary"] == "My query"
+    assert result["totalCount"] == len(matches)
+    merged_token = result["token"]
+    assert server._sessions.sessions[merged_token]["matches"] == matches
 
 
 @pytest.mark.asyncio
@@ -444,8 +448,13 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["tok-a", "tok-b"], query_summary="")
 
-    hashes = [m["contentHash"] for m in result["matches"]]
+    # Matches are stored in the merged session, not returned inline (OEC#19).
+    assert "matches" not in result
+    merged_token = result["token"]
+    merged_matches = server._sessions.sessions[merged_token]["matches"]
+    hashes = [m["contentHash"] for m in merged_matches]
     assert hashes == ["hash0", "hash1", "hash2"]
+    assert result["totalCount"] == 3
 
 
 @pytest.mark.asyncio

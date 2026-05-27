@@ -74,11 +74,13 @@ def start_http_server(
     mgr = session_manager if session_manager is not None else GallerySessionManager()
 
     # Bind port before starting the thread so the port is known synchronously.
+    # Use the loopback IP for binding but expose the URL as "localhost" so the
+    # hostname matches what MCP Host writes into the iframe's CSP
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
     port: int = sock.getsockname()[1]
-    server_url = f"http://127.0.0.1:{port}"
+    server_url = f"http://localhost:{port}"
 
     app = _build_app(mgr, wally_connection_fn, server_url=server_url)
     ready = threading.Event()
