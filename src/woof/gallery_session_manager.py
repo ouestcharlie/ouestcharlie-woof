@@ -41,8 +41,21 @@ class GallerySessionManager:
         """Raw session dict — shared with the HTTP server."""
         return self._sessions
 
-    def create(self, library_name: str, matches: list[Any]) -> str:
-        """Store a new search-result session and return its token."""
+    def create(
+        self,
+        library_name: str,
+        matches: list[Any],
+        total_count: int | None = None,
+    ) -> str:
+        """Store a new search-result session and return its token.
+
+        Args:
+            library_name: Library the matches belong to.
+            matches: Photo match records from a Wally search result.
+            total_count: Wally's reported total for the query (may exceed
+                ``len(matches)`` when results are paginated or capped).
+                Defaults to ``len(matches)`` when omitted.
+        """
         token = secrets.token_urlsafe(16)
         stamped = [{**m, "library": library_name} for m in matches]
         self._add_session(
@@ -50,6 +63,7 @@ class GallerySessionManager:
             {
                 "matches": stamped,
                 "querySummary": "",
+                "totalCount": total_count if total_count is not None else len(stamped),
             },
         )
         return token
@@ -92,6 +106,7 @@ class GallerySessionManager:
         session_data: dict[str, Any] = {
             "matches": merged_matches,
             "querySummary": query_summary,
+            "totalCount": len(merged_matches),
         }
         self._add_session(merged_token, session_data)
         return merged_token, session_data

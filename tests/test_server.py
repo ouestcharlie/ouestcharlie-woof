@@ -405,9 +405,14 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     }
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=[token], query_summary="My query")
-    assert result["matches"] == matches
+    # browse_gallery no longer returns matches inline — only a token so the
+    # gallery fetches directly from the HTTP server (OEC#19).
+    assert "matches" not in result
     assert result["serverUrl"] == "http://127.0.0.1:9999"
     assert result["querySummary"] == "My query"
+    assert result["totalCount"] == len(matches)
+    merged_token = result["token"]
+    assert server._sessions.sessions[merged_token]["matches"] == matches
 
 
 @pytest.mark.asyncio
@@ -443,8 +448,13 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["tok-a", "tok-b"], query_summary="")
 
-    hashes = [m["contentHash"] for m in result["matches"]]
+    # Matches are stored in the merged session, not returned inline (OEC#19).
+    assert "matches" not in result
+    merged_token = result["token"]
+    merged_matches = server._sessions.sessions[merged_token]["matches"]
+    hashes = [m["contentHash"] for m in merged_matches]
     assert hashes == ["hash0", "hash1", "hash2"]
+    assert result["totalCount"] == 3
 
 
 @pytest.mark.asyncio

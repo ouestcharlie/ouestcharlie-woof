@@ -240,7 +240,9 @@ class WoofServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            token = self._sessions.create(library_name, matches)
+            token = self._sessions.create(
+                library_name, matches, total_count=result.get("totalCount")
+            )
             return {
                 "session_token": token,
                 "totalCount": result.get("totalCount", len(matches)),
@@ -285,10 +287,11 @@ class WoofServer:
 
             merged_token, data = self._sessions.merge(session_tokens, query_summary)
             return {
-                "matches": data["matches"],
+                "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
+                "totalCount": data["totalCount"],
             }
 
     # ------------------------------------------------------------------
