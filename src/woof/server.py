@@ -187,6 +187,9 @@ class WoofServer:
             library_name: str,
             filters: dict | None = None,
             root: str = "",
+            sort_by: str = "date_taken",
+            sort_order: str = "desc",
+            page: int = 1,
         ) -> dict[str, Any]:
             """Search photos in a library using Wally.
 
@@ -216,7 +219,12 @@ class WoofServer:
                     library). E.g. "2024/2024-07" to restrict to one partition.
             """
             library = self._require_library(library_name)
-            args: dict[str, Any] = {"root": root}
+            args: dict[str, Any] = {
+                "root": root,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+                "page": page,
+            }
             if filters is not None:
                 args["filters"] = filters
 
@@ -234,10 +242,14 @@ class WoofServer:
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
             token = self._sessions.create(library_name, matches)
             return {
-                **self._search_stats(matches, fields),
                 "session_token": token,
+                "totalCount": result.get("totalCount", len(matches)),
+                "page": result.get("page", 1),
+                "pageSize": result.get("pageSize", 500),
+                "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
+                "pageStats": self._search_stats(matches, fields),
             }
 
         @mcp.tool(
@@ -317,7 +329,6 @@ class WoofServer:
         """
         by_partition: Counter[str] = Counter(m["partition"] for m in matches)
         stats: dict[str, Any] = {
-            "count": len(matches),
             "partitions": dict(sorted(by_partition.items())),
         }
         for fdef in fields or []:

@@ -43,19 +43,23 @@ Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude ca
 
 The gallery display uses a two-step flow to avoid passing large match payloads back through Claude as tool arguments (which would produce excessive `tool-input-partial` MCP notifications):
 
-1. **`search_photos`** calls Wally, stores the full match list in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
+1. **`search_photos`** calls Wally (with optional `sort_by`, `sort_order`, `page` parameters), stores the page of matches in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
    ```json
    {
-     "count": 41,
-     "partitions": { "2024/01": 12, "2024/07": 29 },
-     "date_range": { "earliest": "2024-01-03T...", "latest": "2024-07-28T..." },
-     "rating_distribution": { "3": 5, "5": 2 },
-     "session_token": "<22-char opaque token>"
+     "session_token": "<22-char opaque token>",
+     "totalCount": 41,
+     "page": 1,
+     "pageSize": 500,
+     "hasMore": false
+     "pageStats": {
+       "partitions": { "2024/01": 12, "2024/07": 29 },
+       "date_range": { "earliest": "2024-01-03T...", "latest": "2024-07-28T..." },
+     }
    }
    ```
 2. **`browse_gallery`** receives one or more `session_token` values, looks up the sessions, merges them (deduplicating by `contentHash`), and returns the combined match list to the gallery iframe via the MCP App tool result mechanism.
 
-Gallery sessions are managed by `GallerySessionManager` (in-memory). Sessions are sorted by `dateTaken` ascending; photos with no `dateTaken` field sort last. When the number of sessions reaches the capacity limit (100), the oldest session is evicted. Sessions are not persisted across Woof restarts.
+Gallery sessions are managed by `GallerySessionManager` (in-memory). Matches are stored in arrival order — sort is applied at the LanceDB level (descending `date_taken` by default) before results reach Woof. When the number of sessions reaches the capacity limit (100), the oldest session is evicted. Sessions are not persisted across Woof restarts.
 
 The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLERY_URI)` which causes Claude Desktop to open the gallery MCP App resource and push the tool result into it via postMessage.
 

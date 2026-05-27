@@ -204,7 +204,9 @@ def test_merge_evicts_oldest_when_full() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_create_sorts_by_date_taken() -> None:
+def test_create_preserves_arrival_order() -> None:
+    # Sorting is done at the DB level
+    # GallerySessionManager stores matches in the order they arrive without re-sorting.
     matches = [
         _match("h3", date_taken="2024-03-01T10:00:00"),
         _match("h1", date_taken="2024-01-01T10:00:00"),
@@ -213,10 +215,11 @@ def test_create_sorts_by_date_taken() -> None:
     mgr = GallerySessionManager()
     token = mgr.create("lib", matches)
     hashes = [m["contentHash"] for m in mgr.sessions[token]["matches"]]
-    assert hashes == ["h1", "h2", "h3"]
+    assert hashes == ["h3", "h1", "h2"]
 
 
-def test_create_undated_photos_sort_last() -> None:
+def test_create_undated_photos_preserve_arrival_order() -> None:
+    # No special handling for undated photos — arrival order is preserved as-is.
     matches = [
         _match("undated"),
         _match("dated", date_taken="2024-01-01T00:00:00"),
@@ -224,10 +227,12 @@ def test_create_undated_photos_sort_last() -> None:
     mgr = GallerySessionManager()
     token = mgr.create("lib", matches)
     hashes = [m["contentHash"] for m in mgr.sessions[token]["matches"]]
-    assert hashes == ["dated", "undated"]
+    assert hashes == ["undated", "dated"]
 
 
-def test_merge_sorts_by_date_taken_across_libraries() -> None:
+def test_merge_preserves_per_library_arrival_order() -> None:
+    # merge() concatenates per-library matches in token order, preserving
+    # each library's internal arrival order (which reflects the DB sort).
     mgr, [tok_a, tok_b] = _manager_with_sessions(
         {"matches": [_match("h3", date_taken="2024-03-01T00:00:00")]},
         {
@@ -239,10 +244,10 @@ def test_merge_sorts_by_date_taken_across_libraries() -> None:
     )
     _, data = mgr.merge([tok_a, tok_b], "")
     hashes = [m["contentHash"] for m in data["matches"]]
-    assert hashes == ["h1", "h2", "h3"]
+    assert hashes == ["h3", "h1", "h2"]
 
 
-def test_merge_undated_photos_sort_last() -> None:
+def test_merge_undated_photos_preserve_arrival_order() -> None:
     mgr, [tok] = _manager_with_sessions(
         {
             "matches": [
@@ -253,4 +258,4 @@ def test_merge_undated_photos_sort_last() -> None:
     )
     _, data = mgr.merge([tok], "")
     hashes = [m["contentHash"] for m in data["matches"]]
-    assert hashes == ["dated", "undated"]
+    assert hashes == ["undated", "dated"]
