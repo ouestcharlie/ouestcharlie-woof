@@ -41,11 +41,31 @@ def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
     return _agent.get_wally_connection(backend_name)
 
 
+class _FetchPageProxy:
+    """Mutable holder for fetch_page_fn; bound to WoofServer after creation.
+
+    Passed to start_http_server before WoofServer exists, then wired up
+    once WoofServer is ready so the HTTP server can page-load on demand.
+    """
+
+    def __init__(self) -> None:
+        self._impl = None
+
+    def bind(self, impl: object) -> None:
+        self._impl = impl
+
+    def __call__(self, token: str, page: int) -> bool:
+        return self._impl(token, page) if self._impl is not None else False
+
+
+_fetch_proxy = _FetchPageProxy()
 _server_url = start_http_server(
     session_manager=_session_manager,
     wally_connection_fn=_wally_connection_fn,
+    fetch_page_fn=_fetch_proxy,
 )
 _server = WoofServer(_config, _server_url, agent_client=_agent, session_manager=_session_manager)
+_fetch_proxy.bind(_server.make_sync_fetch_page_fn())
 
 mcp = _server.mcp  # module-level name required by `mcp dev`
 

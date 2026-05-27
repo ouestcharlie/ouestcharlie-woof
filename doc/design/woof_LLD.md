@@ -43,23 +43,41 @@ Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude ca
 
 The gallery display uses a two-step flow to avoid passing large match payloads back through Claude as tool arguments (which would produce excessive `tool-input-partial` MCP notifications):
 
-1. **`search_photos`** calls Wally (with optional `sort_by`, `sort_order`, `page` parameters), stores the page of matches in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
+1. **`search_photos`** calls Wally (with optional `sort_by`, `sort_order`, `page` parameters — `page` is 0-indexed), stores one page of matches (≤ 500) in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
    ```json
    {
      "session_token": "<22-char opaque token>",
-     "totalCount": 41,
-     "page": 1,
+     "totalCount": 5432,
+     "page": 0,
      "pageSize": 500,
-     "hasMore": false
+     "hasMore": true,
      "pageStats": {
-       "partitions": { "2024/01": 12, "2024/07": 29 },
+       "partitions": { "2024/01": 12, "2024/07": 488 },
        "date_range": { "earliest": "2024-01-03T...", "latest": "2024-07-28T..." },
      }
    }
    ```
-2. **`browse_gallery`** receives one or more `session_token` values, looks up the sessions, merges them (deduplicating by `contentHash`), and returns the combined match list to the gallery iframe via the MCP App tool result mechanism.
+   The session also stores a `queryContext` (library, Wally args, current page, pageSize) that enables the gallery to load additional server pages on demand.
 
-Gallery sessions are managed by `GallerySessionManager` (in-memory). Matches are stored in arrival order — sort is applied at the LanceDB level (descending `date_taken` by default) before results reach Woof. When the number of sessions reaches the capacity limit (100), the oldest session is evicted. Sessions are not persisted across Woof restarts.
+2. **`browse_gallery`** receives one or more `session_token` values, looks up the sessions, merges them (deduplicating by `contentHash`), and returns the combined match list to the gallery iframe via the MCP App tool result mechanism. When merging a single token whose session has a `queryContext`, the merged session inherits that context so the gallery can still paginate Wally pages; multi-session merges drop `queryContext`.
+
+Gallery sessions are managed by `GallerySessionManager` (in-memory). Each session holds at most one Wally page of matches at a time; the gallery requests additional pages via `GET /api/results/{token}/page/{page}`. Matches are stored in arrival order — sort is applied at the LanceDB level (descending `date_taken` by default) before results reach Woof. When the number of sessions reaches the capacity limit (100), the oldest session is evicted. Sessions are not persisted across Woof restarts.
+
+The session data schema:
+```json
+{
+  "matches":      [{ ...photo match record, "library": "..." }],
+  "querySummary": "Nikon photos, 2024",
+  "totalCount":   5432,
+  "queryContext": {
+    "library_name": "kDrive Photos",
+    "args":         { "root": "", "sort_by": "date_taken", "sort_order": "desc", "page": 0 },
+    "page":         0,
+    "pageSize":     500
+  }
+}
+```
+`queryContext` is `null` for sessions created by multi-session `browse_gallery` merges.
 
 The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLERY_URI)` which causes Claude Desktop to open the gallery MCP App resource and push the tool result into it via postMessage.
 
@@ -75,7 +93,14 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 - Gallery → Woof: tool calls for search, navigation, album actions (via postMessage/MCP App protocol)
 - Woof → Gallery: push fresh results as search completes, update indexing progress indicators
 
-**Pagination**: The gallery renders 3 rows per page, with the number of columns calculated from the viewport width. Prev/Next navigation is rendered above and below the grid when `pageCount > 1`. The currently selected photo index and total count are shown in the status bar.
+**Pagination (double-layer)**: The gallery implements two independent pagination layers that are coordinated:
+
+- *Display pages* — `PhotoGrid` renders 3 rows × viewport-width columns at a time. The display page size is derived from the viewport; a typical desktop viewport shows 12–20 photos per display page.
+- *Server pages* — each session holds one Wally page (≤ 500 photos). The gallery calculates the total display page count from `totalCount` (Wally's authoritative total), not from the number of locally loaded matches. Navigation counters show "Page X / Y" where Y is `ceil(totalCount / displayPageSize)` — photo indices are absolute across all server pages.
+- When the user navigates past the last display page of the current server page, the gallery calls `GET /api/results/{token}/page/{N}` to load the next server page (replacing the session's matches) before advancing.  The same mechanism works in reverse for Previous.
+- Sessions created by merging multiple searches (`browse_gallery` with several tokens) have no `queryContext` and do not support cross-server-page navigation; nav is bounded to the loaded matches.
+
+Prev/Next navigation is rendered above and below the grid when `totalDisplayPages > 1`. The currently selected photo index and total count are shown in the status bar.
 
 **Fullscreen**: The gallery supports fullscreen mode via `mcpApp.requestDisplayMode()`.
 
@@ -98,6 +123,7 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 | `GET /gallery/<token>` | Gallery HTML (MCP App) |
 | `GET /gallery-static/<path>` | Vite-built JS/CSS assets |
 | `GET /api/results/<token>` | JSON session data (matches + metadata) |
+| `GET /api/results/<token>/page/<page>` | Load 0-indexed Wally page into session and return updated session JSON |
 
 The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
 

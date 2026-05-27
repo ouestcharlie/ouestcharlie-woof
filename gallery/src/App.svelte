@@ -5,24 +5,46 @@
   import PreviewPanel from './components/PreviewPanel.svelte';
 
   let serverUrl = $state(null);
+  let token = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
+  let totalCount = $state(0);
+  let queryContext = $state(null);
   let status = $state('');
   let loading = $state(true);
+  let serverPageLoading = $state(false);
   let selectedIndex = $state(null);
   let mcpApp = $state(null);
   let isFullscreen = $state(false);
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
 
-  function applySession(session) {
+  function applySession(session, tok) {
+    if (tok !== undefined) token = tok;
     serverUrl = session.serverUrl ?? serverUrl;
     matches = session.matches ?? [];
     querySummary = session.querySummary ?? '';
-    status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
+    totalCount = session.totalCount ?? matches.length;
+    queryContext = session.queryContext ?? null;
+    status = `${totalCount} photo${totalCount === 1 ? '' : 's'}`;
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
+  }
+
+  async function fetchServerPage(page) {
+    if (!token || !serverUrl) return;
+    serverPageLoading = true;
+    try {
+      const data = await fetch(`${serverUrl}/api/results/${token}/page/${page}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
+      matches = data.matches ?? [];
+      queryContext = data.queryContext ?? null;
+    } catch (err) {
+      status = `Error loading page: ${err.message}`;
+    } finally {
+      serverPageLoading = false;
+    }
   }
 
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
@@ -32,12 +54,12 @@
     // Path 1: URL ?token= param — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
-    const token = new URLSearchParams(location.search).get('token');
-    if (token) {
+    const urlToken = new URLSearchParams(location.search).get('token');
+    if (urlToken) {
       serverUrl = location.origin;
-      fetch(`${serverUrl}/api/results/${token}`)
+      fetch(`${serverUrl}/api/results/${urlToken}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
-        .then(data => applySession(data))
+        .then(data => applySession(data, urlToken))
         .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
     }
 
@@ -56,7 +78,7 @@
         try {
           const data = await fetch(`${serverUrl}/api/results/${result.token}`)
             .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
-          applySession(data);
+          applySession(data, result.token);
         } catch (err) {
           if (!matches.length) status = `Error loading gallery: ${err.message}`;
           loading = false;
@@ -164,9 +186,13 @@
   <div class="view" class:hidden={view !== 'grid'}>
     <PhotoGrid
       {matches}
-      {loading}
+      loading={loading || serverPageLoading}
       {selectedIndex}
       {thumbnailTile}
+      {totalCount}
+      serverPage={queryContext?.page ?? 0}
+      pageSize={queryContext?.pageSize ?? 500}
+      onFetchServerPage={queryContext ? fetchServerPage : null}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}
     />

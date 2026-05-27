@@ -18,6 +18,8 @@ function makeProps(overrides = {}) {
     loading: false,
     selectedIndex: 0,
     thumbnailTile: () => null,
+    // totalCount, serverPage, pageSize, onFetchServerPage — not set here so the
+    // component's own defaults apply (totalCount falls back to matches.length).
     onSelect: vi.fn(),
     onPageSelect: vi.fn(),
     ...overrides,
@@ -134,5 +136,90 @@ describe('PhotoGrid — loading state', () => {
       (el) => !el.classList.contains('skeleton'),
     );
     expect(nonSkeleton).toHaveLength(0);
+  });
+});
+
+// jsdom: columns=1, displayPageSize=3
+describe('PhotoGrid — server-page-aware total count', () => {
+  it('uses totalCount for pageCount when greater than matches.length', () => {
+    // 3 local matches but totalCount=600 → ceil(600/3)=200 pages
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(3),
+        totalCount: 600,
+        serverPage: 0,
+        pageSize: 500,
+        onFetchServerPage: vi.fn(),
+      }),
+    );
+    expect(getAllByText(/200/)[0]).toBeTruthy();
+  });
+
+  it('Next at last local page triggers onFetchServerPage when more exist', async () => {
+    const onFetchServerPage = vi.fn().mockResolvedValue(undefined);
+    const onPageSelect = vi.fn();
+    // 3 matches = 1 display page; totalCount=600 → more server pages remain
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(3),
+        totalCount: 600,
+        serverPage: 0,
+        pageSize: 500,
+        onFetchServerPage,
+        onPageSelect,
+      }),
+    );
+    await fireEvent.click(getAllByText(/Next/)[0].closest('button'));
+    expect(onFetchServerPage).toHaveBeenCalledWith(1);
+  });
+
+  it('Previous at first local page triggers onFetchServerPage when serverPage > 0', async () => {
+    const onFetchServerPage = vi.fn().mockResolvedValue(undefined);
+    const onPageSelect = vi.fn();
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(3),
+        totalCount: 600,
+        serverPage: 1,
+        pageSize: 500,
+        onFetchServerPage,
+        onPageSelect,
+      }),
+    );
+    await fireEvent.click(getAllByText(/Previous/)[0].closest('button'));
+    expect(onFetchServerPage).toHaveBeenCalledWith(0);
+  });
+
+  it('absolute page reflects server page offset', () => {
+    // serverPage=1, pageSize=500, displayPageSize=3 → absolutePage = floor(500/3) + 0 = 166
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(3),
+        totalCount: 1000,
+        serverPage: 1,
+        pageSize: 500,
+        onFetchServerPage: vi.fn(),
+      }),
+    );
+    expect(getAllByText(/167/)[0]).toBeTruthy(); // absolutePage+1 = 167
+  });
+
+  it('Next is disabled on last server page last display page', () => {
+    // totalCount=3, pageSize=500, serverPage=0, displayPageSize=3 → 1 page total, Next disabled
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(3),
+        totalCount: 3,
+        serverPage: 0,
+        pageSize: 500,
+        onFetchServerPage: vi.fn(),
+      }),
+    );
+    expect(getAllByText(/Next/)[0].closest('button')).toBeDisabled();
   });
 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from collections.abc import AsyncIterator
@@ -45,11 +46,13 @@ class WoofServer:
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
+        self._main_loop: asyncio.AbstractEventLoop | None = None
 
         agent = self._agent
 
         @asynccontextmanager
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
+            self._main_loop = asyncio.get_running_loop()
             try:
                 yield
             finally:
@@ -189,7 +192,7 @@ class WoofServer:
             root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
-            page: int = 1,
+            page: int = 0,
         ) -> dict[str, Any]:
             """Search photos in a library using Wally.
 
@@ -240,14 +243,23 @@ class WoofServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
+            page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
-                library_name, matches, total_count=result.get("totalCount")
+                library_name,
+                matches,
+                total_count=result.get("totalCount"),
+                query_context={
+                    "library_name": library_name,
+                    "args": args,
+                    "page": page,
+                    "pageSize": page_size,
+                },
             )
             return {
                 "session_token": token,
                 "totalCount": result.get("totalCount", len(matches)),
-                "page": result.get("page", 1),
-                "pageSize": result.get("pageSize", 500),
+                "page": result.get("page", 0),
+                "pageSize": page_size,
                 "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
@@ -371,3 +383,54 @@ class WoofServer:
         if library is None:
             raise ValueError(f"Library {name!r} not found. Use add_library to register it first.")
         return library
+
+    # ------------------------------------------------------------------
+    # HTTP server fetch_page_fn
+    # ------------------------------------------------------------------
+
+    def make_sync_fetch_page_fn(self) -> Any:
+        """Return a sync callable ``(token, page) -> bool`` for the HTTP server.
+
+        The callable bridges the HTTP server's event loop to WoofServer's main
+        asyncio loop via ``asyncio.run_coroutine_threadsafe``.  ``_main_loop``
+        is set by ``_lifespan`` when FastMCP starts, so the returned function
+        is safe to call once the server is running.
+        """
+
+        async def _async_fetch(token: str, page: int) -> bool:
+            session = self._sessions.get(token)
+            if session is None:
+                _log.warning("fetch_page: session %r not found", token)
+                return False
+            qc = session.get("queryContext")
+            if qc is None:
+                _log.warning("fetch_page: session %r has no queryContext", token)
+                return False
+            args = {**qc["args"], "page": page}
+            try:
+                library = self._require_library(qc["library_name"])
+            except ValueError as exc:
+                _log.error("fetch_page: %s", exc)
+                return False
+            try:
+                result = await self._agent.call_tool("wally", "search_photos", args, library)
+            except AgentError as exc:
+                _log.error("fetch_page(%r, %d) Wally call failed: %s", token, page, exc)
+                return False
+            matches = result.get("matches", [])  # type: ignore[union-attr]
+            self._sessions.replace_page(token, matches, page)
+            return True
+
+        def _sync_fetch(token: str, page: int) -> bool:
+            loop = self._main_loop
+            if loop is None:
+                _log.error("fetch_page called before event loop was captured")
+                return False
+            future = asyncio.run_coroutine_threadsafe(_async_fetch(token, page), loop)
+            try:
+                return future.result(timeout=60.0)
+            except Exception as exc:
+                _log.error("fetch_page(%r, %d) failed: %s", token, page, exc)
+                return False
+
+        return _sync_fetch

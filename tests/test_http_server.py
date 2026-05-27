@@ -85,6 +85,98 @@ def test_gallery_static_not_intercepted_by_proxy() -> None:
     assert exc_info.value.code == 404
 
 
+def test_page_endpoint_idempotent_for_current_page() -> None:
+    """Requesting the already-loaded page returns cached session data
+    without calling fetch_page_fn."""
+    import json
+
+    called = []
+
+    def fetch_fn(token: str, page: int) -> bool:
+        called.append((token, page))
+        return True
+
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    mgr.sessions["tok"] = {
+        "matches": [],
+        "querySummary": "",
+        "totalCount": 1,
+        "queryContext": qc,
+    }
+    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    with urllib.request.urlopen(f"{server_url}/api/results/tok/page/0") as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read())
+        assert data["queryContext"]["page"] == 0
+    assert called == []  # fetch_fn must NOT be invoked for the current page
+
+
+def test_page_endpoint_unknown_token_returns_404() -> None:
+    server_url = start_http_server()
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/nope/page/1")
+    assert exc_info.value.code == 404
+
+
+def test_page_endpoint_no_context_returns_400() -> None:
+    mgr = GallerySessionManager()
+    mgr.sessions["tok"] = {
+        "matches": [],
+        "querySummary": "",
+        "totalCount": 0,
+        "queryContext": None,
+    }
+    server_url = start_http_server(session_manager=mgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/tok/page/1")
+    assert exc_info.value.code == 400
+
+
+def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
+    import json
+
+    fetched: list = []
+
+    def fetch_fn(token: str, page: int) -> bool:
+        fetched.append((token, page))
+        mgr.sessions[token]["queryContext"]["page"] = page
+        return True
+
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    mgr.sessions["tok"] = {
+        "matches": [],
+        "querySummary": "",
+        "totalCount": 600,
+        "queryContext": qc,
+    }
+    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    with urllib.request.urlopen(f"{server_url}/api/results/tok/page/1") as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read())
+        assert data["queryContext"]["page"] == 1
+    assert fetched == [("tok", 1)]
+
+
+def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
+    def fetch_fn(token: str, page: int) -> bool:
+        return False
+
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    mgr.sessions["tok"] = {
+        "matches": [],
+        "querySummary": "",
+        "totalCount": 600,
+        "queryContext": qc,
+    }
+    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/tok/page/1")
+    assert exc_info.value.code == 502
+
+
 def test_cors_header_present_on_responses() -> None:
     """Responses to cross-origin requests must carry Access-Control-Allow-Origin: *.
 

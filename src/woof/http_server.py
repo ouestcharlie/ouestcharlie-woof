@@ -6,6 +6,7 @@ Starlette + uvicorn (async ASGI), matching Wally's HTTP server architecture.
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
   GET /api/results/{token}                     — JSON session data (matches + metadata)
+  GET /api/results/{token}/page/{page}         — load 0-indexed Wally page into session
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
   GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
   GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
@@ -57,6 +58,7 @@ def get_gallery_html(server_url: str) -> str:
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
+    fetch_page_fn: Any | None = None,
 ) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -67,9 +69,14 @@ def start_http_server(
         wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
             for the named Wally sidecar.  Called on every request so dynamic
             changes (e.g. after sidecar restart) are picked up automatically.
+        fetch_page_fn: Optional synchronous callable
+            ``(token: str, page: int) -> bool`` that fetches the requested
+            0-indexed Wally page into the session identified by *token*.
+            Called in a thread-pool executor so the HTTP event loop is not
+            blocked.  Returns ``True`` on success, ``False`` on failure.
 
     Returns:
-        The full server URL (e.g. ``"http://127.0.0.1:8080"``).
+        The full server URL (e.g. ``"http://localhost:8080"``).
     """
     mgr = session_manager if session_manager is not None else GallerySessionManager()
 
@@ -82,7 +89,7 @@ def start_http_server(
     port: int = sock.getsockname()[1]
     server_url = f"http://localhost:{port}"
 
-    app = _build_app(mgr, wally_connection_fn, server_url=server_url)
+    app = _build_app(mgr, wally_connection_fn, server_url=server_url, fetch_page_fn=fetch_page_fn)
     ready = threading.Event()
 
     def _run() -> None:
@@ -117,6 +124,7 @@ def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
+    fetch_page_fn: Any | None = None,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
 
@@ -138,6 +146,35 @@ def _build_app(
                 {"error": f"Session {token!r} not found or expired"}, status_code=404
             )
         return JSONResponse(session)
+
+    async def api_page(request: Request) -> Response:
+        token = request.path_params["token"]
+        try:
+            page = int(request.path_params["page"])
+        except (ValueError, KeyError):
+            return JSONResponse({"error": "invalid page"}, status_code=400)
+
+        session = session_manager.get(token)
+        if session is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+
+        qc = session.get("queryContext")
+        if qc is None:
+            return JSONResponse({"error": "no_context"}, status_code=400)
+
+        if qc.get("page") == page:
+            return JSONResponse(session)
+
+        if fetch_page_fn is None:
+            return JSONResponse({"error": "no_fetch_fn"}, status_code=503)
+
+        loop = asyncio.get_event_loop()
+        ok = await loop.run_in_executor(None, fetch_page_fn, token, page)
+        if not ok:
+            return JSONResponse({"error": "fetch_failed"}, status_code=502)
+
+        updated = session_manager.get(token)
+        return JSONResponse(updated)
 
     async def proxy_media(request: Request) -> Response:
         kind = request.path_params["kind"]
@@ -169,6 +206,7 @@ def _build_app(
 
     routes = [
         Route("/gallery/{token}", gallery_token),
+        Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),

@@ -46,6 +46,7 @@ class GallerySessionManager:
         library_name: str,
         matches: list[Any],
         total_count: int | None = None,
+        query_context: dict[str, Any] | None = None,
     ) -> str:
         """Store a new search-result session and return its token.
 
@@ -55,6 +56,12 @@ class GallerySessionManager:
             total_count: Wally's reported total for the query (may exceed
                 ``len(matches)`` when results are paginated or capped).
                 Defaults to ``len(matches)`` when omitted.
+            query_context: Optional dict holding the parameters needed to fetch
+                additional server pages on demand.  Expected keys:
+                ``library_name``, ``args`` (Wally search args), ``page``
+                (0-indexed current page), ``pageSize``.  ``None`` for sessions
+                created by :meth:`merge` (browse_gallery), which cannot
+                paginate further.
         """
         token = secrets.token_urlsafe(16)
         stamped = [{**m, "library": library_name} for m in matches]
@@ -64,9 +71,32 @@ class GallerySessionManager:
                 "matches": stamped,
                 "querySummary": "",
                 "totalCount": total_count if total_count is not None else len(stamped),
+                "queryContext": query_context,
             },
         )
         return token
+
+    def replace_page(
+        self,
+        token: str,
+        matches: list[Any],
+        page: int,
+    ) -> None:
+        """Replace the current matches in *token*'s session with a new server page.
+
+        Updates ``matches`` and ``queryContext["page"]`` in place.
+        Does nothing if *token* is not found or the session has no
+        ``queryContext``.
+        """
+        session = self._sessions.get(token)
+        if session is None:
+            return
+        qc = session.get("queryContext")
+        if qc is None:
+            return
+        library_name = qc.get("library_name", "")
+        session["matches"] = [{**m, "library": library_name} for m in matches]
+        qc["page"] = page
 
     def get(self, token: str) -> dict[str, Any] | None:
         """Return the session for *token*, or ``None`` if not found."""
@@ -107,6 +137,15 @@ class GallerySessionManager:
             "matches": merged_matches,
             "querySummary": query_summary,
             "totalCount": len(merged_matches),
+            "queryContext": None,
         }
+        # Preserve queryContext when merging exactly one search session so that
+        # the gallery can still navigate Wally pages.  Multi-session merges
+        # produce an ambiguous mix of queries, so queryContext is dropped.
+        if len(tokens) == 1:
+            src = self._sessions[tokens[0]]
+            if src.get("queryContext") is not None:
+                session_data["queryContext"] = src["queryContext"]
+                session_data["totalCount"] = src.get("totalCount", len(merged_matches))
         self._add_session(merged_token, session_data)
         return merged_token, session_data

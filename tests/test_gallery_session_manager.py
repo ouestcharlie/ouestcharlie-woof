@@ -259,3 +259,86 @@ def test_merge_undated_photos_preserve_arrival_order() -> None:
     _, data = mgr.merge([tok], "")
     hashes = [m["contentHash"] for m in data["matches"]]
     assert hashes == ["undated", "dated"]
+
+
+# ---------------------------------------------------------------------------
+# query_context on create
+# ---------------------------------------------------------------------------
+
+
+def test_create_stores_query_context() -> None:
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    token = mgr.create("lib", [], query_context=qc)
+    assert mgr.sessions[token]["queryContext"] == qc
+
+
+def test_create_without_query_context_is_none() -> None:
+    mgr = GallerySessionManager()
+    token = mgr.create("lib", [])
+    assert mgr.sessions[token]["queryContext"] is None
+
+
+# ---------------------------------------------------------------------------
+# replace_page
+# ---------------------------------------------------------------------------
+
+
+def test_replace_page_updates_matches_and_page() -> None:
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    token = mgr.create("lib", [_match("h1")], query_context=qc)
+    mgr.replace_page(token, [_match("h500")], page=1)
+    session = mgr.sessions[token]
+    assert session["queryContext"]["page"] == 1
+    assert session["matches"][0]["contentHash"] == "h500"
+
+
+def test_replace_page_stamps_library_on_new_matches() -> None:
+    mgr = GallerySessionManager()
+    qc = {"library_name": "mylib", "args": {}, "page": 0, "pageSize": 500}
+    token = mgr.create("mylib", [], query_context=qc)
+    mgr.replace_page(token, [_match("h1")], page=1)
+    assert mgr.sessions[token]["matches"][0]["library"] == "mylib"
+
+
+def test_replace_page_unknown_token_is_no_op() -> None:
+    mgr = GallerySessionManager()
+    mgr.replace_page("no-such-token", [], page=1)  # must not raise
+
+
+def test_replace_page_no_query_context_is_no_op() -> None:
+    mgr = GallerySessionManager()
+    token = mgr.create("lib", [_match("h1")])  # no query_context → None
+    mgr.replace_page(token, [_match("h2")], page=1)  # must not raise or change matches
+    assert mgr.sessions[token]["matches"][0]["contentHash"] == "h1"
+
+
+# ---------------------------------------------------------------------------
+# merge queryContext inheritance
+# ---------------------------------------------------------------------------
+
+
+def test_merge_single_session_inherits_query_context() -> None:
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    tok = mgr.create("lib", [_match("h1")], total_count=600, query_context=qc)
+    _, data = mgr.merge([tok], "q")
+    assert data["queryContext"] == qc
+    assert data["totalCount"] == 600
+
+
+def test_merge_multi_session_drops_query_context() -> None:
+    mgr = GallerySessionManager()
+    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
+    tok_a = mgr.create("lib", [_match("h1")], query_context=qc)
+    tok_b = mgr.create("lib", [_match("h2")], query_context=qc)
+    _, data = mgr.merge([tok_a, tok_b], "q")
+    assert data["queryContext"] is None
+
+
+def test_merge_single_session_without_query_context_stays_none() -> None:
+    mgr = GallerySessionManager()
+    tok = mgr.create("lib", [_match("h1")])  # queryContext is None
+    _, data = mgr.merge([tok], "q")
+    assert data["queryContext"] is None
