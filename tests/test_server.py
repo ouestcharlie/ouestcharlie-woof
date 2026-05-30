@@ -11,7 +11,7 @@ import pytest
 
 from woof.agent_client import AgentError
 from woof.config import LibraryConfig, WoofConfig
-from woof.gallery_session_manager import SessionData
+from woof.gallery_session_manager import SessionHandler
 from woof.server import WoofServer
 
 # ---------------------------------------------------------------------------
@@ -400,9 +400,9 @@ async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
 async def test_browse_gallery_returns_session_matches(server: WoofServer) -> None:
     matches = _make_matches(partitions=["2024/01", "2024/01"])
     token = "test-token"
-    server._sessions.sessions[token] = SessionData(
-        type="single",
-        libraryName="lib",
+    server._sessions.sessions[token] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
         queryArgs={},
         pageSize=400,
         totalCount=2,
@@ -428,17 +428,17 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
     matches_b[0]["contentHash"] = "hash0"  # duplicate
     matches_b[1]["contentHash"] = "hash2"  # unique
 
-    server._sessions.sessions["tok-a"] = SessionData(
-        type="single",
-        libraryName="lib",
+    server._sessions.sessions["tok-a"] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
         queryArgs={},
         pageSize=400,
         totalCount=2,
         matches=matches_a,
     )
-    server._sessions.sessions["tok-b"] = SessionData(
-        type="single",
-        libraryName="lib",
+    server._sessions.sessions["tok-b"] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
         queryArgs={},
         pageSize=400,
         totalCount=2,

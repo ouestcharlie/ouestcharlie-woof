@@ -16,7 +16,7 @@ from mcp.types import ToolAnnotations
 
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
-from .gallery_session_manager import GallerySessionManager, SessionData
+from .gallery_session_manager import GallerySessionManager
 from .http_server import get_gallery_html, serve_in_loop
 
 _log = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ class WoofServer:
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
-        self.fetch_page_fn: Any = None
 
         # Bind port before MCP starts so server_url is known synchronously.
         _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -60,12 +59,13 @@ class WoofServer:
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
             # HTTP server shares this event loop — no cross-thread bridging needed.
             # Any synchronous work in request handlers must use run_in_executor.
+            _agent_ref = self._agent
+
             http_task = asyncio.create_task(
                 serve_in_loop(
                     self._http_sock,
                     self._sessions,
                     self._wally_connection,
-                    self.fetch_page_fn,
                     self.server_url,
                 )
             )
@@ -267,7 +267,8 @@ class WoofServer:
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
             page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
-                library_name=library_name,
+                library=library,
+                agent=self._agent,
                 query_args=args,
                 total_count=result.get("totalCount"),
                 page=page,
@@ -402,32 +403,3 @@ class WoofServer:
         if library is None:
             raise ValueError(f"Library {name!r} not found. Use add_library to register it first.")
         return library
-
-    # ------------------------------------------------------------------
-    # HTTP server fetch_page_fn
-    # ------------------------------------------------------------------
-
-    def make_fetch_page_fn(self) -> Any:
-        """Return an async callable ``(session, page) -> bool`` for the HTTP server.
-
-        Runs directly on the shared MCP/HTTP event loop — no cross-thread
-        bridging required.
-        """
-
-        async def _async_fetch(session: SessionData, page: int) -> bool:
-            args = {**session.queryArgs, "page": page}
-            try:
-                library = self._require_library(session.libraryName)
-            except ValueError as exc:
-                _log.error("fetch_page: unknown library: %s", exc)
-                return False
-            try:
-                result = await self._agent.call_tool("wally", "search_photos", args, library)
-            except AgentError as exc:
-                _log.error("fetch_page(%d) Wally call failed: %s", page, exc)
-                return False
-            matches = result.get("matches", [])  # type: ignore[union-attr]
-            session.replace_page(matches, page)
-            return True
-
-        return _async_fetch

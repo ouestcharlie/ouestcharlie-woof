@@ -24,7 +24,6 @@ import asyncio
 import logging
 import socket
 import threading
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -63,7 +62,6 @@ async def serve_in_loop(
     sock: socket.socket,
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
-    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None,
     server_url: str,
 ) -> None:
     """Run the HTTP server on a pre-bound socket within the caller's event loop.
@@ -75,16 +73,13 @@ async def serve_in_loop(
     Any synchronous CPU-bound work called from request handlers must go through
     ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
     """
-    app = _build_app(
-        session_manager, wally_connection_fn, server_url=server_url, fetch_page_fn=fetch_page_fn
-    )
+    app = _build_app(session_manager, wally_connection_fn, server_url=server_url)
     await _serve_bare(app, sock)
 
 
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
-    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None = None,
 ) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -95,8 +90,6 @@ def start_http_server(
         session_manager: Gallery session manager shared with WoofServer.
         wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
             for the named Wally sidecar.
-        fetch_page_fn: Optional async callable ``(session, page: int) -> bool``
-            that fetches the requested 0-indexed Wally page into the session.
 
     Returns:
         The full server URL (e.g. ``"http://localhost:8080"``).
@@ -112,7 +105,7 @@ def start_http_server(
     port: int = sock.getsockname()[1]
     server_url = f"http://localhost:{port}"
 
-    app = _build_app(mgr, wally_connection_fn, server_url=server_url, fetch_page_fn=fetch_page_fn)
+    app = _build_app(mgr, wally_connection_fn, server_url=server_url)
     ready = threading.Event()
 
     def _run() -> None:
@@ -159,13 +152,12 @@ def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
-    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None = None,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
 
     async def gallery_token(request: Request) -> Response:
         token = request.path_params["token"]
-        session, _ = session_manager.get(token)
+        session = session_manager.get(token)
         if session is None:
             return Response(status_code=404)
         html = get_gallery_html(server_url)
@@ -176,14 +168,12 @@ def _build_app(
 
     async def api_results(request: Request) -> Response:
         token = request.path_params["token"]
-        # Access the raw top-level session directly so 'set' sessions expose
-        # their aggregate totalCount rather than only the first sub-session's.
-        session = session_manager.sessions.get(token)
+        session = session_manager.get(token)
         if session is None:
             return JSONResponse(
                 {"error": f"Session {token!r} not found or expired"}, status_code=404
             )
-        return JSONResponse(session.to_dict())
+        return JSONResponse(session.transfert_object())
 
     async def api_page(request: Request) -> Response:
         token = request.path_params["token"]
@@ -192,21 +182,15 @@ def _build_app(
         except (ValueError, KeyError):
             return JSONResponse({"error": "invalid page"}, status_code=400)
 
-        session, page = session_manager.get(token, page)
+        session = session_manager.get(token)
         if session is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
 
-        if session.page == page:
-            return JSONResponse(session.to_dict())
-
-        if fetch_page_fn is None:
-            return JSONResponse({"error": "no_fetch_fn"}, status_code=503)
-
-        ok = await fetch_page_fn(session, page)
+        ok = await session.fetch_page(page)
         if not ok:
             return JSONResponse({"error": "fetch_failed"}, status_code=502)
 
-        return JSONResponse(session.to_dict())
+        return JSONResponse(session.transfert_object())
 
     async def proxy_media(request: Request) -> Response:
         kind = request.path_params["kind"]

@@ -33,8 +33,6 @@ _config = WoofConfig.load()
 _agent = AgentClient()
 _session_manager = GallerySessionManager()
 _server = WoofServer(_config, agent_client=_agent, session_manager=_session_manager)
-_server.fetch_page_fn = _server.make_fetch_page_fn()
-
 mcp = _server.mcp  # module-level name required by `mcp dev`
 
 

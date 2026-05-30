@@ -127,6 +127,16 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 
 The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
 
+### Runtime model
+
+The HTTP server (uvicorn/Starlette) runs as an `asyncio` task on the **same event loop as the MCP server** (FastMCP). The task is started inside `WoofServer._lifespan` via `asyncio.create_task(serve_in_loop(...))` and cancelled on MCP shutdown.
+
+`WoofServer.__init__` binds the HTTP socket synchronously (before `mcp.run()`), so `server_url` is known at construction time and can be embedded in tool results before the loop starts.
+
+Because the two servers share one OS thread, **any synchronous work in an HTTP request handler that runs longer than ~1 ms must be offloaded via `loop.run_in_executor`** — blocking the loop stalls both HTTP responses and MCP message processing simultaneously.
+
+`fetch_page_fn` (the callback that triggers a Wally server-page fetch) is an async coroutine awaited directly in `api_page` — no `run_coroutine_threadsafe` or thread-pool bridge is needed.
+
 ### Media proxy
 
 All media requests (`/thumbnails/...` and `/previews/...`) are forwarded to Wally's HTTP server. Woof has no direct access to backend storage — it is a pure proxy for media. This keeps the storage abstraction entirely within Wally and enables a future remote backend without any Woof changes.

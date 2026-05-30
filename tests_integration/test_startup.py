@@ -47,10 +47,12 @@ class TestHttpServer:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 404
 
-    def test_known_session_returns_200_with_data(self) -> None:
+    def test_known_session_returns_200_with_data(
+        self, agent_client: AgentClient, library: LibraryConfig
+    ) -> None:
         """A session created in the shared manager is served via /api/results."""
         mgr = GallerySessionManager()
-        token = mgr.create("integration-test", {}, 500, 1, matches=[{"filename": "a.jpg"}])
+        token = mgr.create(library, agent_client, {}, 500, 1, matches=[{"filename": "a.jpg"}])
         server_url = start_http_server(session_manager=mgr)
 
         url = f"{server_url}/api/results/{token}"

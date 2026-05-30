@@ -7,51 +7,82 @@ Tracks search-result sessions keyed by URL-safe tokens.  The underlying
 
 from __future__ import annotations
 
+import logging
 import math
 import secrets
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
+from woof.agent_client import AgentClient, AgentError
+from woof.config import LibraryConfig
+
+_log = logging.getLogger(__name__)
 _MAX_SESSIONS = 100
 
 
 @dataclass
-class SessionData:
+class SessionHandler:
     """Single session data"""
 
-    type: str  # Type: 'single', 'merge' or 'set' (for chained session merge)
-    libraryName: str
+    library: LibraryConfig | None
+    agent: AgentClient | None
     queryArgs: dict[str, Any]
     pageSize: int
     totalCount: int
-    # Set of sessions in case of a merge of multi-page sessions
-    chainedSessions: list[SessionData] = field(default_factory=list)
     page: int = 0
     matches: list[Any] = field(default_factory=list)  # Matches of the current server page
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable dict representation of this session.
+    def transfert_object(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict representation of this session on the client Gallery."""
 
-        ``chainedSessions`` is omitted — internal to the ``'set'`` type and
-        would bloat responses with redundant match data from all sub-sessions.
-        """
-        d = asdict(self)
-        d.pop("chainedSessions", None)
-        return d
+        return {"matches": self.matches, "totalCount": self.totalCount, "pageSize": self.pageSize}
 
-    def replace_page(
-        self,
-        matches: list[Any],
-        page: int,
-    ) -> None:
-        """Replace the current matches with a new server page.
-
-        Updates ``matches`` and ``page`` in place.
-        """
-
-        library_name = self.libraryName
-        self.matches = [{**m, "library": library_name} for m in matches]
+    async def fetch_page(self, page: int) -> bool:
+        """Fetch Wally server page *page* into this session via *agent*."""
+        if self.page == page:
+            return True  # No-op
+        if page > math.ceil(self.totalCount / self.pageSize):
+            return False
+        if self.library is None:
+            _log.error("fetch_page: session has no library")
+            return False
+        if self.agent is None:
+            _log.error("fetch_page: session has no agentClient")
+            return False
+        args = {**self.queryArgs, "page": page}
+        try:
+            result = await self.agent.call_tool("wally", "search_photos", args, self.library)
+        except AgentError as exc:
+            _log.error("fetch_page(%d) Wally call failed: %s", page, exc)
+            return False
+        stamped = [{**m, "library": self.library.name} for m in result.get("matches", [])]
+        self.matches = stamped
         self.page = page
+        return True
+
+
+@dataclass
+class ChainedSessionHandler(SessionHandler):
+    """SessionHandler for merged sessions chaining several Sessions"""
+
+    # Set of sessions in case of a merge of multi-page sessions
+    chainedSessions: list[SessionHandler] = field(default_factory=list)
+
+    async def fetch_page(self, page: int) -> bool:
+        # Find the right session for a session of type 'set'
+        page_in_session = page
+        for s in self.chainedSessions:
+            num_session_pages = math.ceil(
+                s.totalCount / s.pageSize
+            )  # number of pages for 0-indexed
+            if page_in_session < num_session_pages:
+                if await s.fetch_page(page_in_session):
+                    self.matches = s.matches
+                    self.page = page
+                    return True
+                return False
+            page_in_session -= num_session_pages
+        return False
 
 
 class GallerySessionManager:
@@ -69,9 +100,9 @@ class GallerySessionManager:
     """
 
     def __init__(self) -> None:
-        self._sessions: dict[str, SessionData] = {}  # insertion-ordered (Python 3.7+)
+        self._sessions: dict[str, SessionHandler] = {}  # insertion-ordered (Python 3.7+)
 
-    def _add_session(self, token: str, data: SessionData) -> None:
+    def _add_session(self, token: str, data: SessionHandler) -> None:
         """Evict the oldest session if at capacity, then store *data* under *token*."""
         while len(self._sessions) >= _MAX_SESSIONS:
             del self._sessions[next(iter(self._sessions))]
@@ -84,7 +115,8 @@ class GallerySessionManager:
 
     def create(
         self,
-        library_name: str,
+        library: LibraryConfig,
+        agent: AgentClient | None,
         query_args: dict[str, Any],
         page_size: int,
         total_count: int | None = None,
@@ -94,27 +126,24 @@ class GallerySessionManager:
         """Store a new search-result session and return its token.
 
         Args:
-            library_name: Library the matches belong to.
-            matches: Photo match records from a Wally search result.
+            library: Library the matches belong to.
+            query_args: Wally search arguments (used for server-page fetching).
+            page_size: Number of matches per Wally server page.
             total_count: Wally's reported total for the query (may exceed
                 ``len(matches)`` when results are paginated or capped).
                 Defaults to ``len(matches)`` when omitted.
-            query_context: Optional dict holding the parameters needed to fetch
-                additional server pages on demand.  Expected keys:
-                ``library_name``, ``args`` (Wally search args), ``page``
-                (0-indexed current page), ``pageSize``.  ``None`` for sessions
-                created by :meth:`merge` (browse_gallery), which cannot
-                paginate further.
+            page: 0-indexed current server page.
+            matches: Photo match records from a Wally search result.
         """
         token = secrets.token_urlsafe(16)
         if matches is None:
             matches = []
-        stamped = [{**m, "library": library_name} for m in matches]
+        stamped = [{**m, "library": library.name} for m in matches]
         self._add_session(
             token,
-            SessionData(
-                type="single",
-                libraryName=library_name,
+            SessionHandler(
+                library=library,
+                agent=agent,
                 queryArgs=query_args,
                 pageSize=page_size,
                 totalCount=total_count if total_count is not None else len(stamped),
@@ -124,32 +153,12 @@ class GallerySessionManager:
         )
         return token
 
-    def get(self, token: str, page: int = 0) -> tuple[SessionData | None, int]:
+    def get(self, token: str, page: int = 0) -> SessionHandler | None:
         """Return the session for *token*, or ``None`` if not found
             and the effective page index.
         If session is of type 'set', the sub-session at *page* is selected
         """
-        session = self._sessions.get(token)
-        if session is None:
-            return None, 0
-        elif session.type != "set":
-            num_session_pages = math.ceil(session.totalCount / session.pageSize)
-            if page < session.totalCount / session.pageSize:
-                return session, page
-            else:
-                return None, 0
-        else:
-            # Find the right session for a session of type 'set'
-            selected_session = None
-            for s in session.chainedSessions:
-                num_session_pages = math.ceil(
-                    s.totalCount / s.pageSize
-                )  # number of pages for 0-indexed
-                if page < num_session_pages:
-                    selected_session = s
-                    break
-                page -= num_session_pages
-            return selected_session, page
+        return self._sessions.get(token)
 
     def unknown_tokens(self, tokens: list[str]) -> list[str]:
         """Return the subset of *tokens* not present in the session store."""
@@ -158,7 +167,7 @@ class GallerySessionManager:
     def merge(
         self,
         tokens: list[str],
-    ) -> tuple[str, SessionData]:
+    ) -> tuple[str, SessionHandler]:
         """Merge sessions from *tokens* into a new session and return it.
 
         Single-session merge:
@@ -205,9 +214,9 @@ class GallerySessionManager:
                         if h not in seen_hashes:
                             seen_hashes.add(h)
                             merged_matches.append(match)
-                session_data = SessionData(
-                    type="merge",
-                    libraryName="__merge__",
+                session_data = SessionHandler(
+                    library=None,
+                    agent=chained_sessions[0].agent,
                     queryArgs={},
                     pageSize=chained_sessions[0].pageSize,
                     totalCount=len(merged_matches),
@@ -215,13 +224,12 @@ class GallerySessionManager:
                 )
             else:
                 first_src = self._sessions[tokens[0]]
-                session_data = SessionData(
-                    type="set",
-                    libraryName="__merge__",
+                session_data = ChainedSessionHandler(
+                    library=None,
+                    agent=chained_sessions[0].agent,
                     queryArgs={},
                     pageSize=first_src.pageSize,
                     totalCount=sum(len(self._sessions[t].matches) for t in tokens),
-                    page=0,
                     chainedSessions=chained_sessions,
                     matches=first_src.matches,
                 )

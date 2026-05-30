@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import urllib.error
 import urllib.request
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from woof.gallery_session_manager import GallerySessionManager, SessionData
+from woof.config import LibraryConfig
+from woof.gallery_session_manager import GallerySessionManager, SessionHandler
 from woof.http_server import start_http_server
 
 _DEFAULT_SERVER_PAGE = 513
+
+
+def _mock_agent(matches: list | None = None) -> MagicMock:
+    agent = MagicMock()
+    agent.call_tool = AsyncMock(return_value={"matches": matches or []})
+    return agent
 
 
 def test_thumbnail_without_wally_returns_503() -> None:
@@ -33,7 +42,7 @@ def test_preview_without_wally_returns_503() -> None:
 
 def test_gallery_token_route_serves_html() -> None:
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, 500, 1)
+    tok = mgr.create(LibraryConfig(name="lib", type="filesystem", path="/tmp"), {}, 500, 1)
     server_url = start_http_server(session_manager=mgr)
     url = f"{server_url}/gallery/{tok}"
     with urllib.request.urlopen(url) as resp:
@@ -56,7 +65,9 @@ def test_results_endpoint_returns_session_data() -> None:
 
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "library": "testlib"}]
     mgr = GallerySessionManager()
-    tok = mgr.create("testlib", {}, 600, 1, matches=matches)
+    tok = mgr.create(
+        LibraryConfig(name="testlib", type="filesystem", path="/tmp"), {}, 600, 1, matches=matches
+    )
     server_url = start_http_server(session_manager=mgr)
     url = f"{server_url}/api/results/{tok}"
     with urllib.request.urlopen(url) as resp:
@@ -88,24 +99,16 @@ def test_gallery_static_not_intercepted_by_proxy() -> None:
 
 
 def test_page_endpoint_idempotent_for_current_page() -> None:
-    """Requesting the already-loaded page returns cached session data
-    without calling fetch_page_fn."""
+    """Requesting the already-loaded page returns cached session data"""
     import json
 
-    called = []
-
-    async def fetch_fn(session: SessionData, page: int) -> bool:
-        called.append(page)
-        return True
-
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, 600, 1)
-    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    tok = mgr.create(LibraryConfig(name="lib", type="filesystem", path="/tmp"), None, {}, 600, 1)
+    server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/0") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["page"] == 0
-    assert called == []  # fetch_fn must NOT be invoked for the current page
+        assert data["totalCount"] == 1
 
 
 def test_page_endpoint_unknown_token_returns_404() -> None:
@@ -116,68 +119,65 @@ def test_page_endpoint_unknown_token_returns_404() -> None:
 
 
 def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
-    import json
-
-    fetched: list = []
-
-    async def fetch_fn(session: SessionData, page: int) -> bool:
-        fetched.append((type(session).__name__, page))
-        session.page = page
-        return True
-
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, 500, 600)
-    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    tok = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"), _mock_agent(), {}, 500, 600
+    )
+    server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["page"] == 1
-    assert fetched == [("SessionData", 1)]
-
-
-def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
-    async def fetch_fn(session: SessionData, page: int) -> bool:
-        return False
-
-    mgr = GallerySessionManager()
-    mgr.sessions["tok"] = SessionData("single", "lib", {}, 500, 600)
-    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
-    with pytest.raises(urllib.error.HTTPError) as exc_info:
-        urllib.request.urlopen(f"{server_url}/api/results/tok/page/1")
-    assert exc_info.value.code == 502
+        assert data["pageSize"] == 500
 
 
 def test_page_endpoint_chained_session_loads_page() -> None:
     """Page endpoint serves chained pages without calling fetch_page_fn."""
-    import json
-
-    called: list = []
-
-    async def fetch_fn(session: SessionData, page: int) -> bool:
-        called.append(page)
-        return True
 
     mgr = GallerySessionManager()
+    agent = _mock_agent()
     matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
     matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
-    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
-    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    tok_a = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_a,
+    )
+    tok_b = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_b,
+    )
     merged_token, _ = mgr.merge([tok_a, tok_b])
 
-    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["page"] == 0  # page #0 of second session
         assert data["matches"][0]["contentHash"] == "b0"
-    assert called == []  # must NOT call fetch_fn for chained sessions
 
 
 def test_page_endpoint_chained_out_of_range_returns_404() -> None:
     mgr = GallerySessionManager()
     matches = [{"contentHash": f"h{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
-    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches)
-    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches)
+    agent = _mock_agent()
+    tok_a = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches,
+    )
+    tok_b = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches,
+    )
     merged_token, _ = mgr.merge([tok_a, tok_b])
 
     server_url = start_http_server(session_manager=mgr)
@@ -193,15 +193,26 @@ def test_results_set_session_returns_aggregate_total_count() -> None:
     mgr = GallerySessionManager()
     matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
     matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
-    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
-    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    tok_a = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        None,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_a,
+    )
+    tok_b = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        None,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_b,
+    )
     merged_token, _ = mgr.merge([tok_a, tok_b])
 
     server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}") as resp:
         data = json.loads(resp.read())
     assert data["totalCount"] == _DEFAULT_SERVER_PAGE * 2
-    assert data["type"] == "set"
     assert "chainedSessions" not in data
 
 
@@ -212,8 +223,20 @@ def test_results_set_session_returns_first_page_matches() -> None:
     mgr = GallerySessionManager()
     matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
     matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
-    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
-    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    tok_a = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        None,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_a,
+    )
+    tok_b = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        None,
+        {},
+        _DEFAULT_SERVER_PAGE,
+        matches=matches_b,
+    )
     merged_token, _ = mgr.merge([tok_a, tok_b])
 
     server_url = start_http_server(session_manager=mgr)
@@ -229,35 +252,34 @@ def test_results_single_session_exposes_pagination_fields() -> None:
     import json
 
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, 500, total_count=1200, matches=[])
+    tok = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        None,
+        {},
+        500,
+        total_count=1200,
+        matches=[],
+    )
     server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}") as resp:
         data = json.loads(resp.read())
-    assert data["type"] == "single"
     assert data["totalCount"] == 1200
     assert data["pageSize"] == 500
-    assert data["page"] == 0
 
 
 def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
     """fetch_page_fn must receive (session: SessionData, page: int)."""
-    import json
-
-    received: list = []
-
-    async def fetch_fn(session: SessionData, page: int) -> bool:
-        received.append((type(session).__name__, page))
-        session.page = page
-        return True
 
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, 500, 600)
-    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    tok = mgr.create(
+        LibraryConfig(name="lib", type="filesystem", path="/tmp"), _mock_agent(), {}, 500, 600
+    )
+    server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["page"] == 1
-    assert received == [("SessionData", 1)]
+        assert data["pageSize"] == 500
+        assert data["totalCount"] == 600
 
 
 def test_cors_header_present_on_responses() -> None:
@@ -267,8 +289,12 @@ def test_cors_header_present_on_responses() -> None:
     matching real browser behaviour.
     """
     mgr = GallerySessionManager()
-    mgr.sessions["tok789"] = SessionData(
-        type="single", libraryName="lib", queryArgs={}, pageSize=100, totalCount=1
+    mgr.sessions["tok789"] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
+        queryArgs={},
+        pageSize=100,
+        totalCount=1,
     )
     server_url = start_http_server(session_manager=mgr)
     url = f"{server_url}/api/results/tok789"

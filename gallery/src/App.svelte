@@ -20,11 +20,11 @@
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
 
-  function applySession(session, tok) {
+  function applySession(session, tok, page) {
     if (tok !== undefined) token = tok;
     matches = session.matches ?? [];
     totalCount = session.totalCount ?? matches.length;
-    serverPage = session.page ?? 0;
+    serverPage = page;
     serverPageSize = session.pageSize ?? 500;
     status = `${totalCount} photo${totalCount === 1 ? '' : 's'}`;
     loading = false;
@@ -59,7 +59,7 @@
       serverUrl = location.origin;
       fetch(`${serverUrl}/api/results/${urlToken}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
-        .then(data => applySession(data, urlToken))
+        .then(data => applySession(data, urlToken, 0))
         .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
     }
 
@@ -79,7 +79,7 @@
         try {
           const data = await fetch(`${serverUrl}/api/results/${result.token}`)
             .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
-          applySession(data, result.token);
+          applySession(data, result.token, 0);
         } catch (err) {
           if (!matches.length) status = `Error loading gallery: ${err.message}`;
           loading = false;

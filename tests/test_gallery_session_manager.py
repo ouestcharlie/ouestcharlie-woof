@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from woof.gallery_session_manager import _MAX_SESSIONS, GallerySessionManager
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from woof.agent_client import AgentError
+from woof.config import LibraryConfig
+from woof.gallery_session_manager import _MAX_SESSIONS, ChainedSessionHandler, GallerySessionManager
 
 _DEFAULT_PAGE_SIZE = 496
+
+
+def _lib(name: str = "lib") -> LibraryConfig:
+    return LibraryConfig(name=name, type="filesystem", path="/tmp")
 
 
 def _manager_with_sessions(*sessions: dict) -> tuple[GallerySessionManager, list[str]]:
@@ -13,7 +23,8 @@ def _manager_with_sessions(*sessions: dict) -> tuple[GallerySessionManager, list
     tokens = []
     for s in sessions:
         token = mgr.create(
-            library_name=s.get("library", "lib"),
+            library=_lib(s.get("library", "lib")),
+            agent=None,
             query_args={},
             page_size=_DEFAULT_PAGE_SIZE,
             matches=s.get("matches", []),
@@ -40,21 +51,21 @@ def _match(content_hash: str, partition: str = "2024/01", date_taken: str | None
 
 def test_create_returns_token() -> None:
     mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE)
+    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE)
     assert isinstance(token, str) and token
 
 
 def test_create_stores_session() -> None:
     mgr = GallerySessionManager()
     matches = [_match("h1")]
-    token = mgr.create("mylib", {}, _DEFAULT_PAGE_SIZE, matches=matches)
+    token = mgr.create(_lib("mylib"), None, {}, _DEFAULT_PAGE_SIZE, matches=matches)
     session = mgr.sessions[token]
     assert session.matches[0]["library"] == "mylib"
 
 
 def test_create_tokens_are_unique() -> None:
     mgr = GallerySessionManager()
-    tokens = {mgr.create("lib", {}, _DEFAULT_PAGE_SIZE) for _ in range(20)}
+    tokens = {mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE) for _ in range(20)}
     assert len(tokens) == 20
 
 
@@ -72,7 +83,7 @@ def test_sessions_is_shared_reference() -> None:
 def test_sessions_reflects_creates() -> None:
     mgr = GallerySessionManager()
     assert len(mgr.sessions) == 0
-    mgr.create("lib", {}, _DEFAULT_PAGE_SIZE)
+    mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE)
     assert len(mgr.sessions) == 1
 
 
@@ -168,11 +179,11 @@ def test_merge_empty_sessions() -> None:
 
 def test_create_evicts_oldest_when_full() -> None:
     mgr = GallerySessionManager()
-    tokens = [mgr.create("lib", {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
+    tokens = [mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
     oldest = tokens[0]
     assert oldest in mgr.sessions
 
-    mgr.create("lib", {}, _DEFAULT_PAGE_SIZE)  # triggers eviction
+    mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE)  # triggers eviction
 
     assert oldest not in mgr.sessions
     assert len(mgr.sessions) == _MAX_SESSIONS
@@ -180,8 +191,8 @@ def test_create_evicts_oldest_when_full() -> None:
 
 def test_create_keeps_newest_sessions_when_full() -> None:
     mgr = GallerySessionManager()
-    tokens = [mgr.create("lib", {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
-    new_token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE)
+    tokens = [mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
+    new_token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE)
 
     assert new_token in mgr.sessions
     # all but the first original token should still be present
@@ -191,7 +202,7 @@ def test_create_keeps_newest_sessions_when_full() -> None:
 
 def test_merge_evicts_oldest_when_full() -> None:
     mgr = GallerySessionManager()
-    tokens = [mgr.create("lib", {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
+    tokens = [mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE) for _ in range(_MAX_SESSIONS)]
     oldest = tokens[0]
 
     # merge two of the existing sessions to trigger eviction
@@ -216,7 +227,7 @@ def test_create_preserves_arrival_order() -> None:
         _match("h2", date_taken="2024-02-01T10:00:00"),
     ]
     mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, matches=matches)
+    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE, matches=matches)
     hashes = [m["contentHash"] for m in mgr.sessions[token].matches]
     assert hashes == ["h3", "h1", "h2"]
 
@@ -228,7 +239,7 @@ def test_create_undated_photos_preserve_arrival_order() -> None:
         _match("dated", date_taken="2024-01-01T00:00:00"),
     ]
     mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, matches=matches)
+    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE, matches=matches)
     hashes = [m["contentHash"] for m in mgr.sessions[token].matches]
     assert hashes == ["undated", "dated"]
 
@@ -265,25 +276,67 @@ def test_merge_undated_photos_preserve_arrival_order() -> None:
 
 
 # ---------------------------------------------------------------------------
-# replace_page
+# fetch_page
 # ---------------------------------------------------------------------------
 
 
-def test_replace_page_updates_matches_and_page() -> None:
+def _mock_agent(matches: list | None = None) -> MagicMock:
+    agent = MagicMock()
+    agent.call_tool = AsyncMock(return_value={"matches": matches or []})
+    return agent
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_returns_true_on_success() -> None:
     mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")], page=0)
+    token = mgr.create(_lib(), _mock_agent(), {}, _DEFAULT_PAGE_SIZE, 2 * _DEFAULT_PAGE_SIZE + 1)
     session = mgr.sessions[token]
-    session.replace_page([_match("h500")], page=1)
+    assert await session.fetch_page(page=1) is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_updates_matches_and_page() -> None:
+    mgr = GallerySessionManager()
+    agent = _mock_agent(matches=[_match("h1"), _match("h2")])
+    token = mgr.create(_lib(), agent, {}, _DEFAULT_PAGE_SIZE, matches=[_match("h0")])
+    session = mgr.sessions[token]
+    await session.fetch_page(page=1)
     assert session.page == 1
-    assert session.matches[0]["contentHash"] == "h500"
+    assert [m["contentHash"] for m in session.matches] == ["h1", "h2"]
 
 
-def test_replace_page_stamps_library_on_new_matches() -> None:
+@pytest.mark.asyncio
+async def test_fetch_page_passes_query_args_and_page_to_agent() -> None:
     mgr = GallerySessionManager()
-    token = mgr.create("mylib", {}, page=0, page_size=500, matches=[])
+    agent = _mock_agent()
+    token = mgr.create(
+        _lib(), agent, {"sort_by": "date_taken"}, _DEFAULT_PAGE_SIZE, 4 * _DEFAULT_PAGE_SIZE
+    )
     session = mgr.sessions[token]
-    session.replace_page([_match("h1")], page=1)
-    assert session.matches[0]["library"] == "mylib"
+    await session.fetch_page(page=3)
+    agent.call_tool.assert_called_once_with(
+        "wally", "search_photos", {"sort_by": "date_taken", "page": 3}, session.library
+    )
+
+
+@pytest.mark.asyncio
+async def test_merge_simple_fetch_page_returns_true() -> None:
+    mgr = GallerySessionManager()
+    tok_a = mgr.create(_lib("a"), _mock_agent(), {}, _DEFAULT_PAGE_SIZE, 1, matches=[_match("h1")])
+    tok_b = mgr.create(_lib("b"), _mock_agent(), {}, _DEFAULT_PAGE_SIZE, 1, matches=[_match("h2")])
+    _, merged = mgr.merge([tok_a, tok_b])
+    assert merged.library is None
+    assert await merged.fetch_page(page=0) is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_returns_false_on_agent_error() -> None:
+    mgr = GallerySessionManager()
+    agent = MagicMock()
+    agent.call_tool = AsyncMock(side_effect=AgentError("wally down"))
+    token = mgr.create(_lib(), agent, {}, _DEFAULT_PAGE_SIZE)
+    session = mgr.sessions[token]
+    assert await session.fetch_page(page=1) is False
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +346,9 @@ def test_replace_page_stamps_library_on_new_matches() -> None:
 
 def test_merge_single_session_inherits_query_context() -> None:
     mgr = GallerySessionManager()
-    tok = mgr.create("lib", {}, matches=[_match("h1")], total_count=600, page_size=500, page=0)
+    tok = mgr.create(
+        _lib(), None, {}, matches=[_match("h1")], total_count=600, page_size=500, page=0
+    )
     _, data = mgr.merge([tok])
     assert data.totalCount == 600
     assert data.pageSize == 500
@@ -301,10 +356,10 @@ def test_merge_single_session_inherits_query_context() -> None:
 
 def test_merge_multi_session_drops_query_context() -> None:
     mgr = GallerySessionManager()
-    tok_a = mgr.create("lib_a", {}, page_size=500, page=0, matches=[_match("h1")])
-    tok_b = mgr.create("lib_b", {}, page_size=500, page=0, matches=[_match("h2")])
+    tok_a = mgr.create(_lib("lib_a"), None, {}, page_size=500, page=0, matches=[_match("h1")])
+    tok_b = mgr.create(_lib("lib_b"), None, {}, page_size=500, page=0, matches=[_match("h2")])
     _, data = mgr.merge([tok_a, tok_b])
-    assert data.libraryName != "lib_a"
+    assert data.library is None
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +370,7 @@ def test_merge_multi_session_drops_query_context() -> None:
 def _large_session(mgr: GallerySessionManager, library: str, count: int) -> str:
     """Create a session with *count* unique matches (enough to trigger chaining)."""
     matches = [_match(f"{library}-h{i}") for i in range(count)]
-    return mgr.create(library, {}, page_size=_DEFAULT_PAGE_SIZE, matches=matches)
+    return mgr.create(_lib(library), None, {}, page_size=_DEFAULT_PAGE_SIZE, matches=matches)
 
 
 def test_merge_small_multi_session_stays_flat() -> None:
@@ -334,7 +389,7 @@ def test_merge_large_total_chains_sessions() -> None:
     tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE - 10)
     tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE - 20)
     _, data = mgr.merge([tok_a, tok_b])
-    assert data.type == "set"
+    assert isinstance(data, ChainedSessionHandler)
     assert data.chainedSessions == [mgr.sessions[tok_a], mgr.sessions[tok_b]]
     assert data.page == 0
     assert data.pageSize == _DEFAULT_PAGE_SIZE
@@ -357,7 +412,7 @@ def test_merge_at_page_boundary_chains() -> None:
     tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE // 2 + 1)
     tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE // 2)
     _, data = mgr.merge([tok_a, tok_b])
-    assert data.type == "set"
+    assert isinstance(data, ChainedSessionHandler)
     assert data.chainedSessions == [mgr.sessions[tok_a], mgr.sessions[tok_b]]
 
 
@@ -368,103 +423,25 @@ def test_merge_at_page_boundary_chains() -> None:
 
 def test_get_unknown_token_returns_none() -> None:
     mgr = GallerySessionManager()
-    session, page = mgr.get("no-such-token")
+    session = mgr.get("no-such-token")
     assert session is None
-    assert page == 0
 
 
 def test_get_single_session_default_page() -> None:
     mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")])
-    session, page = mgr.get(token)
+    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")])
+    session = mgr.get(token)
     assert session is not None
-    assert page == 0
+    assert session.page == 0
 
 
-def test_get_single_session_explicit_page_in_range() -> None:
-    # totalCount larger than one page → page 1 is valid
-    mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, total_count=_DEFAULT_PAGE_SIZE * 2)
-    session, page = mgr.get(token, page=1)
-    assert session is not None
-    assert page == 1
-
-
-def test_get_single_session_page_out_of_range_returns_none() -> None:
-    # One match → totalCount/pageSize < 1 → only page 0 is valid
-    mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")])
-    session, _ = mgr.get(token, page=1)
-    assert session is None
-
-
-def test_get_single_session_last_valid_page() -> None:
-    # 2 full pages: pages 0 and 1 are valid, page 2 is not
-    mgr = GallerySessionManager()
-    token = mgr.create("lib", {}, _DEFAULT_PAGE_SIZE, total_count=_DEFAULT_PAGE_SIZE * 2)
-    session_p1, _ = mgr.get(token, page=1)
-    session_p2, _ = mgr.get(token, page=2)
-    assert session_p1 is not None
-    assert session_p2 is None
-
-
-def test_get_set_session_page_0_returns_first_chunk() -> None:
+def test_get_set_session_init_returns_first_chunk() -> None:
     mgr = GallerySessionManager()
     tok_a = _large_session(mgr, "libA", _DEFAULT_PAGE_SIZE)
     tok_b = _large_session(mgr, "libB", _DEFAULT_PAGE_SIZE)
-    merged_token, _ = mgr.merge([tok_a, tok_b])
+    _, session = mgr.merge([tok_a, tok_b])
 
-    session, local_page = mgr.get(merged_token, page=0)
+    assert isinstance(session, ChainedSessionHandler)
     assert session is not None
-    assert session.libraryName == "libA"
-    assert local_page == 0
-
-
-def test_get_set_session_page_1_returns_second_chunk() -> None:
-    # Each chunk has exactly 1 page → absolute page 1 maps to libB local page 0
-    mgr = GallerySessionManager()
-    tok_a = _large_session(mgr, "libA", _DEFAULT_PAGE_SIZE)
-    tok_b = _large_session(mgr, "libB", _DEFAULT_PAGE_SIZE)
-    merged_token, _ = mgr.merge([tok_a, tok_b])
-
-    session, local_page = mgr.get(merged_token, page=1)
-    assert session is not None
-    assert session.libraryName == "libB"
-    assert local_page == 0
-
-
-def test_get_set_session_out_of_range_returns_none() -> None:
-    # 2 chunks × 1 page each → pages 0 and 1 valid, page 2 out of range
-    mgr = GallerySessionManager()
-    tok_a = _large_session(mgr, "libA", _DEFAULT_PAGE_SIZE)
-    tok_b = _large_session(mgr, "libB", _DEFAULT_PAGE_SIZE)
-    merged_token, _ = mgr.merge([tok_a, tok_b])
-
-    session, _ = mgr.get(merged_token, page=2)
-    assert session is None
-
-
-def test_get_set_session_multi_page_first_chunk() -> None:
-    # libA has totalCount = 2 * pageSize → 2 pages (0 and 1)
-    # libB has 1 page → absolute page 2 maps to libB local page 0
-    mgr = GallerySessionManager()
-    matches_a = [_match(f"a{i}") for i in range(_DEFAULT_PAGE_SIZE)]
-    tok_a = mgr.create(
-        "libA",
-        {},
-        _DEFAULT_PAGE_SIZE,
-        total_count=_DEFAULT_PAGE_SIZE * 2,
-        matches=matches_a,
-    )
-    tok_b = _large_session(mgr, "libB", _DEFAULT_PAGE_SIZE)
-    merged_token, _ = mgr.merge([tok_a, tok_b])
-
-    session_p1, local_p1 = mgr.get(merged_token, page=1)
-    assert session_p1 is not None
-    assert session_p1.libraryName == "libA"
-    assert local_p1 == 1
-
-    session_p2, local_p2 = mgr.get(merged_token, page=2)
-    assert session_p2 is not None
-    assert session_p2.libraryName == "libB"
-    assert local_p2 == 0
+    assert session.library is None  # Chained Session has no library
+    assert session.page == 0
