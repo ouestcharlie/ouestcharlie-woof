@@ -1,7 +1,10 @@
 """Local HTTP server for proxying media requests and serving the gallery.
 
-Runs on 127.0.0.1 with an OS-assigned port in a daemon thread backed by
-Starlette + uvicorn (async ASGI), matching Wally's HTTP server architecture.
+Runs on 127.0.0.1 with an OS-assigned port backed by Starlette + uvicorn (async
+ASGI).  In production, ``serve_in_loop`` runs uvicorn as a task on the shared MCP
+event loop — all async work on a single loop, no cross-thread bridging.
+``start_http_server`` is kept for tests: it starts the server in a daemon thread
+with its own event loop.
 
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
@@ -21,6 +24,7 @@ import asyncio
 import logging
 import socket
 import threading
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -55,25 +59,44 @@ def get_gallery_html(server_url: str) -> str:
     return _gallery_placeholder()
 
 
+async def serve_in_loop(
+    sock: socket.socket,
+    session_manager: GallerySessionManager,
+    wally_connection_fn: Any | None,
+    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None,
+    server_url: str,
+) -> None:
+    """Run the HTTP server on a pre-bound socket within the caller's event loop.
+
+    Intended for production use where Woof runs all async work on a single loop
+    (MCP + HTTP share one asyncio event loop).  Must be started as an
+    ``asyncio.create_task`` from inside a running loop.
+
+    Any synchronous CPU-bound work called from request handlers must go through
+    ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
+    """
+    app = _build_app(
+        session_manager, wally_connection_fn, server_url=server_url, fetch_page_fn=fetch_page_fn
+    )
+    await _serve_bare(app, sock)
+
+
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
-    fetch_page_fn: Any | None = None,
+    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None = None,
 ) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
+    Used by tests.  Production code should use ``serve_in_loop`` instead so the
+    HTTP server shares the MCP event loop.
+
     Args:
         session_manager: Gallery session manager shared with WoofServer.
-            Provides token-keyed session lookup for the gallery and results
-            endpoints.  A new empty manager is created when omitted.
         wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
-            for the named Wally sidecar.  Called on every request so dynamic
-            changes (e.g. after sidecar restart) are picked up automatically.
-        fetch_page_fn: Optional synchronous callable
-            ``(token: str, page: int) -> bool`` that fetches the requested
-            0-indexed Wally page into the session identified by *token*.
-            Called in a thread-pool executor so the HTTP event loop is not
-            blocked.  Returns ``True`` on success, ``False`` on failure.
+            for the named Wally sidecar.
+        fetch_page_fn: Optional async callable ``(session, page: int) -> bool``
+            that fetches the requested 0-indexed Wally page into the session.
 
     Returns:
         The full server URL (e.g. ``"http://localhost:8080"``).
@@ -82,7 +105,7 @@ def start_http_server(
 
     # Bind port before starting the thread so the port is known synchronously.
     # Use the loopback IP for binding but expose the URL as "localhost" so the
-    # hostname matches what MCP Host writes into the iframe's CSP
+    # hostname matches what MCP Host writes into the iframe's CSP.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
@@ -94,7 +117,7 @@ def start_http_server(
 
     def _run() -> None:
         try:
-            asyncio.run(_serve(app, sock, ready))
+            asyncio.run(_serve_with_ready(app, sock, ready))
         except Exception:
             _log.exception("HTTP server thread crashed")
 
@@ -104,7 +127,7 @@ def start_http_server(
     return server_url
 
 
-async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
+async def _serve_with_ready(app: Any, sock: socket.socket, ready: threading.Event) -> None:
     import uvicorn
 
     class _Server(uvicorn.Server):
@@ -120,11 +143,23 @@ async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
     await server.serve(sockets=[sock])
 
 
+async def _serve_bare(app: Any, sock: socket.socket) -> None:
+    import uvicorn
+
+    class _Server(uvicorn.Server):
+        def install_signal_handlers(self) -> None:
+            pass
+
+    config = uvicorn.Config(app, log_level="warning", access_log=False)
+    server = _Server(config)
+    await server.serve(sockets=[sock])
+
+
 def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
-    fetch_page_fn: Any | None = None,
+    fetch_page_fn: Callable[[Any, int], Awaitable[bool]] | None = None,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
 
@@ -167,8 +202,7 @@ def _build_app(
         if fetch_page_fn is None:
             return JSONResponse({"error": "no_fetch_fn"}, status_code=503)
 
-        loop = asyncio.get_event_loop()
-        ok = await loop.run_in_executor(None, fetch_page_fn, session, page)
+        ok = await fetch_page_fn(session, page)
         if not ok:
             return JSONResponse({"error": "fetch_failed"}, status_code=502)
 

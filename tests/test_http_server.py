@@ -94,7 +94,7 @@ def test_page_endpoint_idempotent_for_current_page() -> None:
 
     called = []
 
-    def fetch_fn(session: SessionData, page: int) -> bool:
+    async def fetch_fn(session: SessionData, page: int) -> bool:
         called.append(page)
         return True
 
@@ -120,7 +120,7 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
 
     fetched: list = []
 
-    def fetch_fn(session: SessionData, page: int) -> bool:
+    async def fetch_fn(session: SessionData, page: int) -> bool:
         fetched.append((type(session).__name__, page))
         session.page = page
         return True
@@ -136,7 +136,7 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
 
 
 def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
-    def fetch_fn(session: SessionData, page: int) -> bool:
+    async def fetch_fn(session: SessionData, page: int) -> bool:
         return False
 
     mgr = GallerySessionManager()
@@ -153,7 +153,7 @@ def test_page_endpoint_chained_session_loads_page() -> None:
 
     called: list = []
 
-    def fetch_fn(session: SessionData, page: int) -> bool:
+    async def fetch_fn(session: SessionData, page: int) -> bool:
         called.append(page)
         return True
 
@@ -245,7 +245,7 @@ def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
 
     received: list = []
 
-    def fetch_fn(session: SessionData, page: int) -> bool:
+    async def fetch_fn(session: SessionData, page: int) -> bool:
         received.append((type(session).__name__, page))
         session.page = page
         return True

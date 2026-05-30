@@ -29,7 +29,7 @@ def config(tmp_path: Path) -> WoofConfig:
 
 @pytest.fixture()
 def server(config: WoofConfig) -> WoofServer:
-    return WoofServer(config, server_url="http://127.0.0.1:9999")
+    return WoofServer(config)
 
 
 def _make_matches(
@@ -119,7 +119,7 @@ async def test_list_search_fields_unknown_library_raises(server: WoofServer) -> 
 @pytest.mark.asyncio
 async def test_list_search_fields_no_libraries_returns_empty(tmp_path: Path) -> None:
     config = WoofConfig(libraries=[], config_dir=tmp_path / ".woof")
-    server = WoofServer(config, server_url="http://127.0.0.1:9999")
+    server = WoofServer(config)
     tool_fn = await _get_tool(server, "list_search_fields")
     result = await tool_fn()
     assert result == {}
@@ -413,7 +413,7 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     # browse_gallery no longer returns matches inline — only a token so the
     # gallery fetches directly from the HTTP server (OEC#19).
     assert "matches" not in result
-    assert result["serverUrl"] == "http://127.0.0.1:9999"
+    assert result["serverUrl"] == server.server_url
     assert result["querySummary"] == "My query"
     assert result["totalCount"] == len(matches)
     merged_token = result["token"]

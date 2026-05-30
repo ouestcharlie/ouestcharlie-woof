@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,7 +17,7 @@ from mcp.types import ToolAnnotations
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager, SessionData
-from .http_server import get_gallery_html
+from .http_server import get_gallery_html, serve_in_loop
 
 _log = logging.getLogger(__name__)
 
@@ -37,30 +38,50 @@ class WoofServer:
     def __init__(
         self,
         config: WoofConfig,
-        server_url: str,
         agent_client: AgentClient | None = None,
         session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
-        self.server_url = server_url
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
-        self._main_loop: asyncio.AbstractEventLoop | None = None
+        self.fetch_page_fn: Any = None
+
+        # Bind port before MCP starts so server_url is known synchronously.
+        _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _sock.bind(("127.0.0.1", 0))
+        self._http_sock = _sock
+        self.server_url = f"http://localhost:{_sock.getsockname()[1]}"
 
         agent = self._agent
 
         @asynccontextmanager
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
-            self._main_loop = asyncio.get_running_loop()
+            # HTTP server shares this event loop — no cross-thread bridging needed.
+            # Any synchronous work in request handlers must use run_in_executor.
+            http_task = asyncio.create_task(
+                serve_in_loop(
+                    self._http_sock,
+                    self._sessions,
+                    self._wally_connection,
+                    self.fetch_page_fn,
+                    self.server_url,
+                )
+            )
             try:
                 yield
             finally:
+                http_task.cancel()
+                await asyncio.gather(http_task, return_exceptions=True)
                 await agent.shutdown()
 
         self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
         self._register_tools()
         self._register_gallery_resource()
+
+    def _wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
+        return self._agent.get_wally_connection(library_name)
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -386,13 +407,11 @@ class WoofServer:
     # HTTP server fetch_page_fn
     # ------------------------------------------------------------------
 
-    def make_sync_fetch_page_fn(self) -> Any:
-        """Return a sync callable ``(token, page) -> bool`` for the HTTP server.
+    def make_fetch_page_fn(self) -> Any:
+        """Return an async callable ``(session, page) -> bool`` for the HTTP server.
 
-        The callable bridges the HTTP server's event loop to WoofServer's main
-        asyncio loop via ``asyncio.run_coroutine_threadsafe``.  ``_main_loop``
-        is set by ``_lifespan`` when FastMCP starts, so the returned function
-        is safe to call once the server is running.
+        Runs directly on the shared MCP/HTTP event loop — no cross-thread
+        bridging required.
         """
 
         async def _async_fetch(session: SessionData, page: int) -> bool:
@@ -411,16 +430,4 @@ class WoofServer:
             session.replace_page(matches, page)
             return True
 
-        def _sync_fetch(session: SessionData, page: int) -> bool:
-            loop = self._main_loop
-            if loop is None:
-                _log.error("fetch_page called before event loop was captured")
-                return False
-            future = asyncio.run_coroutine_threadsafe(_async_fetch(session, page), loop)
-            try:
-                return future.result(timeout=60.0)
-            except Exception as exc:
-                _log.error("fetch_page(%d) failed: %s", page, exc)
-                return False
-
-        return _sync_fetch
+        return _async_fetch

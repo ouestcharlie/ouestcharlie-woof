@@ -189,10 +189,8 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -216,10 +214,8 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -245,19 +241,14 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-
-            def _wally_connection_fn(library_name: str) -> tuple[int | None, str | None]:
-                return agent.get_wally_connection(library_name)
-
-            server_url = start_http_server(
-                session_manager=session_manager,
-                wally_connection_fn=_wally_connection_fn,
-            )
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
+            )
+            server_url = start_http_server(
+                session_manager=session_manager,
+                wally_connection_fn=server._wally_connection,
             )
 
             # Trigger Wally startup
