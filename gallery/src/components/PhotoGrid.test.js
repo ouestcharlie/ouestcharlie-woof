@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import PhotoGrid from './PhotoGrid.svelte';
 
-// jsdom reports clientWidth = 0, so columns = max(1, floor(4/164)) = 1 and pageSize = 3.
+// jsdom reports clientWidth = 0, so columns = max(1, floor(4/164)) = 1 and serverPageSize = 3.
 const JSDOM_PAGE_SIZE = 3;
 
 function makeMatches(n) {
@@ -18,7 +18,7 @@ function makeProps(overrides = {}) {
     loading: false,
     selectedIndex: 0,
     thumbnailTile: () => null,
-    // totalCount, serverPage, pageSize, onFetchServerPage — not set here so the
+    // totalCount, serverPage, serverPageSize, onFetchServerPage — not set here so the
     // component's own defaults apply (totalCount falls back to matches.length).
     onSelect: vi.fn(),
     onPageSelect: vi.fn(),
@@ -27,7 +27,7 @@ function makeProps(overrides = {}) {
 }
 
 describe('PhotoGrid — page size (3 rows × columns)', () => {
-  it('shows at most pageSize tiles on the first page', () => {
+  it('shows at most serverPageSize tiles on the first page', () => {
     const { container } = render(PhotoGrid, makeProps({ matches: makeMatches(10) }));
     expect(container.querySelectorAll('.tile')).toHaveLength(JSDOM_PAGE_SIZE);
   });
@@ -141,19 +141,34 @@ describe('PhotoGrid — loading state', () => {
 
 // jsdom: columns=1, displayPageSize=3
 describe('PhotoGrid — server-page-aware total count', () => {
-  it('uses totalCount for pageCount when greater than matches.length', () => {
-    // 3 local matches but totalCount=600 → ceil(600/3)=200 pages
+  it('uses totalCount for pageCount if tocalCount < serverPageSize', () => {
+    // totalCount=600, displayPageSizre=3 → ceil(200/3)=67 pages
     const { getAllByText } = render(
       PhotoGrid,
       makeProps({
-        matches: makeMatches(3),
-        totalCount: 600,
+        matches: makeMatches(13),
+        totalCount: 200,
         serverPage: 0,
-        pageSize: 500,
+        serverPageSize: 500,
         onFetchServerPage: vi.fn(),
       }),
     );
-    expect(getAllByText(/200/)[0]).toBeTruthy();
+    expect(getAllByText(/67/)[0]).toBeTruthy();
+  });
+  
+  it('uses totalCount for pageCount and server Page size if tocalCount > serverPageSize', () => {
+    // totalCount=600, displayPageSizre=3 → ceil(500/3) + ceil((600-500)/3)=201 pages
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(13),
+        totalCount: 600,
+        serverPage: 0,
+        serverPageSize: 500,
+        onFetchServerPage: vi.fn(),
+      }),
+    );
+    expect(getAllByText(/201/)[0]).toBeTruthy();
   });
 
   it('Next at last local page triggers onFetchServerPage when more exist', async () => {
@@ -166,7 +181,7 @@ describe('PhotoGrid — server-page-aware total count', () => {
         matches: makeMatches(3),
         totalCount: 600,
         serverPage: 0,
-        pageSize: 500,
+        serverPageSize: 500,
         onFetchServerPage,
         onPageSelect,
       }),
@@ -184,7 +199,7 @@ describe('PhotoGrid — server-page-aware total count', () => {
         matches: makeMatches(3),
         totalCount: 600,
         serverPage: 1,
-        pageSize: 500,
+        serverPageSize: 500,
         onFetchServerPage,
         onPageSelect,
       }),
@@ -194,29 +209,29 @@ describe('PhotoGrid — server-page-aware total count', () => {
   });
 
   it('absolute page reflects server page offset', () => {
-    // serverPage=1, pageSize=500, displayPageSize=3 → absolutePage = floor(500/3) + 0 = 166
+    // serverPage=1, serverPageSize=500, displayPageSize=3 → absolutePage = ceil(500/3) + 0 = 167
     const { getAllByText } = render(
       PhotoGrid,
       makeProps({
         matches: makeMatches(3),
         totalCount: 1000,
         serverPage: 1,
-        pageSize: 500,
+        serverPageSize: 500,
         onFetchServerPage: vi.fn(),
       }),
     );
-    expect(getAllByText(/167/)[0]).toBeTruthy(); // absolutePage+1 = 167
+    expect(getAllByText(/168/)[0]).toBeTruthy(); // absolutePage+1 = 168
   });
 
   it('Next is disabled on last server page last display page', () => {
-    // totalCount=3, pageSize=500, serverPage=0, displayPageSize=3 → 1 page total, Next disabled
+    // totalCount=3, serverPageSize=500, serverPage=0, displayPageSize=3 → 1 page total, Next disabled
     const { getAllByText } = render(
       PhotoGrid,
       makeProps({
         matches: makeMatches(3),
         totalCount: 3,
         serverPage: 0,
-        pageSize: 500,
+        serverPageSize: 500,
         onFetchServerPage: vi.fn(),
       }),
     );

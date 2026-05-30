@@ -192,7 +192,7 @@
       {thumbnailTile}
       {totalCount}
       serverPage={serverPage}
-      pageSize={serverPageSize}
+      serverPageSize={serverPageSize}
       onFetchServerPage={fetchServerPage}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}

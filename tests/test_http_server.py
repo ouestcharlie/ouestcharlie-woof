@@ -94,8 +94,8 @@ def test_page_endpoint_idempotent_for_current_page() -> None:
 
     called = []
 
-    def fetch_fn(token: str, page: int) -> bool:
-        called.append((token, page))
+    def fetch_fn(session: SessionData, page: int) -> bool:
+        called.append(page)
         return True
 
     mgr = GallerySessionManager()
@@ -120,9 +120,9 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
 
     fetched: list = []
 
-    def fetch_fn(token: str, page: int) -> bool:
-        fetched.append((token, page))
-        mgr.sessions[token].page = page
+    def fetch_fn(session: SessionData, page: int) -> bool:
+        fetched.append((type(session).__name__, page))
+        session.page = page
         return True
 
     mgr = GallerySessionManager()
@@ -132,11 +132,11 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
         assert resp.status == 200
         data = json.loads(resp.read())
         assert data["page"] == 1
-    assert fetched == [(tok, 1)]
+    assert fetched == [("SessionData", 1)]
 
 
 def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
-    def fetch_fn(token: str, page: int) -> bool:
+    def fetch_fn(session: SessionData, page: int) -> bool:
         return False
 
     mgr = GallerySessionManager()
@@ -153,8 +153,8 @@ def test_page_endpoint_chained_session_loads_page() -> None:
 
     called: list = []
 
-    def fetch_fn(token: str, page: int) -> bool:
-        called.append((token, page))
+    def fetch_fn(session: SessionData, page: int) -> bool:
+        called.append(page)
         return True
 
     mgr = GallerySessionManager()
@@ -184,6 +184,80 @@ def test_page_endpoint_chained_out_of_range_returns_404() -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(f"{server_url}/api/results/{merged_token}/page/5")
     assert exc_info.value.code == 404
+
+
+def test_results_set_session_returns_aggregate_total_count() -> None:
+    """api_results for a 'set' session must expose aggregate totalCount, not sub-session's."""
+    import json
+
+    mgr = GallerySessionManager()
+    matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
+    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    merged_token, _ = mgr.merge([tok_a, tok_b])
+
+    server_url = start_http_server(session_manager=mgr)
+    with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}") as resp:
+        data = json.loads(resp.read())
+    assert data["totalCount"] == _DEFAULT_SERVER_PAGE * 2
+    assert data["type"] == "set"
+    assert "chainedSessions" not in data
+
+
+def test_results_set_session_returns_first_page_matches() -> None:
+    """api_results for a 'set' session serves the first sub-session's matches."""
+    import json
+
+    mgr = GallerySessionManager()
+    matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
+    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    merged_token, _ = mgr.merge([tok_a, tok_b])
+
+    server_url = start_http_server(session_manager=mgr)
+    with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}") as resp:
+        data = json.loads(resp.read())
+    assert data["matches"][0]["contentHash"] == "a0"
+    assert len(data["matches"]) == _DEFAULT_SERVER_PAGE
+
+
+def test_results_single_session_exposes_pagination_fields() -> None:
+    """api_results for a single session with totalCount > pageSize exposes pagination fields
+    so the frontend can drive server-page navigation."""
+    import json
+
+    mgr = GallerySessionManager()
+    tok = mgr.create("lib", {}, 500, total_count=1200, matches=[])
+    server_url = start_http_server(session_manager=mgr)
+    with urllib.request.urlopen(f"{server_url}/api/results/{tok}") as resp:
+        data = json.loads(resp.read())
+    assert data["type"] == "single"
+    assert data["totalCount"] == 1200
+    assert data["pageSize"] == 500
+    assert data["page"] == 0
+
+
+def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
+    """fetch_page_fn must receive (session: SessionData, page: int)."""
+    import json
+
+    received: list = []
+
+    def fetch_fn(session: SessionData, page: int) -> bool:
+        received.append((type(session).__name__, page))
+        session.page = page
+        return True
+
+    mgr = GallerySessionManager()
+    tok = mgr.create("lib", {}, 500, 600)
+    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read())
+        assert data["page"] == 1
+    assert received == [("SessionData", 1)]
 
 
 def test_cors_header_present_on_responses() -> None:
