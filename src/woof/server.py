@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
-from .gallery_session_manager import GallerySessionManager
+from .gallery_session_manager import GallerySessionManager, SessionData
 from .http_server import get_gallery_html
 
 _log = logging.getLogger(__name__)
@@ -192,7 +192,6 @@ class WoofServer:
             root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
-            page: int = 0,
         ) -> dict[str, Any]:
             """Search photos in a library using Wally.
 
@@ -222,6 +221,8 @@ class WoofServer:
                     library). E.g. "2024/2024-07" to restrict to one partition.
             """
             library = self._require_library(library_name)
+            # Woof's MCP search always starts a 0, further pages managed by the Gallery
+            page = 0
             args: dict[str, Any] = {
                 "root": root,
                 "sort_by": sort_by,
@@ -245,15 +246,12 @@ class WoofServer:
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
             page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
-                library_name,
-                matches,
+                library_name=library_name,
+                query_args=args,
                 total_count=result.get("totalCount"),
-                query_context={
-                    "library_name": library_name,
-                    "args": args,
-                    "page": page,
-                    "pageSize": page_size,
-                },
+                page=page,
+                page_size=page_size,
+                matches=matches,
             )
             return {
                 "session_token": token,
@@ -297,13 +295,13 @@ class WoofServer:
                     )
                 }
 
-            merged_token, data = self._sessions.merge(session_tokens, query_summary)
+            merged_token, data = self._sessions.merge(session_tokens)
             return {
                 "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
-                "totalCount": data["totalCount"],
+                "totalCount": data.totalCount,
             }
 
     # ------------------------------------------------------------------
@@ -397,40 +395,32 @@ class WoofServer:
         is safe to call once the server is running.
         """
 
-        async def _async_fetch(token: str, page: int) -> bool:
-            session = self._sessions.get(token)
-            if session is None:
-                _log.warning("fetch_page: session %r not found", token)
-                return False
-            qc = session.get("queryContext")
-            if qc is None:
-                _log.warning("fetch_page: session %r has no queryContext", token)
-                return False
-            args = {**qc["args"], "page": page}
+        async def _async_fetch(session: SessionData, page: int) -> bool:
+            args = {**session.queryArgs, "page": page}
             try:
-                library = self._require_library(qc["library_name"])
+                library = self._require_library(session.libraryName)
             except ValueError as exc:
-                _log.error("fetch_page: %s", exc)
+                _log.error("fetch_page: unknown library: %s", exc)
                 return False
             try:
                 result = await self._agent.call_tool("wally", "search_photos", args, library)
             except AgentError as exc:
-                _log.error("fetch_page(%r, %d) Wally call failed: %s", token, page, exc)
+                _log.error("fetch_page(%d) Wally call failed: %s", page, exc)
                 return False
             matches = result.get("matches", [])  # type: ignore[union-attr]
-            self._sessions.replace_page(token, matches, page)
+            session.replace_page(matches, page)
             return True
 
-        def _sync_fetch(token: str, page: int) -> bool:
+        def _sync_fetch(session: SessionData, page: int) -> bool:
             loop = self._main_loop
             if loop is None:
                 _log.error("fetch_page called before event loop was captured")
                 return False
-            future = asyncio.run_coroutine_threadsafe(_async_fetch(token, page), loop)
+            future = asyncio.run_coroutine_threadsafe(_async_fetch(session, page), loop)
             try:
                 return future.result(timeout=60.0)
             except Exception as exc:
-                _log.error("fetch_page(%r, %d) failed: %s", token, page, exc)
+                _log.error("fetch_page(%d) failed: %s", page, exc)
                 return False
 
         return _sync_fetch

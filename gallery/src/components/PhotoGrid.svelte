@@ -20,7 +20,7 @@
     thumbnailTile,
     totalCount = matches.length,
     serverPage = 0,
-    pageSize = 500,
+    pageSize: serverPageSize = 500,
     onFetchServerPage = null,
     onSelect,
     onPageSelect,
@@ -41,16 +41,19 @@
   let localPage = $derived(selectedIndex != null ? Math.floor(selectedIndex / displayPageSize) : 0);
 
   // Absolute page index across all server pages.
-  let serverPageOffset = $derived(serverPage * pageSize);
-  let absolutePage = $derived(Math.floor(serverPageOffset / displayPageSize) + localPage);
+  let serverPageOffset = $derived(serverPage * serverPageSize);
+  let absolutePage = $derived(Math.ceil(serverPageOffset / displayPageSize) + localPage);
 
-  // Total display pages across all server pages (based on Wally's totalCount).
-  let totalDisplayPages = $derived(Math.max(1, Math.ceil(totalCount / displayPageSize)));
+  // Total display pages across all server pages (based on totalCount).
+  let totalServerFullPages = $derived(Math.floor(totalCount / serverPageSize));
+  let lastServerPageSize = $derived(totalCount - totalServerFullPages * serverPageSize);
+  let localPagesPerServerPage = $derived(Math.ceil(serverPageSize / displayPageSize));
+  let totalDisplayPages = $derived(Math.max(1, localPagesPerServerPage * totalServerFullPages + Math.ceil(lastServerPageSize / displayPageSize)));
 
   // Number of local display pages within the current server page's loaded matches.
   let localPageCount = $derived(Math.max(1, Math.ceil(matches.length / displayPageSize)));
 
-  let hasMore = $derived((serverPage + 1) * pageSize < totalCount);
+  let hasMore = $derived((serverPage + 1) * serverPageSize < totalCount);
 
   let pageMatches = $derived(matches.slice(localPage * displayPageSize, (localPage + 1) * displayPageSize));
 
@@ -65,6 +68,8 @@
   }
 
   async function nextPage() {
+    console.log("reaching next page localPage=" + localPage + ", localPageCount=" + localPageCount + 
+      ", hasMore=" + hasMore + ", absolutePage=" + absolutePage + ", totalCount=" + totalCount)
     if (localPage < localPageCount - 1) {
       onPageSelect((localPage + 1) * displayPageSize);
     } else if (hasMore && onFetchServerPage) {
@@ -90,7 +95,7 @@
 </div>
 
 <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
-  {#each pageMatches as match, i (match.contentHash ?? i)}
+  {#each pageMatches as match, i (match.partition + '/' + match.contentHash) }
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div

@@ -9,7 +9,8 @@
   let matches = $state([]);
   let querySummary = $state('');
   let totalCount = $state(0);
-  let queryContext = $state(null);
+  let serverPage = $state(0);
+  let serverPageSize = $state(500);
   let status = $state('');
   let loading = $state(true);
   let serverPageLoading = $state(false);
@@ -21,11 +22,10 @@
 
   function applySession(session, tok) {
     if (tok !== undefined) token = tok;
-    serverUrl = session.serverUrl ?? serverUrl;
     matches = session.matches ?? [];
-    querySummary = session.querySummary ?? '';
     totalCount = session.totalCount ?? matches.length;
-    queryContext = session.queryContext ?? null;
+    serverPage = session.page ?? 0;
+    serverPageSize = session.pageSize ?? 500;
     status = `${totalCount} photo${totalCount === 1 ? '' : 's'}`;
     loading = false;
     view = 'grid';
@@ -39,7 +39,7 @@
       const data = await fetch(`${serverUrl}/api/results/${token}/page/${page}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
       matches = data.matches ?? [];
-      queryContext = data.queryContext ?? null;
+      serverPage = page;
     } catch (err) {
       status = `Error loading page: ${err.message}`;
     } finally {
@@ -75,6 +75,7 @@
         // Set serverUrl from the tool result before fetching — in the MCP iframe
         // context location.origin is ui://… not the Woof HTTP server URL.
         serverUrl = result.serverUrl;
+        querySummary = result.querySummary;
         try {
           const data = await fetch(`${serverUrl}/api/results/${result.token}`)
             .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
@@ -190,9 +191,9 @@
       {selectedIndex}
       {thumbnailTile}
       {totalCount}
-      serverPage={queryContext?.page ?? 0}
-      pageSize={queryContext?.pageSize ?? 500}
-      onFetchServerPage={queryContext ? fetchServerPage : null}
+      serverPage={serverPage}
+      pageSize={serverPageSize}
+      onFetchServerPage={fetchServerPage}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}
     />
@@ -212,7 +213,7 @@
 
   <div class="status">
     {#if view === 'preview' && selectedIndex !== null}
-      {selectedIndex + 1} / {matches.length}
+      {selectedIndex + 1} / {totalCount}
     {:else}
       {status}
     {/if}

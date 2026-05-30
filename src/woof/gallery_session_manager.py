@@ -7,10 +7,51 @@ Tracks search-result sessions keyed by URL-safe tokens.  The underlying
 
 from __future__ import annotations
 
+import math
 import secrets
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 _MAX_SESSIONS = 100
+
+
+@dataclass
+class SessionData:
+    """Single session data"""
+
+    type: str  # Type: 'single', 'merge' or 'set' (for chained session merge)
+    libraryName: str
+    queryArgs: dict[str, Any]
+    pageSize: int
+    totalCount: int
+    # Set of sessions in case of a merge of multi-page sessions
+    chainedSessions: list[SessionData] = field(default_factory=list)
+    page: int = 0
+    matches: list[Any] = field(default_factory=list)  # Matches of the current server page
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict representation of this session.
+
+        ``chainedSessions`` is omitted — internal to the ``'set'`` type and
+        would bloat responses with redundant match data from all sub-sessions.
+        """
+        d = asdict(self)
+        d.pop("chainedSessions", None)
+        return d
+
+    def replace_page(
+        self,
+        matches: list[Any],
+        page: int,
+    ) -> None:
+        """Replace the current matches with a new server page.
+
+        Updates ``matches`` and ``page`` in place.
+        """
+
+        library_name = self.libraryName
+        self.matches = [{**m, "library": library_name} for m in matches]
+        self.page = page
 
 
 class GallerySessionManager:
@@ -28,9 +69,9 @@ class GallerySessionManager:
     """
 
     def __init__(self) -> None:
-        self._sessions: dict[str, Any] = {}  # insertion-ordered (Python 3.7+)
+        self._sessions: dict[str, SessionData] = {}  # insertion-ordered (Python 3.7+)
 
-    def _add_session(self, token: str, data: dict[str, Any]) -> None:
+    def _add_session(self, token: str, data: SessionData) -> None:
         """Evict the oldest session if at capacity, then store *data* under *token*."""
         while len(self._sessions) >= _MAX_SESSIONS:
             del self._sessions[next(iter(self._sessions))]
@@ -44,9 +85,11 @@ class GallerySessionManager:
     def create(
         self,
         library_name: str,
-        matches: list[Any],
+        query_args: dict[str, Any],
+        page_size: int,
         total_count: int | None = None,
-        query_context: dict[str, Any] | None = None,
+        page: int = 0,
+        matches: list[Any] | None = None,
     ) -> str:
         """Store a new search-result session and return its token.
 
@@ -64,43 +107,49 @@ class GallerySessionManager:
                 paginate further.
         """
         token = secrets.token_urlsafe(16)
+        if matches is None:
+            matches = []
         stamped = [{**m, "library": library_name} for m in matches]
         self._add_session(
             token,
-            {
-                "matches": stamped,
-                "querySummary": "",
-                "totalCount": total_count if total_count is not None else len(stamped),
-                "queryContext": query_context,
-            },
+            SessionData(
+                type="single",
+                libraryName=library_name,
+                queryArgs=query_args,
+                pageSize=page_size,
+                totalCount=total_count if total_count is not None else len(stamped),
+                page=page,
+                matches=stamped,
+            ),
         )
         return token
 
-    def replace_page(
-        self,
-        token: str,
-        matches: list[Any],
-        page: int,
-    ) -> None:
-        """Replace the current matches in *token*'s session with a new server page.
-
-        Updates ``matches`` and ``queryContext["page"]`` in place.
-        Does nothing if *token* is not found or the session has no
-        ``queryContext``.
+    def get(self, token: str, page: int = 0) -> tuple[SessionData | None, int]:
+        """Return the session for *token*, or ``None`` if not found
+            and the effective page index.
+        If session is of type 'set', the sub-session at *page* is selected
         """
         session = self._sessions.get(token)
         if session is None:
-            return
-        qc = session.get("queryContext")
-        if qc is None:
-            return
-        library_name = qc.get("library_name", "")
-        session["matches"] = [{**m, "library": library_name} for m in matches]
-        qc["page"] = page
-
-    def get(self, token: str) -> dict[str, Any] | None:
-        """Return the session for *token*, or ``None`` if not found."""
-        return self._sessions.get(token)
+            return None, 0
+        elif session.type != "set":
+            num_session_pages = math.ceil(session.totalCount / session.pageSize)
+            if page < session.totalCount / session.pageSize:
+                return session, page
+            else:
+                return None, 0
+        else:
+            # Find the right session for a session of type 'set'
+            selected_session = None
+            for s in session.chainedSessions:
+                num_session_pages = math.ceil(
+                    s.totalCount / s.pageSize
+                )  # number of pages for 0-indexed
+                if page < num_session_pages:
+                    selected_session = s
+                    break
+                page -= num_session_pages
+            return selected_session, page
 
     def unknown_tokens(self, tokens: list[str]) -> list[str]:
         """Return the subset of *tokens* not present in the session store."""
@@ -109,43 +158,73 @@ class GallerySessionManager:
     def merge(
         self,
         tokens: list[str],
-        query_summary: str,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, SessionData]:
         """Merge sessions from *tokens* into a new session and return it.
 
-        Matches are deduplicated by ``contentHash`` in first-seen order.
-        Each match already carries its ``"library"`` field from :meth:`create`.
+        Single-session merge:
+            Inherits ``queryContext`` and ``totalCount`` from the source so
+            Wally server-page navigation continues to work in the gallery.
 
+        Multi-session merge — small (total loaded matches < ``_SERVER_PAGE_SIZE``):
+            Flattens all matches into one session, deduplicated by
+            ``contentHash`` in first-seen order.  ``queryContext`` is ``None``
+            because there is no single Wally query to paginate further.
+
+        Multi-session merge — large (total loaded matches >= ``_SERVER_PAGE_SIZE``):
+            Chains the source sessions as server pages.  The merged session
+            starts at page 0 (first source session's matches).  ``queryContext``
+            carries ``type: "chained"`` so the HTTP server can serve subsequent
+            pages via :meth:`load_chained_page` without calling Wally.
+            ``totalCount`` is the sum of loaded matches across all sources.
+
+        Each match already carries its ``"library"`` field from :meth:`create`.
         Assumes all *tokens* are valid — call :meth:`unknown_tokens` first.
 
         Returns:
             ``(merged_token, session_data)`` where *session_data* has the
             standard session shape described on this class.
         """
-        seen_hashes: set[str] = set()
-        merged_matches: list[Any] = []
-
-        for token in tokens:
-            for match in self._sessions[token].get("matches", []):
-                h = match.get("contentHash", "")
-                if h not in seen_hashes:
-                    seen_hashes.add(h)
-                    merged_matches.append(match)
-
         merged_token = secrets.token_urlsafe(16)
-        session_data: dict[str, Any] = {
-            "matches": merged_matches,
-            "querySummary": query_summary,
-            "totalCount": len(merged_matches),
-            "queryContext": None,
-        }
-        # Preserve queryContext when merging exactly one search session so that
-        # the gallery can still navigate Wally pages.  Multi-session merges
-        # produce an ambiguous mix of queries, so queryContext is dropped.
-        if len(tokens) == 1:
+        if len(tokens) == 0:
+            raise ValueError("nothing to merge")
+        elif len(tokens) == 1:
             src = self._sessions[tokens[0]]
-            if src.get("queryContext") is not None:
-                session_data["queryContext"] = src["queryContext"]
-                session_data["totalCount"] = src.get("totalCount", len(merged_matches))
+            return tokens[0], src
+        else:
+            chained_sessions = [self._sessions[t] for t in tokens]
+            if len(chained_sessions) == 0:
+                raise ValueError("no sessions found")
+            total_count = sum(s.totalCount for s in chained_sessions)
+            if total_count <= chained_sessions[0].pageSize:
+                # Merge matches with deduplicatation
+                seen_hashes: set[str] = set()
+                merged_matches: list[Any] = []
+                for token in tokens:
+                    for match in self._sessions[token].matches:
+                        h = match.get("contentHash", "")
+                        if h not in seen_hashes:
+                            seen_hashes.add(h)
+                            merged_matches.append(match)
+                session_data = SessionData(
+                    type="merge",
+                    libraryName="__merge__",
+                    queryArgs={},
+                    pageSize=chained_sessions[0].pageSize,
+                    totalCount=len(merged_matches),
+                    matches=merged_matches,
+                )
+            else:
+                first_src = self._sessions[tokens[0]]
+                session_data = SessionData(
+                    type="set",
+                    libraryName="__merge__",
+                    queryArgs={},
+                    pageSize=first_src.pageSize,
+                    totalCount=sum(len(self._sessions[t].matches) for t in tokens),
+                    page=0,
+                    chainedSessions=chained_sessions,
+                    matches=first_src.matches,
+                )
+
         self._add_session(merged_token, session_data)
         return merged_token, session_data

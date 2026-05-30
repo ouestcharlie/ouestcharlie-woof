@@ -7,8 +7,10 @@ import urllib.request
 
 import pytest
 
-from woof.gallery_session_manager import GallerySessionManager
+from woof.gallery_session_manager import GallerySessionManager, SessionData
 from woof.http_server import start_http_server
+
+_DEFAULT_SERVER_PAGE = 513
 
 
 def test_thumbnail_without_wally_returns_503() -> None:
@@ -31,9 +33,9 @@ def test_preview_without_wally_returns_503() -> None:
 
 def test_gallery_token_route_serves_html() -> None:
     mgr = GallerySessionManager()
-    mgr.sessions["tok123"] = {"matches": [], "querySummary": ""}
+    tok = mgr.create("lib", {}, 500, 1)
     server_url = start_http_server(session_manager=mgr)
-    url = f"{server_url}/gallery/tok123"
+    url = f"{server_url}/gallery/{tok}"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
         assert "text/html" in resp.headers["Content-Type"]
@@ -54,9 +56,9 @@ def test_results_endpoint_returns_session_data() -> None:
 
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "library": "testlib"}]
     mgr = GallerySessionManager()
-    mgr.sessions["tok456"] = {"matches": matches, "querySummary": ""}
+    tok = mgr.create("testlib", {}, 600, 1, matches=matches)
     server_url = start_http_server(session_manager=mgr)
-    url = f"{server_url}/api/results/tok456"
+    url = f"{server_url}/api/results/{tok}"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
@@ -97,18 +99,12 @@ def test_page_endpoint_idempotent_for_current_page() -> None:
         return True
 
     mgr = GallerySessionManager()
-    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
-    mgr.sessions["tok"] = {
-        "matches": [],
-        "querySummary": "",
-        "totalCount": 1,
-        "queryContext": qc,
-    }
+    tok = mgr.create("lib", {}, 600, 1)
     server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
-    with urllib.request.urlopen(f"{server_url}/api/results/tok/page/0") as resp:
+    with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/0") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["queryContext"]["page"] == 0
+        assert data["page"] == 0
     assert called == []  # fetch_fn must NOT be invoked for the current page
 
 
@@ -119,20 +115,6 @@ def test_page_endpoint_unknown_token_returns_404() -> None:
     assert exc_info.value.code == 404
 
 
-def test_page_endpoint_no_context_returns_400() -> None:
-    mgr = GallerySessionManager()
-    mgr.sessions["tok"] = {
-        "matches": [],
-        "querySummary": "",
-        "totalCount": 0,
-        "queryContext": None,
-    }
-    server_url = start_http_server(session_manager=mgr)
-    with pytest.raises(urllib.error.HTTPError) as exc_info:
-        urllib.request.urlopen(f"{server_url}/api/results/tok/page/1")
-    assert exc_info.value.code == 400
-
-
 def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
     import json
 
@@ -140,23 +122,17 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
 
     def fetch_fn(token: str, page: int) -> bool:
         fetched.append((token, page))
-        mgr.sessions[token]["queryContext"]["page"] = page
+        mgr.sessions[token].page = page
         return True
 
     mgr = GallerySessionManager()
-    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
-    mgr.sessions["tok"] = {
-        "matches": [],
-        "querySummary": "",
-        "totalCount": 600,
-        "queryContext": qc,
-    }
+    tok = mgr.create("lib", {}, 500, 600)
     server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
-    with urllib.request.urlopen(f"{server_url}/api/results/tok/page/1") as resp:
+    with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["queryContext"]["page"] == 1
-    assert fetched == [("tok", 1)]
+        assert data["page"] == 1
+    assert fetched == [(tok, 1)]
 
 
 def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
@@ -164,17 +140,50 @@ def test_page_endpoint_returns_502_when_fetch_fn_fails() -> None:
         return False
 
     mgr = GallerySessionManager()
-    qc = {"library_name": "lib", "args": {}, "page": 0, "pageSize": 500}
-    mgr.sessions["tok"] = {
-        "matches": [],
-        "querySummary": "",
-        "totalCount": 600,
-        "queryContext": qc,
-    }
+    mgr.sessions["tok"] = SessionData("single", "lib", {}, 500, 600)
     server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(f"{server_url}/api/results/tok/page/1")
     assert exc_info.value.code == 502
+
+
+def test_page_endpoint_chained_session_loads_page() -> None:
+    """Page endpoint serves chained pages without calling fetch_page_fn."""
+    import json
+
+    called: list = []
+
+    def fetch_fn(token: str, page: int) -> bool:
+        called.append((token, page))
+        return True
+
+    mgr = GallerySessionManager()
+    matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_a)
+    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches_b)
+    merged_token, _ = mgr.merge([tok_a, tok_b])
+
+    server_url = start_http_server(session_manager=mgr, fetch_page_fn=fetch_fn)
+    with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}/page/1") as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read())
+        assert data["page"] == 0  # page #0 of second session
+        assert data["matches"][0]["contentHash"] == "b0"
+    assert called == []  # must NOT call fetch_fn for chained sessions
+
+
+def test_page_endpoint_chained_out_of_range_returns_404() -> None:
+    mgr = GallerySessionManager()
+    matches = [{"contentHash": f"h{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
+    tok_a = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches)
+    tok_b = mgr.create("lib", {}, _DEFAULT_SERVER_PAGE, matches=matches)
+    merged_token, _ = mgr.merge([tok_a, tok_b])
+
+    server_url = start_http_server(session_manager=mgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/{merged_token}/page/5")
+    assert exc_info.value.code == 404
 
 
 def test_cors_header_present_on_responses() -> None:
@@ -184,7 +193,9 @@ def test_cors_header_present_on_responses() -> None:
     matching real browser behaviour.
     """
     mgr = GallerySessionManager()
-    mgr.sessions["tok789"] = {"matches": [], "querySummary": ""}
+    mgr.sessions["tok789"] = SessionData(
+        type="single", libraryName="lib", queryArgs={}, pageSize=100, totalCount=1
+    )
     server_url = start_http_server(session_manager=mgr)
     url = f"{server_url}/api/results/tok789"
     req = urllib.request.Request(url, headers={"Origin": "http://example.com"})

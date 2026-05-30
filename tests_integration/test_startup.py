@@ -50,7 +50,7 @@ class TestHttpServer:
     def test_known_session_returns_200_with_data(self) -> None:
         """A session created in the shared manager is served via /api/results."""
         mgr = GallerySessionManager()
-        token = mgr.create("integration-test", [{"filename": "a.jpg"}])
+        token = mgr.create("integration-test", {}, 500, 1, matches=[{"filename": "a.jpg"}])
         server_url = start_http_server(session_manager=mgr)
 
         url = f"{server_url}/api/results/{token}"

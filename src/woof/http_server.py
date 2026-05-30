@@ -130,7 +130,8 @@ def _build_app(
 
     async def gallery_token(request: Request) -> Response:
         token = request.path_params["token"]
-        if session_manager.get(token) is None:
+        session, _ = session_manager.get(token)
+        if session is None:
             return Response(status_code=404)
         html = get_gallery_html(server_url)
         return HTMLResponse(
@@ -140,12 +141,14 @@ def _build_app(
 
     async def api_results(request: Request) -> Response:
         token = request.path_params["token"]
-        session = session_manager.get(token)
+        # Access the raw top-level session directly so 'set' sessions expose
+        # their aggregate totalCount rather than only the first sub-session's.
+        session = session_manager.sessions.get(token)
         if session is None:
             return JSONResponse(
                 {"error": f"Session {token!r} not found or expired"}, status_code=404
             )
-        return JSONResponse(session)
+        return JSONResponse(session.to_dict())
 
     async def api_page(request: Request) -> Response:
         token = request.path_params["token"]
@@ -154,27 +157,22 @@ def _build_app(
         except (ValueError, KeyError):
             return JSONResponse({"error": "invalid page"}, status_code=400)
 
-        session = session_manager.get(token)
+        session, page = session_manager.get(token, page)
         if session is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
 
-        qc = session.get("queryContext")
-        if qc is None:
-            return JSONResponse({"error": "no_context"}, status_code=400)
-
-        if qc.get("page") == page:
-            return JSONResponse(session)
+        if session.page == page:
+            return JSONResponse(session.to_dict())
 
         if fetch_page_fn is None:
             return JSONResponse({"error": "no_fetch_fn"}, status_code=503)
 
         loop = asyncio.get_event_loop()
-        ok = await loop.run_in_executor(None, fetch_page_fn, token, page)
+        ok = await loop.run_in_executor(None, fetch_page_fn, session, page)
         if not ok:
             return JSONResponse({"error": "fetch_failed"}, status_code=502)
 
-        updated = session_manager.get(token)
-        return JSONResponse(updated)
+        return JSONResponse(session.to_dict())
 
     async def proxy_media(request: Request) -> Response:
         kind = request.path_params["kind"]
