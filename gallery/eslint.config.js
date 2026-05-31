@@ -14,6 +14,12 @@ export default [
     },
   },
   {
+    files: ['src/**/*.test.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**'],
   },
 ];

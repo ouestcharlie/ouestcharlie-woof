@@ -188,6 +188,8 @@ describe('PhotoGrid — server-page-aware total count', () => {
     );
     await fireEvent.click(getAllByText(/Next/)[0].closest('button'));
     expect(onFetchServerPage).toHaveBeenCalledWith(1);
+    // After the server fetch resolves, selectedIndex must be reset to 0
+    expect(onPageSelect).toHaveBeenCalledWith(0);
   });
 
   it('Previous at first local page triggers onFetchServerPage when serverPage > 0', async () => {
@@ -206,6 +208,8 @@ describe('PhotoGrid — server-page-aware total count', () => {
     );
     await fireEvent.click(getAllByText(/Previous/)[0].closest('button'));
     expect(onFetchServerPage).toHaveBeenCalledWith(0);
+    // After the server fetch resolves, select the last photo of the newly loaded page
+    expect(onPageSelect).toHaveBeenCalledWith(2); // matches.length - 1 = 3 - 1
   });
 
   it('absolute page reflects server page offset', () => {
