@@ -36,18 +36,21 @@
   let gridWidth = $state(0);
   let columns = $derived(gridWidth > 0 ? Math.max(1, Math.floor((gridWidth + 4) / TILE_STRIDE)) : 1);
   let displayPageSize = $derived(columns * ROWS);
+  // Display page per server page
+  let localPagesPerServerPage = $derived(Math.ceil(serverPageSize / displayPageSize));
+
 
   // Local page within the current server page (derived from selectedIndex).
   let localPage = $derived(selectedIndex != null ? Math.floor(selectedIndex / displayPageSize) : 0);
 
+
   // Absolute page index across all server pages.
-  let serverPageOffset = $derived(serverPage * serverPageSize);
-  let absolutePage = $derived(Math.ceil(serverPageOffset / displayPageSize) + localPage);
+  let absolutePage = $derived(serverPage * localPagesPerServerPage + localPage);
 
   // Total display pages across all server pages (based on totalCount).
   let totalServerFullPages = $derived(Math.floor(totalCount / serverPageSize));
   let lastServerPageSize = $derived(totalCount - totalServerFullPages * serverPageSize);
-  let localPagesPerServerPage = $derived(Math.ceil(serverPageSize / displayPageSize));
+  
   let totalDisplayPages = $derived(Math.max(1, localPagesPerServerPage * totalServerFullPages + Math.ceil(lastServerPageSize / displayPageSize)));
 
   // Number of local display pages within the current server page's loaded matches.

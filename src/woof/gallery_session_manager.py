@@ -20,6 +20,10 @@ _log = logging.getLogger(__name__)
 _MAX_SESSIONS = 100
 
 
+class PageOutOfRange(Exception):
+    """Raised when the requested page index exceeds the session's page count."""
+
+
 @dataclass
 class SessionHandler:
     """Single session data"""
@@ -41,8 +45,11 @@ class SessionHandler:
         """Fetch Wally server page *page* into this session via *agent*."""
         if self.page == page:
             return True  # No-op
-        if page > math.ceil(self.totalCount / self.pageSize):
-            return False
+        if page >= math.ceil(self.totalCount / self.pageSize):
+            raise PageOutOfRange(
+                "page {page} out of range for totalCount="
+                f"{self.totalCount}, pageSize={self.pageSize}"
+            )
         if self.library is None:
             _log.error("fetch_page: session has no library")
             return False
@@ -82,18 +89,13 @@ class ChainedSessionHandler(SessionHandler):
                     return True
                 return False
             page_in_session -= num_session_pages
-        return False
+        raise PageOutOfRange(
+            f"page {page} out of range for chained session with totalCount={self.totalCount}"
+        )
 
 
 class GallerySessionManager:
     """Stores and retrieves gallery sessions keyed by URL-safe tokens.
-
-    A *session* is a dict with at least::
-
-        {
-            "matches":      list[dict],   # photo match records; each match carries "library": str
-            "querySummary": str,          # human-readable description
-        }
 
     The ``sessions`` property exposes the underlying dict so the HTTP server
     can share it by reference without importing this class.

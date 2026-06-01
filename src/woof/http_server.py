@@ -36,7 +36,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .gallery_session_manager import GallerySessionManager
+from .gallery_session_manager import GallerySessionManager, PageOutOfRange
 
 _log = logging.getLogger(__name__)
 
@@ -186,7 +186,10 @@ def _build_app(
         if session is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
 
-        ok = await session.fetch_page(page)
+        try:
+            ok = await session.fetch_page(page)
+        except PageOutOfRange:
+            return JSONResponse({"error": "out_of_range"}, status_code=404)
         if not ok:
             return JSONResponse({"error": "fetch_failed"}, status_code=502)
 

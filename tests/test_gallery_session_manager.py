@@ -8,7 +8,12 @@ import pytest
 
 from woof.agent_client import AgentError
 from woof.config import LibraryConfig
-from woof.gallery_session_manager import _MAX_SESSIONS, ChainedSessionHandler, GallerySessionManager
+from woof.gallery_session_manager import (
+    _MAX_SESSIONS,
+    ChainedSessionHandler,
+    GallerySessionManager,
+    PageOutOfRange,
+)
 
 _DEFAULT_PAGE_SIZE = 496
 
@@ -277,7 +282,14 @@ async def test_fetch_page_returns_true_on_success() -> None:
 async def test_fetch_page_updates_matches_and_page() -> None:
     mgr = GallerySessionManager()
     agent = _mock_agent(matches=[_match("h1"), _match("h2")])
-    token = mgr.create(_lib(), agent, {}, _DEFAULT_PAGE_SIZE, matches=[_match("h0")])
+    token = mgr.create(
+        _lib(),
+        agent,
+        {},
+        _DEFAULT_PAGE_SIZE,
+        total_count=2 * _DEFAULT_PAGE_SIZE,
+        matches=[_match("h0")],
+    )
     session = mgr.sessions[token]
     await session.fetch_page(page=1)
     assert session.page == 1
@@ -367,12 +379,13 @@ async def test_chained_fetch_page_1_returns_second_session_matches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chained_fetch_page_out_of_range_returns_false() -> None:
+async def test_chained_fetch_page_out_of_range_raises() -> None:
     mgr = GallerySessionManager()
     tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE)
     tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE)
     _, chained = mgr.merge([tok_a, tok_b])
-    assert await chained.fetch_page(page=99) is False
+    with pytest.raises(PageOutOfRange):
+        await chained.fetch_page(page=99)
 
 
 @pytest.mark.asyncio

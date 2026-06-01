@@ -213,19 +213,37 @@ describe('PhotoGrid — server-page-aware total count', () => {
   });
 
   it('absolute page reflects server page offset', () => {
-    // serverPage=1, serverPageSize=500, displayPageSize=3 → absolutePage = ceil(500/3) + 0 = 167
+    // serverPage=1, serverPageSize=500, displayPageSize=3 → absolutePage = ceil(500/3) + floor(8/3) = 169
     const { getAllByText } = render(
       PhotoGrid,
       makeProps({
-        matches: makeMatches(3),
+        matches: makeMatches(10),
+        selectedIndex: 8,
         totalCount: 1000,
         serverPage: 1,
         serverPageSize: 500,
         onFetchServerPage: vi.fn(),
       }),
     );
-    expect(getAllByText(/168/)[0]).toBeTruthy(); // absolutePage+1 = 168
+    expect(getAllByText(/170/)[0]).toBeTruthy(); // absolutePage+1
   });
+
+  it('absolute page reflects server page offset page=2', () => {
+    // serverPage=1, serverPageSize=500, displayPageSize=3 → absolutePage = 2*ceil(500/3) + floor(13/3) = 338
+    const { getAllByText } = render(
+      PhotoGrid,
+      makeProps({
+        matches: makeMatches(15),
+        selectedIndex: 13,
+        totalCount: 1480,
+        serverPage: 2,
+        serverPageSize: 500,
+        onFetchServerPage: vi.fn(),
+      }),
+    );
+    expect(getAllByText(/339/)[0]).toBeTruthy(); // absolutePage+1
+  });
+
 
   it('Next is disabled on last server page last display page', () => {
     // totalCount=3, serverPageSize=500, serverPage=0, displayPageSize=3 → 1 page total, Next disabled
