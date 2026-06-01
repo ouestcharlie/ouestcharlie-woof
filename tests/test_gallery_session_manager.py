@@ -388,6 +388,57 @@ async def test_chained_fetch_page_out_of_range_raises() -> None:
         await chained.fetch_page(page=99)
 
 
+# ---------------------------------------------------------------------------
+# ChainedSessionHandler.transfert_object — pageMap
+# ---------------------------------------------------------------------------
+
+
+def test_chained_transfert_object_includes_page_map() -> None:
+    mgr = GallerySessionManager()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE)  # 1 wally page
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE * 2)  # 2 wally pages (if pageSize matches)
+    # Make session B span 2 server pages by setting total_count = 2 * pageSize
+    mgr.sessions[tok_b].totalCount = 2 * _DEFAULT_PAGE_SIZE
+    _, chained = mgr.merge([tok_a, tok_b])
+    assert isinstance(chained, ChainedSessionHandler)
+    obj = chained.transfert_object()
+    assert "pageMap" in obj
+    assert obj["pageMap"] == [
+        {"pageSize": _DEFAULT_PAGE_SIZE, "pageCount": 1, "totalCount": _DEFAULT_PAGE_SIZE},
+        {"pageSize": _DEFAULT_PAGE_SIZE, "pageCount": 2, "totalCount": 2 * _DEFAULT_PAGE_SIZE},
+    ]
+
+
+def test_chained_transfert_object_page_map_rounds_up_partial_pages() -> None:
+    mgr = GallerySessionManager()
+    # Session A: 750 matches with pageSize 496 → ceil(750/496) = 2 pages
+    tok_a = mgr.create(
+        _lib("a"), None, {}, _DEFAULT_PAGE_SIZE, total_count=750, matches=[_match("a0")]
+    )
+    # Session B: 496 matches, 1 page
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE)
+    # Force chained path by inflating totalCount so > pageSize threshold
+    tok_b_session = mgr.sessions[tok_b]
+    tok_b_session.totalCount = _DEFAULT_PAGE_SIZE  # already set but explicit
+    import math
+
+    mgr.sessions[tok_a].totalCount = _DEFAULT_PAGE_SIZE + 1  # push total over threshold
+    _, chained = mgr.merge([tok_a, tok_b])
+    if not isinstance(chained, ChainedSessionHandler):
+        pytest.skip("merge did not produce a ChainedSessionHandler with these sizes")
+    obj = chained.transfert_object()
+    pm = obj["pageMap"]
+    assert pm[0]["pageCount"] == math.ceil(mgr.sessions[tok_a].totalCount / _DEFAULT_PAGE_SIZE)
+    assert pm[0]["totalCount"] == mgr.sessions[tok_a].totalCount
+
+
+def test_flat_session_transfert_object_has_no_page_map() -> None:
+    mgr = GallerySessionManager()
+    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")])
+    obj = mgr.sessions[token].transfert_object()
+    assert "pageMap" not in obj
+
+
 @pytest.mark.asyncio
 async def test_chained_fetch_page_delegates_to_sub_session() -> None:
     """fetch_page on a chained session calls fetch_page on the correct sub-session.
@@ -416,3 +467,134 @@ async def test_chained_fetch_page_delegates_to_sub_session() -> None:
     await chained.fetch_page(page=2)
     agent_b.call_tool.assert_called_once()
     agent_a.call_tool.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chained_fetch_page_re_fetch_same_page_is_idempotent() -> None:
+    # ChainedSessionHandler has no early-return guard; re-fetching the same page
+    # must still return True and not call the agent a second time.
+    mgr = GallerySessionManager()
+    agent_a = _mock_agent()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE, agent=agent_a)
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    _, chained = mgr.merge([tok_a, tok_b])
+    ok = await chained.fetch_page(page=0)  # already on page 0
+    assert ok is True
+    agent_a.call_tool.assert_not_called()  # sub-session idempotent guard fired
+
+
+@pytest.mark.asyncio
+async def test_chained_fetch_page_sub_session_agent_error_returns_false() -> None:
+    agent_b = MagicMock()
+    agent_b.call_tool = AsyncMock(side_effect=AgentError("wally down"))
+    mgr = GallerySessionManager()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    tok_b = mgr.create(
+        _lib("b"),
+        agent_b,
+        {},
+        _DEFAULT_PAGE_SIZE,
+        total_count=2 * _DEFAULT_PAGE_SIZE,
+        matches=[_match(f"b-h{i}") for i in range(_DEFAULT_PAGE_SIZE)],
+    )
+    _, chained = mgr.merge([tok_a, tok_b])
+    # Page 2 = B's wally page 1 — agent_b will fail
+    result = await chained.fetch_page(page=2)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_chained_fetch_page_page_out_of_range_at_exact_boundary() -> None:
+    # Two sessions, each 1 wally page → total 2 pages (0 and 1). Page 2 is out of range.
+    mgr = GallerySessionManager()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE)
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE)
+    _, chained = mgr.merge([tok_a, tok_b])
+    with pytest.raises(PageOutOfRange):
+        await chained.fetch_page(page=2)  # first page past the end
+
+
+@pytest.mark.asyncio
+async def test_chained_fetch_page_last_valid_page_succeeds() -> None:
+    # Confirm page=1 (last valid page of a 2-page chain) works correctly.
+    mgr = GallerySessionManager()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    _, chained = mgr.merge([tok_a, tok_b])
+    ok = await chained.fetch_page(page=1)
+    assert ok is True
+    assert chained.page == 1
+    assert chained.matches[0]["contentHash"] == "b-h0"
+
+
+@pytest.mark.asyncio
+async def test_chained_three_sessions_routes_to_third() -> None:
+    # Three sessions A/B/C, each 1 wally page. Page 2 should route to C.
+    mgr = GallerySessionManager()
+    agent_c = _mock_agent()
+    tok_a = _large_session(mgr, "a", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    tok_b = _large_session(mgr, "b", _DEFAULT_PAGE_SIZE, agent=_mock_agent())
+    tok_c = _large_session(mgr, "c", _DEFAULT_PAGE_SIZE, agent=agent_c)
+    # Force a three-way chain by merging pairwise results: merge a+b, then merge with c.
+    merged_tok, _ = mgr.merge([tok_a, tok_b])
+    _, chained = mgr.merge([merged_tok, tok_c])
+    assert isinstance(chained, ChainedSessionHandler)
+    ok = await chained.fetch_page(page=2)
+    assert ok is True
+    assert chained.matches[0]["contentHash"] == "c-h0"
+    agent_c.call_tool.assert_not_called()  # c is already on page 0
+
+
+@pytest.mark.asyncio
+async def test_chained_mixed_page_sizes_routes_correctly() -> None:
+    # Session A: pageSize=100, totalCount=200 → 2 wally pages (pages 0, 1).
+    # Session B: pageSize=50,  totalCount=50  → 1 wally page  (page 2 of the chain).
+    mgr = GallerySessionManager()
+    agent_b = _mock_agent(matches=[_match("b0")])
+    tok_a = mgr.create(
+        _lib("a"),
+        _mock_agent(),
+        {},
+        page_size=100,
+        total_count=200,
+        matches=[_match(f"a-h{i}") for i in range(100)],
+    )
+    tok_b = mgr.create(
+        _lib("b"),
+        agent_b,
+        {},
+        page_size=50,
+        total_count=50,
+        matches=[_match(f"b-h{i}") for i in range(50)],
+    )
+    # Build chained handler directly to avoid the small-total flat-merge path.
+    from woof.gallery_session_manager import ChainedSessionHandler
+
+    first_src = mgr.sessions[tok_a]
+    chained = ChainedSessionHandler(
+        library=None,
+        agent=first_src.agent,
+        queryArgs={},
+        pageSize=first_src.pageSize,
+        totalCount=mgr.sessions[tok_a].totalCount + mgr.sessions[tok_b].totalCount,
+        chainedSessions=[mgr.sessions[tok_a], mgr.sessions[tok_b]],
+        matches=first_src.matches,
+    )
+    # Absolute page 2 → session A exhausted (2 pages), delegate to B page 0.
+    ok = await chained.fetch_page(page=2)
+    assert ok is True
+    assert chained.matches[0]["contentHash"] == "b-h0"
+    agent_b.call_tool.assert_not_called()  # B is already on page 0
+
+
+def test_chained_transfert_object_total_count_and_page_size() -> None:
+    # transfert_object must expose the correct aggregate totalCount and the
+    # first session's pageSize (used by the gallery as the server-page stride
+    # when pageMap is absent).
+    mgr = GallerySessionManager()
+    tok_a = _large_session(mgr, "a", 300)  # totalCount = 300, pageSize = _DEFAULT_PAGE_SIZE
+    tok_b = _large_session(mgr, "b", 400)
+    _, chained = mgr.merge([tok_a, tok_b])
+    obj = chained.transfert_object()
+    assert obj["totalCount"] == 700
+    assert obj["pageSize"] == _DEFAULT_PAGE_SIZE

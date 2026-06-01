@@ -8,6 +8,7 @@
    *   totalCount: number,
    *   serverPage: number,
    *   serverPageSize: number,
+   *   pageMap: Array<{pageSize: number, pageCount: number, totalCount: number}> | null,
    *   onFetchServerPage: ((page: number) => Promise<void>) | null,
    *   onSelect: (index: number) => void,
    *   onPageSelect: (index: number) => void,
@@ -21,6 +22,7 @@
     totalCount = matches.length,
     serverPage = 0,
     serverPageSize = 500,
+    pageMap = null,
     onFetchServerPage = null,
     onSelect,
     onPageSelect,
@@ -36,22 +38,50 @@
   let gridWidth = $state(0);
   let columns = $derived(gridWidth > 0 ? Math.max(1, Math.floor((gridWidth + 4) / TILE_STRIDE)) : 1);
   let displayPageSize = $derived(columns * ROWS);
-  // Display page per server page
+  // Display pages per server page (uniform, used when pageMap is absent).
   let localPagesPerServerPage = $derived(Math.ceil(serverPageSize / displayPageSize));
-
 
   // Local page within the current server page (derived from selectedIndex).
   let localPage = $derived(selectedIndex != null ? Math.floor(selectedIndex / displayPageSize) : 0);
 
+  /**
+   * Walk pageMap to find the display-page offset of `serverPage`.
+   * Each entry covers `pageCount` server pages: all full except the last, which holds
+   * `totalCount - (pageCount-1)*pageSize` photos (may be a partial server page).
+   */
+  function absolutePageFromMap(map, sp, lp, dps) {
+    let offset = 0, remaining = sp;
+    for (const { pageSize, pageCount, totalCount: entryTotal } of map) {
+      const dpp = Math.ceil(pageSize / dps);
+      if (remaining < pageCount) return offset + remaining * dpp + lp;
+      // Accurate session display count: full pages + partial last page.
+      const fullPages = pageCount - 1;
+      const lastSize = entryTotal - fullPages * pageSize;
+      offset += fullPages * dpp + Math.ceil(lastSize / dps);
+      remaining -= pageCount;
+    }
+    return offset + lp; // serverPage beyond all entries — best effort
+  }
 
-  // Absolute page index across all server pages.
-  let absolutePage = $derived(serverPage * localPagesPerServerPage + localPage);
+  // Absolute display-page index across all server pages.
+  let absolutePage = $derived(
+    pageMap
+      ? absolutePageFromMap(pageMap, serverPage, localPage, displayPageSize)
+      : serverPage * localPagesPerServerPage + localPage
+  );
 
   // Total display pages across all server pages (based on totalCount).
   let totalServerFullPages = $derived(Math.floor(totalCount / serverPageSize));
   let lastServerPageSize = $derived(totalCount - totalServerFullPages * serverPageSize);
-  
-  let totalDisplayPages = $derived(Math.max(1, localPagesPerServerPage * totalServerFullPages + Math.ceil(lastServerPageSize / displayPageSize)));
+  let totalDisplayPages = $derived(
+    pageMap
+      ? Math.max(1, pageMap.reduce((s, { pageSize, pageCount, totalCount: t }) => {
+          const dpp = Math.ceil(pageSize / displayPageSize);
+          const fullPages = pageCount - 1;
+          return s + fullPages * dpp + Math.ceil((t - fullPages * pageSize) / displayPageSize);
+        }, 0))
+      : Math.max(1, localPagesPerServerPage * totalServerFullPages + Math.ceil(lastServerPageSize / displayPageSize))
+  );
 
   // Number of local display pages within the current server page's loaded matches.
   let localPageCount = $derived(Math.max(1, Math.ceil(matches.length / displayPageSize)));
@@ -98,7 +128,7 @@
 </div>
 
 <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
-  {#each pageMatches as match, i (match.partition + '/' + match.contentHash) }
+  {#each pageMatches as match, i (match.partition + '/' + match.filename) }
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div

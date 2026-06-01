@@ -75,6 +75,18 @@ class ChainedSessionHandler(SessionHandler):
     # Set of sessions in case of a merge of multi-page sessions
     chainedSessions: list[SessionHandler] = field(default_factory=list)
 
+    def transfert_object(self) -> dict[str, Any]:
+        base = super().transfert_object()
+        base["pageMap"] = [
+            {
+                "pageSize": s.pageSize,
+                "pageCount": math.ceil(s.totalCount / s.pageSize),
+                "totalCount": s.totalCount,
+            }
+            for s in self.chainedSessions
+        ]
+        return base
+
     async def fetch_page(self, page: int) -> bool:
         # Find the right session for a session of type 'set'
         page_in_session = page
@@ -231,7 +243,7 @@ class GallerySessionManager:
                     agent=chained_sessions[0].agent,
                     queryArgs={},
                     pageSize=first_src.pageSize,
-                    totalCount=sum(len(self._sessions[t].matches) for t in tokens),
+                    totalCount=total_count,
                     chainedSessions=chained_sessions,
                     matches=first_src.matches,
                 )

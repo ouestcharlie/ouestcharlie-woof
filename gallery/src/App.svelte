@@ -11,6 +11,7 @@
   let totalCount = $state(0);
   let serverPage = $state(0);
   let serverPageSize = $state(500);
+  let pageMap = $state(null); // ChainedSessionHandler only: [{pageSize, pageCount}, ...]
   let status = $state('');
   let loading = $state(true);
   let serverPageLoading = $state(false);
@@ -26,6 +27,7 @@
     totalCount = session.totalCount ?? matches.length;
     serverPage = page;
     serverPageSize = session.pageSize ?? 500;
+    pageMap = session.pageMap ?? null;
     status = `${totalCount} photo${totalCount === 1 ? '' : 's'}`;
     loading = false;
     view = 'grid';
@@ -193,6 +195,7 @@
       {totalCount}
       serverPage={serverPage}
       serverPageSize={serverPageSize}
+      {pageMap}
       onFetchServerPage={fetchServerPage}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}

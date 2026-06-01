@@ -46,7 +46,8 @@ function setUrlToken(token) {
 }
 
 // jsdom displayPageSize: columns=1 (clientWidth=0), ROWS=3 → 3 tiles per local page.
-const JSDOM_PAGE_SIZE = 3;
+// test-setup.js mocks clientWidth=652 → 4 cols × 3 rows = 12 tiles per display page.
+const JSDOM_PAGE_SIZE = 12;
 
 // -----------------------------------------------------------------------
 
@@ -135,8 +136,8 @@ describe('App — server page navigation', () => {
   });
 
   it('does not fetch a server page when navigating within the same server page', async () => {
-    // 7 matches (3 local pages) on a single server page of totalCount=7.
-    const session = makeSession({ matches: makeMatches(7), totalCount: 7 });
+    // 25 matches = 3 local pages (ceil(25/12)), all within one server page (totalCount=25).
+    const session = makeSession({ matches: makeMatches(25), totalCount: 25 });
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
 
     const { getAllByText } = render(App);
