@@ -108,7 +108,7 @@ def test_page_endpoint_idempotent_for_current_page() -> None:
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/0") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["totalCount"] == 1
+        assert data["pageMap"][0]["totalCount"] == 1
 
 
 def test_page_endpoint_unknown_token_returns_404() -> None:
@@ -127,7 +127,7 @@ def test_page_endpoint_calls_fetch_fn_and_returns_updated_session() -> None:
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["pageSize"] == 500
+        assert data["pageMap"][0]["pageSize"] == 500
 
 
 def test_page_endpoint_chained_session_loads_page() -> None:
@@ -212,7 +212,8 @@ def test_results_set_session_returns_aggregate_total_count() -> None:
     server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{merged_token}") as resp:
         data = json.loads(resp.read())
-    assert data["totalCount"] == _DEFAULT_SERVER_PAGE * 2
+    total = sum(e["totalCount"] for e in data["pageMap"])
+    assert total == _DEFAULT_SERVER_PAGE * 2
     assert "chainedSessions" not in data
 
 
@@ -263,8 +264,7 @@ def test_results_single_session_exposes_pagination_fields() -> None:
     server_url = start_http_server(session_manager=mgr)
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}") as resp:
         data = json.loads(resp.read())
-    assert data["totalCount"] == 1200
-    assert data["pageSize"] == 500
+    assert data["pageMap"] == [{"pageSize": 500, "pageCount": 3, "totalCount": 1200}]
 
 
 def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
@@ -278,8 +278,7 @@ def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
     with urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1") as resp:
         assert resp.status == 200
         data = json.loads(resp.read())
-        assert data["pageSize"] == 500
-        assert data["totalCount"] == 600
+        assert data["pageMap"] == [{"pageSize": 500, "pageCount": 2, "totalCount": 600}]
 
 
 def test_cors_header_present_on_responses() -> None:

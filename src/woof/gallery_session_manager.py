@@ -38,8 +38,13 @@ class SessionHandler:
 
     def transfert_object(self) -> dict[str, Any]:
         """Return a JSON-serializable dict representation of this session on the client Gallery."""
-
-        return {"matches": self.matches, "totalCount": self.totalCount, "pageSize": self.pageSize}
+        page_count = math.ceil(self.totalCount / self.pageSize) if self.pageSize > 0 else 1
+        return {
+            "matches": self.matches,
+            "pageMap": [
+                {"pageSize": self.pageSize, "pageCount": page_count, "totalCount": self.totalCount}
+            ],
+        }
 
     async def fetch_page(self, page: int) -> bool:
         """Fetch Wally server page *page* into this session via *agent*."""
@@ -167,11 +172,8 @@ class GallerySessionManager:
         )
         return token
 
-    def get(self, token: str, page: int = 0) -> SessionHandler | None:
-        """Return the session for *token*, or ``None`` if not found
-            and the effective page index.
-        If session is of type 'set', the sub-session at *page* is selected
-        """
+    def get(self, token: str) -> SessionHandler | None:
+        """Return the session for *token*, or ``None`` if not found."""
         return self._sessions.get(token)
 
     def unknown_tokens(self, tokens: list[str]) -> list[str]:

@@ -8,11 +8,11 @@
   let token = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
-  let totalCount = $state(0);
   let serverPage = $state(0);
-  let serverPageSize = $state(500);
-  let pageMap = $state(null); // ChainedSessionHandler only: [{pageSize, pageCount}, ...]
+  let pageMap = $state(null);
   let status = $state('');
+
+  let grandTotalCount = $derived(pageMap ? pageMap.reduce((s, e) => s + e.totalCount, 0) : 0);
   let loading = $state(true);
   let serverPageLoading = $state(false);
   let selectedIndex = $state(null);
@@ -24,11 +24,10 @@
   function applySession(session, tok, page) {
     if (tok !== undefined) token = tok;
     matches = session.matches ?? [];
-    totalCount = session.totalCount ?? matches.length;
+    pageMap = session.pageMap;
     serverPage = page;
-    serverPageSize = session.pageSize ?? 500;
-    pageMap = session.pageMap ?? null;
-    status = `${totalCount} photo${totalCount === 1 ? '' : 's'}`;
+    const total = (session.pageMap ?? []).reduce((s, e) => s + e.totalCount, 0);
+    status = `${total} photo${total === 1 ? '' : 's'}`;
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
@@ -192,9 +191,7 @@
       loading={loading || serverPageLoading}
       {selectedIndex}
       {thumbnailTile}
-      {totalCount}
       serverPage={serverPage}
-      serverPageSize={serverPageSize}
       {pageMap}
       onFetchServerPage={fetchServerPage}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
@@ -216,7 +213,7 @@
 
   <div class="status">
     {#if view === 'preview' && selectedIndex !== null}
-      {selectedIndex + 1} / {totalCount}
+      {selectedIndex + 1} / {grandTotalCount}
     {:else}
       {status}
     {/if}

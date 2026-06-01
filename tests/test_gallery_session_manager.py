@@ -432,11 +432,15 @@ def test_chained_transfert_object_page_map_rounds_up_partial_pages() -> None:
     assert pm[0]["totalCount"] == mgr.sessions[tok_a].totalCount
 
 
-def test_flat_session_transfert_object_has_no_page_map() -> None:
+def test_flat_session_transfert_object_has_single_entry_page_map() -> None:
     mgr = GallerySessionManager()
-    token = mgr.create(_lib(), None, {}, _DEFAULT_PAGE_SIZE, matches=[_match("h1")])
+    token = mgr.create(
+        _lib(), None, {}, _DEFAULT_PAGE_SIZE, total_count=_DEFAULT_PAGE_SIZE, matches=[_match("h1")]
+    )
     obj = mgr.sessions[token].transfert_object()
-    assert "pageMap" not in obj
+    assert obj["pageMap"] == [
+        {"pageSize": _DEFAULT_PAGE_SIZE, "pageCount": 1, "totalCount": _DEFAULT_PAGE_SIZE}
+    ]
 
 
 @pytest.mark.asyncio
@@ -587,14 +591,14 @@ async def test_chained_mixed_page_sizes_routes_correctly() -> None:
     agent_b.call_tool.assert_not_called()  # B is already on page 0
 
 
-def test_chained_transfert_object_total_count_and_page_size() -> None:
-    # transfert_object must expose the correct aggregate totalCount and the
-    # first session's pageSize (used by the gallery as the server-page stride
-    # when pageMap is absent).
+def test_chained_transfert_object_aggregate_total_in_page_map() -> None:
+    # The aggregate totalCount is the sum of per-entry totalCounts in pageMap;
+    # and each entry's pageSize is the sub-session's pageSize.
     mgr = GallerySessionManager()
-    tok_a = _large_session(mgr, "a", 300)  # totalCount = 300, pageSize = _DEFAULT_PAGE_SIZE
+    tok_a = _large_session(mgr, "a", 300)  # totalCount=300, pageSize=_DEFAULT_PAGE_SIZE
     tok_b = _large_session(mgr, "b", 400)
     _, chained = mgr.merge([tok_a, tok_b])
     obj = chained.transfert_object()
-    assert obj["totalCount"] == 700
-    assert obj["pageSize"] == _DEFAULT_PAGE_SIZE
+    total = sum(e["totalCount"] for e in obj["pageMap"])
+    assert total == 700
+    assert all(e["pageSize"] == _DEFAULT_PAGE_SIZE for e in obj["pageMap"])

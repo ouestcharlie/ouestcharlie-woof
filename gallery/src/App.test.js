@@ -17,11 +17,11 @@ vi.mock('@modelcontextprotocol/ext-apps', () => ({
 // Helpers ---------------------------------------------------------------
 
 function makeSession(overrides = {}) {
+  const matches = overrides.matches ?? [];
   return {
-    matches: [],
+    matches,
     querySummary: 'test query',
-    totalCount: 0,
-    pageSize: 500,
+    pageMap: [{ pageSize: 500, pageCount: 1, totalCount: matches.length }],
     ...overrides,
   };
 }
@@ -55,8 +55,11 @@ describe('App — initial session load via URL token', () => {
   beforeEach(() => setUrlToken('tok1'));
   afterEach(() => vi.restoreAllMocks());
 
-  it('renders photo count from totalCount after session loads', async () => {
-    const session = makeSession({ matches: makeMatches(3), totalCount: 600 });
+  it('renders photo count from pageMap totalCount after session loads', async () => {
+    const session = makeSession({
+      matches: makeMatches(3),
+      pageMap: [{ pageSize: 500, pageCount: 2, totalCount: 600 }],
+    });
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
 
     const { getByText } = render(App);
@@ -73,7 +76,7 @@ describe('App — initial session load via URL token', () => {
 
   it('shows default title before querySummary is provided via MCP', async () => {
     // The URL-token path does not supply querySummary; the header falls back to 'OuEstCharlie'.
-    const session = makeSession({ matches: makeMatches(1), totalCount: 1 });
+    const session = makeSession({ matches: makeMatches(1) });
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
 
     const { getByText } = render(App);
@@ -88,9 +91,10 @@ describe('App — server page navigation', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('fetches next server page when Next is clicked at last local page', async () => {
-    // Session has 3 matches (1 display page) but totalCount=600 → more server pages.
-    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
-    const page1 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
+    // 1 display page loaded; pageMap says 2 server pages → Next triggers server fetch.
+    const pm = [{ pageSize: 500, pageCount: 2, totalCount: 600 }];
+    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
+    const page1 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
 
     global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(session) }) // initial
@@ -109,10 +113,10 @@ describe('App — server page navigation', () => {
   });
 
   it('fetches previous server page after navigating forward to server page 1', async () => {
-    // Start on server page 0 with 3 matches and totalCount=600 → more server pages exist.
-    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
-    const page1 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
-    const page0 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
+    const pm = [{ pageSize: 500, pageCount: 2, totalCount: 600 }];
+    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
+    const page1 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
+    const page0 = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
 
     global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(session) }) // initial
@@ -136,8 +140,8 @@ describe('App — server page navigation', () => {
   });
 
   it('does not fetch a server page when navigating within the same server page', async () => {
-    // 25 matches = 3 local pages (ceil(25/12)), all within one server page (totalCount=25).
-    const session = makeSession({ matches: makeMatches(25), totalCount: 25 });
+    // 25 matches = 3 local pages (ceil(25/12)), all within one server page.
+    const session = makeSession({ matches: makeMatches(25) }); // default pageMap: 1 server page
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
 
     const { getAllByText } = render(App);
@@ -151,7 +155,8 @@ describe('App — server page navigation', () => {
   });
 
   it('shows error in status bar when server page fetch fails', async () => {
-    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), totalCount: 600 });
+    const pm = [{ pageSize: 500, pageCount: 2, totalCount: 600 }];
+    const session = makeSession({ matches: makeMatches(JSDOM_PAGE_SIZE), pageMap: pm });
     global.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(session) })
       .mockResolvedValueOnce({ ok: false, statusText: 'Internal Server Error' });
