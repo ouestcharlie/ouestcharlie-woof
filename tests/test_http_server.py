@@ -100,8 +100,6 @@ def test_gallery_static_not_intercepted_by_proxy() -> None:
 
 def test_page_endpoint_idempotent_for_current_page() -> None:
     """Requesting the already-loaded page returns cached session data"""
-    import json
-
     mgr = GallerySessionManager()
     tok = mgr.create(LibraryConfig(name="lib", type="filesystem", path="/tmp"), None, {}, 600, 1)
     server_url = start_http_server(session_manager=mgr)
