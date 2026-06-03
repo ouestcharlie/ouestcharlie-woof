@@ -188,8 +188,6 @@ def test_page_endpoint_chained_out_of_range_returns_404() -> None:
 
 def test_results_set_session_returns_aggregate_total_count() -> None:
     """api_results for a 'set' session must expose aggregate totalCount, not sub-session's."""
-    import json
-
     mgr = GallerySessionManager()
     matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
     matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
