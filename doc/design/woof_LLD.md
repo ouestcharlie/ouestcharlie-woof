@@ -35,7 +35,7 @@ Claude Desktop (MCP client)
 
 Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Currently registered tools:
 
-- **Library management**: `index_backend` — delegates to Whitebeard's `index_partition` or `index_library`; by default runs in incremental mode (only new photos indexed, deleted photos removed from manifest); `force_full_index=True` re-processes the entire library
+- **Library management**: `index_library` — non-blocking: launches Whitebeard as a background `asyncio.Task`, returns immediately with `{type:"indexing", session_id, serverUrl, ...}`, and opens the gallery MCP App in indexing mode (progress bar + final summary pushed back to model context). `force_full_index=True` re-processes the entire library. `get_index_result(session_id)` lets Claude (or the app) poll the current session state at any time.
 - **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_partition_summaries`
 - **Configuration**: `add_backend`, `list_backends`, `list_search_fields`
 
@@ -81,6 +81,8 @@ The session data schema:
 
 The `browse_gallery` tool is registered with `app=AppConfig(resource_uri=_GALLERY_URI)` which causes Claude Desktop to open the gallery MCP App resource and push the tool result into it via postMessage.
 
+`index_library` is registered with the same `app=AppConfig(resource_uri=_GALLERY_URI)`, so the same gallery resource is reused for both gallery and indexing modes. The mode is determined by the `type` field in the tool result.
+
 ## Gallery MCP App
 
 The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) served by Woof as an MCP App resource. It renders inside Claude Desktop's conversation as a sandboxed iframe.
@@ -101,6 +103,15 @@ The gallery is a Svelte application (compiled to vanilla JS, bundled with Vite) 
 - Sessions created by merging multiple searches (`browse_gallery` with several tokens) have no `queryContext` and do not support cross-server-page navigation; nav is bounded to the loaded matches.
 
 Prev/Next navigation is rendered above and below the grid when `totalDisplayPages > 1`. The currently selected photo index and total count are shown in the status bar.
+
+**Indexing mode**: When `ontoolresult` receives a result with `type === 'indexing'`, the gallery switches to indexing mode and renders the `IndexingProgress` component instead of the photo grid. The component:
+
+1. Polls `GET {serverUrl}/api/indexing/{session_id}` every second, updating the progress bar and status message.
+2. Stops polling when `status !== 'running'`.
+3. On `status === 'completed'`: calls `mcpApp.callServerTool({name: 'get_index_result', arguments: {session_id}})` to retrieve the final summary, displays it inline, then calls `mcpApp.updateModelContext({content: [{type:'text', text: summaryMarkdown}]})` so the model has the result in its next turn.
+4. On `status === 'failed'`: displays the error text and calls `updateModelContext` with an error message.
+
+When `mcpApp` is null (standalone `?sessionId=` dev path), the MCP callbacks are skipped and the summary is shown inline only.
 
 **Fullscreen**: The gallery supports fullscreen mode via `mcpApp.requestDisplayMode()`.
 
@@ -124,6 +135,7 @@ Woof runs a local HTTP server bound to `127.0.0.1` on a randomly assigned port, 
 | `GET /gallery-static/<path>` | Vite-built JS/CSS assets |
 | `GET /api/results/<token>` | JSON session data (matches + metadata) |
 | `GET /api/results/<token>/page/<page>` | Load 0-indexed Wally page into session and return updated session JSON |
+| `GET /api/indexing/<session_id>` | JSON state of a background indexing run (`status`, `progress`, `total`, `message`, `summary`, `error`) |
 
 The Woof HTTP port is communicated to the gallery iframe via the MCP App tool result. No external network access is permitted — the server binds loopback only.
 
@@ -142,6 +154,58 @@ Because the two servers share one OS thread, **any synchronous work in an HTTP r
 All media requests (`/thumbnails/...` and `/previews/...`) are forwarded to Wally's HTTP server. Woof has no direct access to backend storage — it is a pure proxy for media. This keeps the storage abstraction entirely within Wally and enables a future remote backend without any Woof changes.
 
 The proxy route is `/{kind}/{backend}/{rest:path}`. The `{backend}` segment identifies which Wally sidecar to route to via `AgentClient.get_wally_connection(backend_name)`, which returns `(http_port, token)`. Both are discovered dynamically on every request so sidecar restarts are picked up automatically. If the named backend's sidecar is not yet running, Woof returns `503`.
+
+## Indexing Session Manager
+
+`IndexingSessionManager` tracks the state of background Whitebeard runs keyed by a random `session_id` (URL-safe, 16 bytes). Each session has the following shape:
+
+```json
+{
+  "session_id":   "...",
+  "library_name": "kDrive Photos",
+  "partition":    "2024/2024-07",
+  "status":       "running | completed | failed",
+  "progress":     42.0,
+  "total":        1234.0,
+  "message":      "Indexing 2024/07... (42/1234)",
+  "summary":      null,
+  "error":        null,
+  "started_at":   "2026-05-28T10:31:00+00:00"
+}
+```
+
+Methods:
+
+| Method | Effect |
+|---|---|
+| `start(library_name, partition) → session_id` | Creates a new session with `status="running"`, returns its id |
+| `update(session_id, progress, total, message)` | Updates progress fields; no-op if session not found |
+| `complete(session_id, summary)` | Sets `status="completed"`, stores summary dict |
+| `fail(session_id, error)` | Sets `status="failed"`, stores error string |
+| `get(session_id) → dict \| None` | Returns the session dict, or `None` |
+
+**Capacity**: capped at 20 sessions (indexing runs are infrequent); the oldest session is evicted when at capacity.
+
+**Thread safety**: no locking needed. `serve_in_loop` places the HTTP server on the **same asyncio event loop as FastMCP**, so all reads and mutations are single-threaded. The `IndexingSessionManager` is shared by reference between the MCP tool callbacks and the HTTP request handlers — all access is on the same OS thread.
+
+## Background Agent Tasks
+
+`AgentClient.call_tool_background()` wraps `_call_ephemeral` in an `asyncio.Task` and returns immediately, without blocking the MCP event loop:
+
+```python
+def call_tool_background(
+    self, module, tool_name, args, library, *,
+    on_progress, on_complete, on_error,
+) -> asyncio.Task
+```
+
+The internal coroutine awaits `_call_ephemeral` and dispatches results to the callbacks:
+
+- `on_progress(progress, total, message)` — called for each MCP progress notification from the agent
+- `on_complete(result)` — called once when the tool returns successfully
+- `on_error(exc)` — called if the tool raises `AgentError` or any unexpected exception; the exception is logged before the callback is invoked
+
+All callbacks are plain synchronous functions and are invoked on the MCP event loop (no thread-pool dispatch needed). `index_library` wires these callbacks directly to `IndexingSessionManager.update/complete/fail`.
 
 ## MCP Client (Agent-facing)
 

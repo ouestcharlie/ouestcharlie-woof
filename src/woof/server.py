@@ -18,6 +18,7 @@ from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager
 from .http_server import get_gallery_html, serve_in_loop
+from .indexing_session_manager import IndexingSessionManager
 
 _log = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class WoofServer:
         self.config = config
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
+        self._indexing_sessions = IndexingSessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
 
         # Bind port before MCP starts so server_url is known synchronously.
@@ -66,6 +68,7 @@ class WoofServer:
                     self._sessions,
                     self._wally_connection,
                     self.server_url,
+                    indexing_session_manager=self._indexing_sessions,
                 )
             )
             try:
@@ -156,9 +159,11 @@ class WoofServer:
                 result.append({"name": b.name, "summary": summary})
             return result
 
-        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
+        @mcp.tool(
+            annotations=ToolAnnotations(destructiveHint=True),
+            app=AppConfig(resource_uri=_GALLERY_URI),
+        )
         async def index_library(
-            ctx: Context,
             library_name: str,
             partition: str = "",
             force_extract_exif: bool = False,
@@ -166,6 +171,10 @@ class WoofServer:
             force_full_index: bool = False,
         ) -> dict[str, Any]:
             """Index photos in a library using Whitebeard.
+
+            Launches indexing as a background task and returns immediately.
+            Progress is shown in the gallery app; the summary is sent back
+            to the model context when indexing completes.
 
             By default runs in incremental mode: only new photos are indexed,
             deleted photos are removed from the manifest.  Use
@@ -195,14 +204,47 @@ class WoofServer:
             }
             if partition:
                 args["partition"] = partition
-            try:
-                result = await self._agent.call_tool(
-                    "whitebeard", tool, args, library, progress_ctx=ctx
-                )
-            except AgentError as exc:
-                _log.error("index_library(%r) failed: %s", library_name, exc)
-                return {"error": str(exc)}
-            return result  # type: ignore[return-value]
+
+            session_id = self._indexing_sessions.start(library_name, partition)
+
+            def _on_progress(progress: float, total: float, message: str) -> None:
+                self._indexing_sessions.update(session_id, progress, total, message)
+
+            def _on_complete(result: Any) -> None:
+                self._indexing_sessions.complete(session_id, result)
+
+            def _on_error(exc: Exception) -> None:
+                self._indexing_sessions.fail(session_id, str(exc))
+
+            self._agent.call_tool_background(
+                "whitebeard",
+                tool,
+                args,
+                library,
+                on_progress=_on_progress,
+                on_complete=_on_complete,
+                on_error=_on_error,
+            )
+
+            return {
+                "type": "indexing",
+                "session_id": session_id,
+                "library_name": library_name,
+                "partition": partition,
+                "serverUrl": self.server_url,
+            }
+
+        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+        async def get_index_result(session_id: str) -> dict[str, Any]:
+            """Return the current state or final result of a background indexing run.
+
+            Args:
+                session_id: The session_id returned by index_library.
+            """
+            session = self._indexing_sessions.get(session_id)
+            if session is None:
+                return {"error": f"Unknown session_id {session_id!r}"}
+            return session
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def search_photos(

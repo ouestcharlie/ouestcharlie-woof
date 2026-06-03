@@ -273,6 +273,28 @@ def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
         assert data["pageMap"] == [{"pageSize": 500, "pageCount": 2, "totalCount": 600}]
 
 
+def test_indexing_endpoint_returns_session() -> None:
+    from woof.indexing_session_manager import IndexingSessionManager
+
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    server_url = start_http_server(indexing_session_manager=imgr)
+    with urllib.request.urlopen(f"{server_url}/api/indexing/{sid}") as resp:
+        data = json.load(resp)
+    assert data["status"] == "running"
+    assert data["library_name"] == "lib"
+
+
+def test_indexing_endpoint_unknown_returns_404() -> None:
+    from woof.indexing_session_manager import IndexingSessionManager
+
+    imgr = IndexingSessionManager()
+    server_url = start_http_server(indexing_session_manager=imgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/indexing/nope")
+    assert exc_info.value.code == 404
+
+
 def test_cors_header_present_on_responses() -> None:
     """Responses to cross-origin requests must carry Access-Control-Allow-Origin: *.
 
