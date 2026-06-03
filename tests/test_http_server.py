@@ -215,8 +215,6 @@ def test_results_set_session_returns_aggregate_total_count() -> None:
 
 def test_results_set_session_returns_first_page_matches() -> None:
     """api_results for a 'set' session serves the first sub-session's matches."""
-    import json
-
     mgr = GallerySessionManager()
     matches_a = [{"contentHash": f"a{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
     matches_b = [{"contentHash": f"b{i}", "library": "lib"} for i in range(_DEFAULT_SERVER_PAGE)]
