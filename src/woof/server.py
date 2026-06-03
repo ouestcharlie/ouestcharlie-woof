@@ -59,7 +59,6 @@ class WoofServer:
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
             # HTTP server shares this event loop — no cross-thread bridging needed.
             # Any synchronous work in request handlers must use run_in_executor.
-            _agent_ref = self._agent
 
             http_task = asyncio.create_task(
                 serve_in_loop(
