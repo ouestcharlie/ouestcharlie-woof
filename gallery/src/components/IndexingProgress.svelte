@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
 
-  let { serverUrl, sessionId, library, partition, mcpApp } = $props();
+  let { serverUrl, sessionId, library, partition, mcpApp, mcpReady = false } = $props();
 
   let status = $state('running');
   let progress = $state(0);
@@ -29,12 +29,22 @@
       if (status !== 'running') {
         clearInterval(pollInterval);
         pollInterval = null;
-        await handleDone();
+        // handleDone is triggered by $effect once mcpReady is also true
       }
     } catch {
       // transient network error — keep polling
     }
   }
+
+  // Fire handleDone only when BOTH the status is terminal AND the MCP connection
+  // has completed its handshake. Without mcpReady, postMessages arrive before
+  // Claude Desktop has registered this iframe as a trusted source, causing
+  // "Ignoring message from unknown source" errors.
+  $effect(() => {
+    if ((status === 'completed' || status === 'failed') && (mcpReady || !mcpApp)) {
+      handleDone();
+    }
+  });
 
   async function handleDone() {
     if (contextSent) return;

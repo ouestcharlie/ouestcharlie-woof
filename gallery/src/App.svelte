@@ -18,6 +18,7 @@
   let serverPageLoading = $state(false);
   let selectedIndex = $state(null);
   let mcpApp = $state(null);
+  let mcpReady = $state(false); // true once app.connect() resolves
   let isFullscreen = $state(false);
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
@@ -128,6 +129,7 @@
         if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       };
       app.connect().then(() => {
+        mcpReady = true;
         const ctx = app.getHostContext();
         canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
         isFullscreen = ctx?.displayMode === 'fullscreen';
@@ -183,6 +185,7 @@
       library={indexingLibrary}
       partition={indexingPartition}
       {mcpApp}
+      {mcpReady}
     />
   {:else}
     <header>
