@@ -11,6 +11,7 @@ import pytest
 
 from woof.agent_client import AgentError
 from woof.config import LibraryConfig, WoofConfig
+from woof.gallery_session_manager import SessionHandler
 from woof.server import WoofServer
 
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ def config(tmp_path: Path) -> WoofConfig:
 
 @pytest.fixture()
 def server(config: WoofConfig) -> WoofServer:
-    return WoofServer(config, server_url="http://127.0.0.1:9999")
+    return WoofServer(config)
 
 
 def _make_matches(
@@ -118,7 +119,7 @@ async def test_list_search_fields_unknown_library_raises(server: WoofServer) -> 
 @pytest.mark.asyncio
 async def test_list_search_fields_no_libraries_returns_empty(tmp_path: Path) -> None:
     config = WoofConfig(libraries=[], config_dir=tmp_path / ".woof")
-    server = WoofServer(config, server_url="http://127.0.0.1:9999")
+    server = WoofServer(config)
     tool_fn = await _get_tool(server, "list_search_fields")
     result = await tool_fn()
     assert result == {}
@@ -365,8 +366,8 @@ async def test_search_photos_stores_session(server: WoofServer) -> None:
         result = await tool_fn(ctx=None, library_name="testlib")
     token = result["session_token"]
     session = server._sessions.sessions[token]
-    assert all(m["library"] == "testlib" for m in session["matches"])
-    assert [m["partition"] for m in session["matches"]] == [m["partition"] for m in matches]
+    assert all(m["library"] == "testlib" for m in session.matches)
+    assert [m["partition"] for m in session.matches] == [m["partition"] for m in matches]
 
 
 @pytest.mark.asyncio
@@ -399,33 +400,24 @@ async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
 async def test_browse_gallery_returns_session_matches(server: WoofServer) -> None:
     matches = _make_matches(partitions=["2024/01", "2024/01"])
     token = "test-token"
-    server._sessions.sessions[token] = {
-        "matches": matches,
-        "querySummary": "",
-    }
+    server._sessions.sessions[token] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
+        queryArgs={},
+        pageSize=400,
+        totalCount=2,
+        matches=matches,
+    )
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=[token], query_summary="My query")
     # browse_gallery no longer returns matches inline — only a token so the
     # gallery fetches directly from the HTTP server (OEC#19).
     assert "matches" not in result
-    assert result["serverUrl"] == "http://127.0.0.1:9999"
+    assert result["serverUrl"] == server.server_url
     assert result["querySummary"] == "My query"
     assert result["totalCount"] == len(matches)
     merged_token = result["token"]
-    assert server._sessions.sessions[merged_token]["matches"] == matches
-
-
-@pytest.mark.asyncio
-async def test_browse_gallery_sets_query_summary(server: WoofServer) -> None:
-    token = "tok"
-    server._sessions.sessions[token] = {
-        "matches": [],
-        "querySummary": "",
-    }
-    tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=[token], query_summary="Summer 2024")
-    merged_token = result["galleryUrl"].split("token=")[-1]
-    assert server._sessions.sessions[merged_token]["querySummary"] == "Summer 2024"
+    assert server._sessions.sessions[merged_token].matches == matches
 
 
 @pytest.mark.asyncio
@@ -436,22 +428,30 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
     matches_b[0]["contentHash"] = "hash0"  # duplicate
     matches_b[1]["contentHash"] = "hash2"  # unique
 
-    server._sessions.sessions["tok-a"] = {
-        "matches": matches_a,
-        "querySummary": "",
-    }
-    server._sessions.sessions["tok-b"] = {
-        "matches": matches_b,
-        "querySummary": "",
-    }
+    server._sessions.sessions["tok-a"] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
+        queryArgs={},
+        pageSize=400,
+        totalCount=2,
+        matches=matches_a,
+    )
+    server._sessions.sessions["tok-b"] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
+        queryArgs={},
+        pageSize=400,
+        totalCount=2,
+        matches=matches_b,
+    )
 
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["tok-a", "tok-b"], query_summary="")
 
-    # Matches are stored in the merged session, not returned inline (OEC#19).
+    # Matches are stored in the merged session, not returned inline.
     assert "matches" not in result
     merged_token = result["token"]
-    merged_matches = server._sessions.sessions[merged_token]["matches"]
+    merged_matches = server._sessions.sessions[merged_token].matches
     hashes = [m["contentHash"] for m in merged_matches]
     assert hashes == ["hash0", "hash1", "hash2"]
     assert result["totalCount"] == 3

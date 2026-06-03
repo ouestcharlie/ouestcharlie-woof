@@ -1,8 +1,9 @@
 """Entry point for Woof — OuEstCharlie central controller.
 
-Woof runs as a stdio MCP server launched by Claude Desktop.  It starts a
-local HTTP server for thumbnail delivery (in a daemon thread) and then runs
-the FastMCP server on stdio until stdin closes.
+Woof runs as a stdio MCP server launched by an MCP-capable assistant.  It binds
+a local HTTP port for gallery serving and media proxying, then runs FastMCP on
+stdio.  Both the HTTP server and MCP server share the same asyncio event loop —
+uvicorn starts as a task inside FastMCP's lifespan.
 
 For MCP Inspector / mcp dev:
     mcp dev src/woof/__main__.py
@@ -26,27 +27,12 @@ logging.getLogger(__name__).info("Woof starting — log: %s", _log_file)
 from woof.agent_client import AgentClient
 from woof.config import WoofConfig
 from woof.gallery_session_manager import GallerySessionManager
-from woof.http_server import start_http_server
 from woof.server import WoofServer
 
 _config = WoofConfig.load()
 _agent = AgentClient()
 _session_manager = GallerySessionManager()
-
-
-# Wally connection info is discovered dynamically after sidecar init.
-# Called on every preview request so changes (e.g. after sidecar restart)
-# are picked up automatically.
-def _wally_connection_fn(backend_name: str) -> tuple[int | None, str | None]:
-    return _agent.get_wally_connection(backend_name)
-
-
-_server_url = start_http_server(
-    session_manager=_session_manager,
-    wally_connection_fn=_wally_connection_fn,
-)
-_server = WoofServer(_config, _server_url, agent_client=_agent, session_manager=_session_manager)
-
+_server = WoofServer(_config, agent_client=_agent, session_manager=_session_manager)
 mcp = _server.mcp  # module-level name required by `mcp dev`
 
 

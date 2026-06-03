@@ -5,24 +5,47 @@
   import PreviewPanel from './components/PreviewPanel.svelte';
 
   let serverUrl = $state(null);
+  let token = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
+  let serverPage = $state(0);
+  let pageMap = $state(null);
   let status = $state('');
+
+  let grandTotalCount = $derived(pageMap ? pageMap.reduce((s, e) => s + e.totalCount, 0) : 0);
   let loading = $state(true);
+  let serverPageLoading = $state(false);
   let selectedIndex = $state(null);
   let mcpApp = $state(null);
   let isFullscreen = $state(false);
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
 
-  function applySession(session) {
-    serverUrl = session.serverUrl ?? serverUrl;
+  function applySession(session, tok, page) {
+    if (tok !== undefined) token = tok;
     matches = session.matches ?? [];
-    querySummary = session.querySummary ?? '';
-    status = `${matches.length} photo${matches.length === 1 ? '' : 's'}`;
+    pageMap = session.pageMap;
+    serverPage = page;
+    const total = (session.pageMap ?? []).reduce((s, e) => s + e.totalCount, 0);
+    status = `${total} photo${total === 1 ? '' : 's'}`;
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
+  }
+
+  async function fetchServerPage(page) {
+    if (!token || !serverUrl) return;
+    serverPageLoading = true;
+    try {
+      const data = await fetch(`${serverUrl}/api/results/${token}/page/${page}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
+      matches = data.matches ?? [];
+      serverPage = page;
+    } catch (err) {
+      status = `Error loading page: ${err.message}`;
+    } finally {
+      serverPageLoading = false;
+    }
   }
 
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
@@ -32,12 +55,12 @@
     // Path 1: URL ?token= param — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
-    const token = new URLSearchParams(location.search).get('token');
-    if (token) {
+    const urlToken = new URLSearchParams(location.search).get('token');
+    if (urlToken) {
       serverUrl = location.origin;
-      fetch(`${serverUrl}/api/results/${token}`)
+      fetch(`${serverUrl}/api/results/${urlToken}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
-        .then(data => applySession(data))
+        .then(data => applySession(data, urlToken, 0))
         .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
     }
 
@@ -53,10 +76,11 @@
         // Set serverUrl from the tool result before fetching — in the MCP iframe
         // context location.origin is ui://… not the Woof HTTP server URL.
         serverUrl = result.serverUrl;
+        querySummary = result.querySummary;
         try {
           const data = await fetch(`${serverUrl}/api/results/${result.token}`)
             .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
-          applySession(data);
+          applySession(data, result.token, 0);
         } catch (err) {
           if (!matches.length) status = `Error loading gallery: ${err.message}`;
           loading = false;
@@ -164,9 +188,12 @@
   <div class="view" class:hidden={view !== 'grid'}>
     <PhotoGrid
       {matches}
-      {loading}
+      loading={loading || serverPageLoading}
       {selectedIndex}
       {thumbnailTile}
+      serverPage={serverPage}
+      {pageMap}
+      onFetchServerPage={fetchServerPage}
       onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
       onPageSelect={(i) => { selectedIndex = i; }}
     />
@@ -186,7 +213,7 @@
 
   <div class="status">
     {#if view === 'preview' && selectedIndex !== null}
-      {selectedIndex + 1} / {matches.length}
+      {selectedIndex + 1} / {grandTotalCount}
     {:else}
       {status}
     {/if}

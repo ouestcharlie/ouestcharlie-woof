@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import socket
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,7 +17,7 @@ from mcp.types import ToolAnnotations
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager
-from .http_server import get_gallery_html
+from .http_server import get_gallery_html, serve_in_loop
 
 _log = logging.getLogger(__name__)
 
@@ -36,28 +38,49 @@ class WoofServer:
     def __init__(
         self,
         config: WoofConfig,
-        server_url: str,
         agent_client: AgentClient | None = None,
         session_manager: GallerySessionManager | None = None,
     ) -> None:
         self.config = config
-        self.server_url = server_url
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
+
+        # Bind port before MCP starts so server_url is known synchronously.
+        _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _sock.bind(("127.0.0.1", 0))
+        self._http_sock = _sock
+        self.server_url = f"http://localhost:{_sock.getsockname()[1]}"
 
         agent = self._agent
 
         @asynccontextmanager
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
+            # HTTP server shares this event loop — no cross-thread bridging needed.
+            # Any synchronous work in request handlers must use run_in_executor.
+
+            http_task = asyncio.create_task(
+                serve_in_loop(
+                    self._http_sock,
+                    self._sessions,
+                    self._wally_connection,
+                    self.server_url,
+                )
+            )
             try:
                 yield
             finally:
+                http_task.cancel()
+                await asyncio.gather(http_task, return_exceptions=True)
                 await agent.shutdown()
 
         self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
         self._register_tools()
         self._register_gallery_resource()
+
+    def _wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
+        return self._agent.get_wally_connection(library_name)
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -189,7 +212,6 @@ class WoofServer:
             root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
-            page: int = 1,
         ) -> dict[str, Any]:
             """Search photos in a library using Wally.
 
@@ -219,6 +241,8 @@ class WoofServer:
                     library). E.g. "2024/2024-07" to restrict to one partition.
             """
             library = self._require_library(library_name)
+            # Woof's MCP search always starts a 0, further pages managed by the Gallery
+            page = 0
             args: dict[str, Any] = {
                 "root": root,
                 "sort_by": sort_by,
@@ -240,14 +264,21 @@ class WoofServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
+            page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
-                library_name, matches, total_count=result.get("totalCount")
+                library=library,
+                agent=self._agent,
+                query_args=args,
+                total_count=result.get("totalCount"),
+                page=page,
+                page_size=page_size,
+                matches=matches,
             )
             return {
                 "session_token": token,
                 "totalCount": result.get("totalCount", len(matches)),
-                "page": result.get("page", 1),
-                "pageSize": result.get("pageSize", 500),
+                "page": result.get("page", 0),
+                "pageSize": page_size,
                 "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
@@ -285,13 +316,13 @@ class WoofServer:
                     )
                 }
 
-            merged_token, data = self._sessions.merge(session_tokens, query_summary)
+            merged_token, data = self._sessions.merge(session_tokens)
             return {
                 "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
-                "totalCount": data["totalCount"],
+                "totalCount": data.totalCount,
             }
 
     # ------------------------------------------------------------------

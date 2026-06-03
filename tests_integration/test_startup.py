@@ -47,10 +47,12 @@ class TestHttpServer:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 404
 
-    def test_known_session_returns_200_with_data(self) -> None:
+    def test_known_session_returns_200_with_data(
+        self, agent_client: AgentClient, library: LibraryConfig
+    ) -> None:
         """A session created in the shared manager is served via /api/results."""
         mgr = GallerySessionManager()
-        token = mgr.create("integration-test", [{"filename": "a.jpg"}])
+        token = mgr.create(library, agent_client, {}, 500, 1, matches=[{"filename": "a.jpg"}])
         server_url = start_http_server(session_manager=mgr)
 
         url = f"{server_url}/api/results/{token}"
@@ -189,10 +191,8 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -216,10 +216,8 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server_url = start_http_server(session_manager=session_manager)
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -245,19 +243,14 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-
-            def _wally_connection_fn(library_name: str) -> tuple[int | None, str | None]:
-                return agent.get_wally_connection(library_name)
-
-            server_url = start_http_server(
-                session_manager=session_manager,
-                wally_connection_fn=_wally_connection_fn,
-            )
             server = WoofServer(
                 config,
-                server_url=server_url,
                 agent_client=agent,
                 session_manager=session_manager,
+            )
+            server_url = start_http_server(
+                session_manager=session_manager,
+                wally_connection_fn=server._wally_connection,
             )
 
             # Trigger Wally startup

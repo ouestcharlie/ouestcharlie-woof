@@ -5,11 +5,24 @@
    *   loading: boolean,
    *   selectedIndex: number | null,
    *   thumbnailTile: (match: any) => {url: string, col: number, row: number, cols: number} | null,
+   *   serverPage: number,
+   *   pageMap: Array<{pageSize: number, pageCount: number, totalCount: number}>,
+   *   onFetchServerPage: ((page: number) => Promise<void>) | null,
    *   onSelect: (index: number) => void,
    *   onPageSelect: (index: number) => void,
    * }}
    */
-  let { matches, loading = false, selectedIndex, thumbnailTile, onSelect, onPageSelect } = $props();
+  let {
+    matches,
+    loading = false,
+    selectedIndex,
+    thumbnailTile,
+    serverPage = 0,
+    pageMap,
+    onFetchServerPage = null,
+    onSelect,
+    onPageSelect,
+  } = $props();
 
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
   const TILE_STRIDE = DISPLAY_SIZE + 4; // tile width + gap
@@ -20,42 +33,90 @@
 
   let gridWidth = $state(0);
   let columns = $derived(gridWidth > 0 ? Math.max(1, Math.floor((gridWidth + 4) / TILE_STRIDE)) : 1);
-  let pageSize = $derived(columns * ROWS);
+  let displayPageSize = $derived(columns * ROWS);
 
-  // Page is derived from selectedIndex so the grid always shows the page containing the selected photo.
-  let page = $derived(selectedIndex != null ? Math.floor(selectedIndex / pageSize) : 0);
+  // Local page within the current server page (derived from selectedIndex).
+  let localPage = $derived(selectedIndex != null ? Math.floor(selectedIndex / displayPageSize) : 0);
 
-  let pageCount = $derived(Math.max(1, Math.ceil(matches.length / pageSize)));
-  let pageMatches = $derived(matches.slice(page * pageSize, (page + 1) * pageSize));
+  /**
+   * Display-page offset for `serverPage` within `pageMap`.
+   * Full server pages hold `pageSize` photos; the last page of each entry holds
+   * `entryTotal - (pageCount-1)*pageSize` photos (may be partial).
+   */
+  function absolutePageFromMap(sp, lp, dps) {
+    let offset = 0, remaining = sp;
+    for (const { pageSize, pageCount, totalCount: entryTotal } of pageMap) {
+      const dpp = Math.ceil(pageSize / dps);
+      if (remaining < pageCount) return offset + remaining * dpp + lp;
+      const fullPages = pageCount - 1;
+      const lastSize = entryTotal - fullPages * pageSize;
+      offset += fullPages * dpp + Math.ceil(lastSize / dps);
+      remaining -= pageCount;
+    }
+    return offset + lp;
+  }
 
-  function prevPage() { if (page > 0) onPageSelect((page - 1) * pageSize); }
-  function nextPage() { if (page < pageCount - 1) onPageSelect((page + 1) * pageSize); }
+  let absolutePage = $derived(absolutePageFromMap(serverPage, localPage, displayPageSize));
+
+  let totalDisplayPages = $derived(
+    Math.max(1, pageMap.reduce((s, { pageSize, pageCount, totalCount: t }) => {
+      const dpp = Math.ceil(pageSize / displayPageSize);
+      const fullPages = pageCount - 1;
+      return s + fullPages * dpp + Math.ceil((t - fullPages * pageSize) / displayPageSize);
+    }, 0))
+  );
+
+  // Number of local display pages within the current server page's loaded matches.
+  let localPageCount = $derived(Math.max(1, Math.ceil(matches.length / displayPageSize)));
+
+  let hasMore = $derived(serverPage < pageMap.reduce((s, e) => s + e.pageCount, 0) - 1);
+
+  let pageMatches = $derived(matches.slice(localPage * displayPageSize, (localPage + 1) * displayPageSize));
+
+  async function prevPage() {
+    if (localPage > 0) {
+      onPageSelect((localPage - 1) * displayPageSize);
+    } else if (serverPage > 0 && onFetchServerPage) {
+      await onFetchServerPage(serverPage - 1);
+      // After fetch, select last photo of the newly loaded server page.
+      onPageSelect(matches.length - 1);
+    }
+  }
+
+  async function nextPage() {
+    if (localPage < localPageCount - 1) {
+      onPageSelect((localPage + 1) * displayPageSize);
+    } else if (hasMore && onFetchServerPage) {
+      await onFetchServerPage(serverPage + 1);
+      onPageSelect(0);
+    }
+  }
 </script>
 
 {#if loading}
   <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
-    {#each { length: pageSize } as _, i (i)}
+    {#each { length: displayPageSize } as _, i (i)}
       <div class="tile skeleton" style="animation-delay: {(i % columns) * 0.1}s"></div>
     {/each}
   </div>
 {:else}
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
-<div class="nav nav-top" aria-hidden={pageCount <= 1} class:nav-hidden={pageCount <= 1}>
-  <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
-  <span>{page + 1} / {pageCount}</span>
-  <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+<div class="nav nav-top" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
+  <button disabled={absolutePage === 0} onclick={prevPage}>↑ Previous</button>
+  <span>{absolutePage + 1} / {totalDisplayPages}</span>
+  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>Next ↓</button>
 </div>
 
 <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
-  {#each pageMatches as match, i (match.contentHash ?? i)}
+  {#each pageMatches as match, i (match.partition + '/' + match.filename) }
     {@const tile = thumbnailTile(match)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       role="button"
       tabindex="0"
       class="tile"
-      onclick={() => onSelect(page * pageSize + i)}
+      onclick={() => onSelect(localPage * displayPageSize + i)}
       title={match.filename}
     >
       {#if tile}
@@ -82,10 +143,10 @@
 </div>
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
-<div class="nav nav-bottom" aria-hidden={pageCount <= 1} class:nav-hidden={pageCount <= 1}>
-  <button disabled={page === 0} onclick={prevPage}>↑ Previous</button>
-  <span>{page + 1} / {pageCount}</span>
-  <button disabled={page === pageCount - 1} onclick={nextPage}>Next ↓</button>
+<div class="nav nav-bottom" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
+  <button disabled={absolutePage === 0} onclick={prevPage}>↑ Previous</button>
+  <span>{absolutePage + 1} / {totalDisplayPages}</span>
+  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>Next ↓</button>
 </div>
 
 {/if}

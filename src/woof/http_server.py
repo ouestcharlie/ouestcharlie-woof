@@ -1,11 +1,15 @@
 """Local HTTP server for proxying media requests and serving the gallery.
 
-Runs on 127.0.0.1 with an OS-assigned port in a daemon thread backed by
-Starlette + uvicorn (async ASGI), matching Wally's HTTP server architecture.
+Runs on 127.0.0.1 with an OS-assigned port backed by Starlette + uvicorn (async
+ASGI).  In production, ``serve_in_loop`` runs uvicorn as a task on the shared MCP
+event loop — all async work on a single loop, no cross-thread bridging.
+``start_http_server`` is kept for tests: it starts the server in a daemon thread
+with its own event loop.
 
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
   GET /api/results/{token}                     — JSON session data (matches + metadata)
+  GET /api/results/{token}/page/{page}         — load 0-indexed Wally page into session
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
   GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
   GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
@@ -32,7 +36,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .gallery_session_manager import GallerySessionManager
+from .gallery_session_manager import GallerySessionManager, PageOutOfRange
 
 _log = logging.getLogger(__name__)
 
@@ -54,28 +58,47 @@ def get_gallery_html(server_url: str) -> str:
     return _gallery_placeholder()
 
 
+async def serve_in_loop(
+    sock: socket.socket,
+    session_manager: GallerySessionManager,
+    wally_connection_fn: Any | None,
+    server_url: str,
+) -> None:
+    """Run the HTTP server on a pre-bound socket within the caller's event loop.
+
+    Intended for production use where Woof runs all async work on a single loop
+    (MCP + HTTP share one asyncio event loop).  Must be started as an
+    ``asyncio.create_task`` from inside a running loop.
+
+    Any synchronous CPU-bound work called from request handlers must go through
+    ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
+    """
+    app = _build_app(session_manager, wally_connection_fn, server_url=server_url)
+    await _serve_bare(app, sock)
+
+
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
 ) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
+    Used by tests.  Production code should use ``serve_in_loop`` instead so the
+    HTTP server shares the MCP event loop.
+
     Args:
         session_manager: Gallery session manager shared with WoofServer.
-            Provides token-keyed session lookup for the gallery and results
-            endpoints.  A new empty manager is created when omitted.
         wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
-            for the named Wally sidecar.  Called on every request so dynamic
-            changes (e.g. after sidecar restart) are picked up automatically.
+            for the named Wally sidecar.
 
     Returns:
-        The full server URL (e.g. ``"http://127.0.0.1:8080"``).
+        The full server URL (e.g. ``"http://localhost:8080"``).
     """
     mgr = session_manager if session_manager is not None else GallerySessionManager()
 
     # Bind port before starting the thread so the port is known synchronously.
     # Use the loopback IP for binding but expose the URL as "localhost" so the
-    # hostname matches what MCP Host writes into the iframe's CSP
+    # hostname matches what MCP Host writes into the iframe's CSP.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
@@ -87,7 +110,7 @@ def start_http_server(
 
     def _run() -> None:
         try:
-            asyncio.run(_serve(app, sock, ready))
+            asyncio.run(_serve_with_ready(app, sock, ready))
         except Exception:
             _log.exception("HTTP server thread crashed")
 
@@ -97,7 +120,7 @@ def start_http_server(
     return server_url
 
 
-async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
+async def _serve_with_ready(app: Any, sock: socket.socket, ready: threading.Event) -> None:
     import uvicorn
 
     class _Server(uvicorn.Server):
@@ -113,6 +136,18 @@ async def _serve(app: Any, sock: socket.socket, ready: threading.Event) -> None:
     await server.serve(sockets=[sock])
 
 
+async def _serve_bare(app: Any, sock: socket.socket) -> None:
+    import uvicorn
+
+    class _Server(uvicorn.Server):
+        def install_signal_handlers(self) -> None:
+            pass
+
+    config = uvicorn.Config(app, log_level="warning", access_log=False)
+    server = _Server(config)
+    await server.serve(sockets=[sock])
+
+
 def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
@@ -122,7 +157,8 @@ def _build_app(
 
     async def gallery_token(request: Request) -> Response:
         token = request.path_params["token"]
-        if session_manager.get(token) is None:
+        session = session_manager.get(token)
+        if session is None:
             return Response(status_code=404)
         html = get_gallery_html(server_url)
         return HTMLResponse(
@@ -137,7 +173,27 @@ def _build_app(
             return JSONResponse(
                 {"error": f"Session {token!r} not found or expired"}, status_code=404
             )
-        return JSONResponse(session)
+        return JSONResponse(session.transfert_object())
+
+    async def api_page(request: Request) -> Response:
+        token = request.path_params["token"]
+        try:
+            page = int(request.path_params["page"])
+        except (ValueError, KeyError):
+            return JSONResponse({"error": "invalid page"}, status_code=400)
+
+        session = session_manager.get(token)
+        if session is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+
+        try:
+            ok = await session.fetch_page(page)
+        except PageOutOfRange:
+            return JSONResponse({"error": "out_of_range"}, status_code=404)
+        if not ok:
+            return JSONResponse({"error": "fetch_failed"}, status_code=502)
+
+        return JSONResponse(session.transfert_object())
 
     async def proxy_media(request: Request) -> Response:
         kind = request.path_params["kind"]
@@ -169,6 +225,7 @@ def _build_app(
 
     routes = [
         Route("/gallery/{token}", gallery_token),
+        Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),
