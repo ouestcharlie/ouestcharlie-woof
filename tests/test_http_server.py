@@ -244,8 +244,6 @@ def test_results_set_session_returns_first_page_matches() -> None:
 def test_results_single_session_exposes_pagination_fields() -> None:
     """api_results for a single session with totalCount > pageSize exposes pagination fields
     so the frontend can drive server-page navigation."""
-    import json
-
     mgr = GallerySessionManager()
     tok = mgr.create(
         LibraryConfig(name="lib", type="filesystem", path="/tmp"),
