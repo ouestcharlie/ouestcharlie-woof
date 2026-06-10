@@ -214,9 +214,12 @@ class WoofServer:
                 self._indexing_sessions.complete(session_id, result)
 
             def _on_error(exc: Exception) -> None:
-                self._indexing_sessions.fail(session_id, str(exc))
+                if isinstance(exc, asyncio.CancelledError):
+                    self._indexing_sessions.cancelled(session_id)
+                else:
+                    self._indexing_sessions.fail(session_id, str(exc))
 
-            self._agent.call_tool_background(
+            task = self._agent.call_tool_background(
                 "whitebeard",
                 tool,
                 args,
@@ -225,6 +228,7 @@ class WoofServer:
                 on_complete=_on_complete,
                 on_error=_on_error,
             )
+            self._indexing_sessions.register_task(session_id, task)
 
             return {
                 "type": "indexing",

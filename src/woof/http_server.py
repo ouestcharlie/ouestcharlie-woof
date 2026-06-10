@@ -246,10 +246,20 @@ def _build_app(
             return JSONResponse({"error": f"Session {sid!r} not found"}, status_code=404)
         return JSONResponse(session)
 
+    async def api_indexing_cancel(request: Request) -> Response:
+        if indexing_session_manager is None:
+            return JSONResponse({"error": "not configured"}, status_code=503)
+        sid = request.path_params["session_id"]
+        ok = indexing_session_manager.cancel(sid)
+        if not ok:
+            return JSONResponse({"error": "not cancellable"}, status_code=409)
+        return JSONResponse({"status": "cancelling"})
+
     routes = [
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
+        Route("/api/indexing/{session_id}/cancel", api_indexing_cancel, methods=["POST"]),
         Route("/api/indexing/{session_id}", api_indexing),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),

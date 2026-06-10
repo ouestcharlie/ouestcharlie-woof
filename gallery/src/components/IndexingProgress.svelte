@@ -10,6 +10,7 @@
   let summary = $state(null);
   let error = $state(null);
   let contextSent = $state(false);
+  let stopping = $state(false);
 
   let pollInterval = null;
 
@@ -26,7 +27,7 @@
       summary = data.summary ?? null;
       error = data.error ?? null;
 
-      if (status !== 'running') {
+      if (status !== 'running' && status !== 'cancelling') {
         clearInterval(pollInterval);
         pollInterval = null;
         // handleDone is triggered by $effect once mcpReady is also true
@@ -41,15 +42,28 @@
   // Claude Desktop has registered this iframe as a trusted source, causing
   // "Ignoring message from unknown source" errors.
   $effect(() => {
-    if ((status === 'completed' || status === 'failed') && (mcpReady || !mcpApp)) {
+    if ((status === 'completed' || status === 'failed' || status === 'cancelled') && (mcpReady || !mcpApp)) {
       handleDone();
     }
   });
+
+  async function stopIndexing() {
+    stopping = true;
+    try {
+      await fetch(`${serverUrl}/api/indexing/${sessionId}/cancel`, { method: 'POST' });
+    } catch {
+      // poll will reflect the new status
+    }
+  }
 
   async function handleDone() {
     if (contextSent) return;
     contextSent = true;
     if (!mcpApp) return;
+
+    if (status === 'cancelled') {
+      return; // no MCP turn for user-initiated stop
+    }
 
     if (status === 'completed') {
       try {
@@ -107,18 +121,23 @@
 <div class="indexing">
   <header class="indexing-header">
     <h1>Indexing {library}{partition ? ' / ' + partition : ''}</h1>
-    <span class="indexing-status" class:running={status === 'running'} class:completed={status === 'completed'} class:failed={status === 'failed'}>
-      {status}
-    </span>
+    <div class="header-right">
+      <span class="indexing-status" class:running={status === 'running'} class:cancelling={status === 'cancelling'} class:cancelled={status === 'cancelled'} class:completed={status === 'completed'} class:failed={status === 'failed'}>
+        {status}
+      </span>
+    </div>
   </header>
 
-  {#if status === 'running'}
+  {#if status === 'running' || status === 'cancelling'}
     <div class="progress-section">
       <progress value={progress} max={total}></progress>
       <div class="progress-label">{Math.round(progressPct)}% — {Math.round(progress)} / {Math.round(total)}</div>
       {#if message}
         <div class="progress-message">{message}</div>
       {/if}
+    </div>
+    <div class="stop-row">
+      <button class="stop-btn" onclick={stopIndexing} disabled={stopping}>Stop</button>
     </div>
   {/if}
 
@@ -161,6 +180,12 @@
     </div>
   {/if}
 
+  {#if status === 'cancelled'}
+    <div class="cancelled-card">
+      <div class="cancelled-title">Indexing stopped</div>
+    </div>
+  {/if}
+
   {#if status === 'failed'}
     <div class="error-card">
       <div class="error-title">Indexing failed</div>
@@ -196,6 +221,41 @@
     font-weight: var(--font-weight-semibold, 600);
   }
 
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .stop-row {
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 1rem;
+  }
+
+  .stop-btn {
+    font-size: 0.85rem;
+    padding: 0.4rem 1.1rem;
+    border-radius: var(--border-radius-xs, 4px);
+    border: var(--border-width-regular, 0.5px) solid rgba(244, 67, 54, 0.5);
+    background: transparent;
+    color: #f44336;
+    cursor: pointer;
+    font-weight: var(--font-weight-semibold, 600);
+    width: fit-content;
+  }
+
+  .stop-btn:hover:not(:disabled) {
+    background: rgba(244, 67, 54, 0.1);
+  }
+
+  .stop-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
   .indexing-status {
     font-size: 0.75rem;
     padding: 0.2rem 0.5rem;
@@ -208,6 +268,16 @@
   .indexing-status.running {
     background: var(--color-accent-secondary, #1a3a5c);
     color: var(--color-accent-primary, #4fc3f7);
+  }
+
+  .indexing-status.cancelling {
+    background: rgba(255, 167, 38, 0.15);
+    color: #ffa726;
+  }
+
+  .indexing-status.cancelled {
+    background: rgba(158, 158, 158, 0.15);
+    color: #9e9e9e;
   }
 
   .indexing-status.completed {
@@ -355,5 +425,17 @@
     font-size: 0.85rem;
     color: var(--color-text-secondary);
     font-family: var(--font-mono, monospace);
+  }
+
+  .cancelled-card {
+    background: var(--color-background-surface, var(--color-background-secondary));
+    border: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
+    border-radius: var(--border-radius-sm, 6px);
+    padding: 1rem 1.25rem;
+  }
+
+  .cancelled-title {
+    font-weight: var(--font-weight-semibold, 600);
+    color: #9e9e9e;
   }
 </style>

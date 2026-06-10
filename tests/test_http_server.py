@@ -295,6 +295,36 @@ def test_indexing_endpoint_unknown_returns_404() -> None:
     assert exc_info.value.code == 404
 
 
+def test_cancel_endpoint_returns_cancelling() -> None:
+    import urllib.request
+
+    from woof.indexing_session_manager import IndexingSessionManager
+
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    server_url = start_http_server(indexing_session_manager=imgr)
+    req = urllib.request.Request(f"{server_url}/api/indexing/{sid}/cancel", method="POST", data=b"")
+    with urllib.request.urlopen(req) as resp:
+        data = json.load(resp)
+    assert data["status"] == "cancelling"
+    assert imgr.get(sid)["status"] == "cancelling"
+
+
+def test_cancel_endpoint_returns_409_when_not_running() -> None:
+    import urllib.request
+
+    from woof.indexing_session_manager import IndexingSessionManager
+
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    imgr.complete(sid, {})
+    server_url = start_http_server(indexing_session_manager=imgr)
+    req = urllib.request.Request(f"{server_url}/api/indexing/{sid}/cancel", method="POST", data=b"")
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 409
+
+
 def test_cors_header_present_on_responses() -> None:
     """Responses to cross-origin requests must carry Access-Control-Allow-Origin: *.
 

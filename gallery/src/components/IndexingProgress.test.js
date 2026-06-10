@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import IndexingProgress from './IndexingProgress.svelte';
 
 function mockFetch(sessions) {
@@ -180,6 +180,58 @@ describe('IndexingProgress — MCP callbacks on completion', () => {
       role: 'user',
       content: [{ type: 'text', text: 'Indexing failed.' }],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('IndexingProgress — stop button', () => {
+  it('shows Stop button while running', async () => {
+    mockFetch(runningSession());
+    const { getByRole } = render(IndexingProgress, { props: baseProps });
+    await waitFor(() => expect(getByRole('button', { name: 'Stop' })).toBeTruthy());
+  });
+
+  it('hides Stop button after completion', async () => {
+    mockFetch(completedSession({ totalPhotosProcessed: 5, totalDurationMs: 500 }));
+    const { queryByRole } = render(IndexingProgress, { props: baseProps });
+    await waitFor(() => expect(queryByRole('button', { name: 'Stop' })).toBeNull());
+  });
+
+  it('POSTs to cancel endpoint when Stop is clicked', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(runningSession()) })
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ status: 'cancelling' }) });
+    global.fetch = fetchMock;
+
+    const { getByRole } = render(IndexingProgress, { props: baseProps });
+    const btn = await waitFor(() => getByRole('button', { name: 'Stop' }));
+    await fireEvent.click(btn);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost/api/indexing/abc/cancel',
+        { method: 'POST' },
+      ),
+    );
+  });
+
+  it('shows "cancelled" chip and neutral card when status is cancelled', async () => {
+    mockFetch({ status: 'cancelled', progress: 0, total: 1, message: '', summary: null, error: null });
+    const { getByText } = render(IndexingProgress, { props: baseProps });
+    await waitFor(() => expect(getByText('cancelled')).toBeTruthy());
+    await waitFor(() => expect(getByText('Indexing stopped')).toBeTruthy());
+  });
+
+  it('does not call MCP callbacks when status is cancelled', async () => {
+    const updateModelContext = vi.fn().mockResolvedValue(undefined);
+    const mcpApp = { updateModelContext, sendMessage: vi.fn().mockResolvedValue(undefined) };
+
+    mockFetch({ status: 'cancelled', progress: 0, total: 1, message: '', summary: null, error: null });
+    render(IndexingProgress, { props: { ...baseProps, mcpApp, mcpReady: true } });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(updateModelContext).not.toHaveBeenCalled();
   });
 });
 

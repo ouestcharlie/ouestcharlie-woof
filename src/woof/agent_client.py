@@ -326,6 +326,14 @@ class AgentClient:
                 result = await self._call_ephemeral(module, tool_name, args, library, progress_cb)
                 if on_complete:
                     on_complete(result)
+            except asyncio.CancelledError as exc:
+                # Task was cancelled (e.g. user clicked Stop). Notify caller so the
+                # session manager can transition to "cancelled", then re-raise to keep
+                # the task properly cancelled.
+                _log.debug("%s.%s background task cancelled", module, tool_name)
+                if on_error:
+                    on_error(exc)
+                raise
             except AgentError as exc:
                 _log.error("%s.%s background task failed: %s", module, tool_name, exc)
                 if on_error:

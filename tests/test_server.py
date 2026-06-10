@@ -274,6 +274,50 @@ async def test_index_library_callbacks_update_session(server: WoofServer) -> Non
     assert s["summary"]["photosIndexed"] == 7
 
 
+@pytest.mark.asyncio
+async def test_index_library_registers_task(server: WoofServer) -> None:
+    """index_library registers the returned task with the session manager."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    fake_task = MagicMock(spec=asyncio.Task)
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        return fake_task
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
+        tool_fn = await _get_tool(server, "index_library")
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    sid = result["session_id"]
+    assert server._indexing_sessions._tasks[sid] is fake_task
+
+
+@pytest.mark.asyncio
+async def test_index_library_on_error_cancelled_calls_cancelled(server: WoofServer) -> None:
+    """_on_error with CancelledError transitions session to 'cancelled', not 'failed'."""
+    import asyncio
+
+    callbacks: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        callbacks["on_error"] = on_error
+        return None
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
+        tool_fn = await _get_tool(server, "index_library")
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    sid = result["session_id"]
+    callbacks["on_error"](asyncio.CancelledError())
+    s = server._indexing_sessions.get(sid)
+    assert s["status"] == "cancelled"
+
+
 # ---------------------------------------------------------------------------
 # _search_stats
 # ---------------------------------------------------------------------------
