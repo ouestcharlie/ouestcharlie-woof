@@ -235,18 +235,6 @@ class WoofServer:
             }
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def get_index_result(session_id: str) -> dict[str, Any]:
-            """Return the current state or final result of a background indexing run.
-
-            Args:
-                session_id: The session_id returned by index_library.
-            """
-            session = self._indexing_sessions.get(session_id)
-            if session is None:
-                return {"error": f"Unknown session_id {session_id!r}"}
-            return session
-
-        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def search_photos(
             ctx: Context,
             library_name: str,

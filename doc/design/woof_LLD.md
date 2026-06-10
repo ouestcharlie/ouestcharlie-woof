@@ -35,7 +35,7 @@ Claude Desktop (MCP client)
 
 Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Currently registered tools:
 
-- **Library management**: `index_library` — non-blocking: launches Whitebeard as a background `asyncio.Task`, returns immediately with `{type:"indexing", session_id, serverUrl, ...}`, and opens the gallery MCP App in indexing mode (progress bar + final summary pushed back to model context). `force_full_index=True` re-processes the entire library. `get_index_result(session_id)` lets Claude (or the app) poll the current session state at any time.
+- **Library management**: `index_library` — non-blocking: launches Whitebeard as a background `asyncio.Task`, returns immediately with `{type:"indexing", session_id, serverUrl, ...}`, and opens the gallery MCP App in indexing mode (progress bar + final summary pushed back to model context). `force_full_index=True` re-processes the entire library.
 - **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_partition_summaries`
 - **Configuration**: `add_backend`, `list_backends`, `list_search_fields`
 
@@ -108,7 +108,7 @@ Prev/Next navigation is rendered above and below the grid when `totalDisplayPage
 
 1. Polls `GET {serverUrl}/api/indexing/{session_id}` every second, updating the progress bar and status message.
 2. Stops polling when `status !== 'running'`.
-3. On `status === 'completed'`: calls `mcpApp.callServerTool({name: 'get_index_result', arguments: {session_id}})` to retrieve the final summary, displays it inline, then calls `mcpApp.updateModelContext({content: [{type:'text', text: summaryMarkdown}]})` so the model has the result in its next turn.
+3. On `status === 'completed'`: formats the summary from in-component state (already populated from the last poll), calls `mcpApp.updateModelContext({content: [{type:'text', text: summaryMarkdown}]})` so the model has the result in its next turn, then calls `mcpApp.sendMessage` to trigger a new model turn.
 4. On `status === 'failed'`: displays the error text and calls `updateModelContext` with an error message.
 
 When `mcpApp` is null (standalone `?sessionId=` dev path), the MCP callbacks are skipped and the summary is shown inline only.

@@ -53,12 +53,7 @@
 
     if (status === 'completed') {
       try {
-        const result = await mcpApp.callServerTool({
-          name: 'get_index_result',
-          arguments: { session_id: sessionId },
-        });
-        const text = (result?.content ?? []).find(b => b.type === 'text')?.text;
-        const summaryMarkdown = text ? formatSummaryMarkdown(text) : formatSummaryMarkdown(null);
+        const summaryMarkdown = formatSummaryMarkdown(summary);
         await mcpApp.updateModelContext({
           content: [{ type: 'text', text: summaryMarkdown }],
         });
@@ -87,24 +82,14 @@
     }
   }
 
-  function formatSummaryMarkdown(rawText) {
-    if (!rawText) {
-      return summary
-        ? `Indexing complete for **${library}**.\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\``
-        : `Indexing complete for **${library}**.`;
-    }
-    try {
-      const data = JSON.parse(rawText);
-      const s = data.summary ?? data;
-      const lines = [`Indexing complete for **${library}${partition ? ' / ' + partition : ''}**.`];
-      if (s.photosIndexed !== undefined) lines.push(`- Photos indexed: ${s.photosIndexed}`);
-      if (s.sidecarsUpdated !== undefined) lines.push(`- Sidecars updated: ${s.sidecarsUpdated}`);
-      if (s.thumbnailsGenerated !== undefined) lines.push(`- Thumbnails generated: ${s.thumbnailsGenerated}`);
-      if (s.errors !== undefined && s.errors > 0) lines.push(`- Errors: ${s.errors}`);
-      return lines.join('\n');
-    } catch {
-      return rawText;
-    }
+  function formatSummaryMarkdown(s) {
+    const lines = [`Indexing complete for **${library}${partition ? ' / ' + partition : ''}**.`];
+    if (s?.totalPhotosProcessed !== undefined) lines.push(`- Photos processed: ${s.totalPhotosProcessed}`);
+    if (s?.totalSidecarsCreated !== undefined) lines.push(`- Sidecars created: ${s.totalSidecarsCreated}`);
+    if (s?.totalThumbnailsRebuilt !== undefined) lines.push(`- Thumbnail batches rebuilt: ${s.totalThumbnailsRebuilt}`);
+    if (s?.totalErrors !== undefined && s.totalErrors > 0) lines.push(`- Errors: ${s.totalErrors}`);
+    if (s?.totalDurationMs !== undefined) lines.push(`- Duration: ${(s.totalDurationMs / 1000).toFixed(1)}s`);
+    return lines.join('\n');
   }
 
   onMount(() => {
@@ -139,21 +124,36 @@
 
   {#if status === 'completed'}
     <div class="summary-card">
-      <div class="summary-title">Indexing complete</div>
+      <div class="summary-title">Indexing complete 
+        {#if summary.totalDurationMs !== undefined}
+            <span>in {(summary.totalDurationMs / 1000).toFixed(1)}s</span>
+        {/if}
+      </div>
       {#if summary}
-        <ul class="summary-list">
-          {#if summary.photosIndexed !== undefined}
-            <li>Photos indexed: <strong>{summary.photosIndexed}</strong></li>
+        <ul class="summary-list">          
+          {#if summary.totalPhotosProcessed !== undefined}
+            <li>Photos processed: <strong>{summary.totalPhotosProcessed}</strong></li>
           {/if}
-          {#if summary.sidecarsUpdated !== undefined}
-            <li>Sidecars updated: <strong>{summary.sidecarsUpdated}</strong></li>
+          {#if summary.totalSidecarsCreated !== undefined}
+            <li>Sidecars created: <strong>{summary.totalSidecarsCreated}</strong></li>
           {/if}
-          {#if summary.thumbnailsGenerated !== undefined}
-            <li>Thumbnails generated: <strong>{summary.thumbnailsGenerated}</strong></li>
+          {#if summary.totalThumbnailsRebuilt !== undefined}
+            <li>Thumbnail batches rebuilt: <strong>{summary.totalThumbnailsRebuilt}</strong></li>
           {/if}
-          {#if summary.errors !== undefined && summary.errors > 0}
-            <li class="error-count">Errors: <strong>{summary.errors}</strong></li>
-          {/if}
+          {#if summary.totalErrors !== undefined && summary.totalErrors > 0}
+            <li class="error-count">
+              <details>
+                <summary>Errors: <strong>{summary.totalErrors}</strong></summary>
+                {#if summary.topErrorDetails?.length}
+                  <ul class="error-details">
+                    {#each summary.topErrorDetails as detail, i (i)}
+                      <li>{detail}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              </details>
+            </li>
+          {/if}         
         </ul>
       {:else}
         <p class="summary-empty">No summary available.</p>
@@ -295,6 +295,40 @@
 
   .summary-list .error-count {
     color: #f44336;
+  }
+
+  .summary-list .error-count details summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    gap: 0.3rem;
+    align-items: baseline;
+  }
+
+  .summary-list .error-count details summary::before {
+    content: '▶';
+    font-size: 0.6rem;
+    transition: transform 0.15s ease;
+  }
+
+  .summary-list .error-count details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  .error-details {
+    margin: 0.4rem 0 0 1rem;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .error-details li {
+    font-size: 0.78rem;
+    font-family: var(--font-mono, monospace);
+    color: var(--color-text-secondary);
+    word-break: break-all;
   }
 
   .summary-empty {

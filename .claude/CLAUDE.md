@@ -17,6 +17,21 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 
 ## Testing
 
+### Python (Woof server)
 ```
-.venv/Scripts/python -m pytest tests/ -v
+.venv/bin/pytest tests/ -v
 ```
+
+### JavaScript / Svelte (gallery)
+```
+cd gallery && npm test
+```
+
+Test files live next to the component they test: `src/components/Foo.svelte` → `src/components/Foo.test.js`.
+
+**Patterns to follow** (see `IndexingProgress.test.js` as reference):
+- Mock `fetch` per test with `vi.fn()` — return `{ ok: true, json: () => Promise.resolve(data) }`
+- Use `waitFor` for all async assertions (component polls on mount)
+- `@modelcontextprotocol/ext-apps` is mocked at the module level in `App.test.js`; for component tests pass a plain object with the needed methods as a prop
+- `<details><summary>` splits text across nodes — query by `container.querySelector('details')` rather than `getByText`
+- `getByText(/regex/)` fails when the same value appears twice (e.g. matching count in two rows) — use distinct values in test data or `getAllByText`
