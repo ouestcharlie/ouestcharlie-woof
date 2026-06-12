@@ -28,6 +28,15 @@
   let indexingLibrary = $state('');
   let indexingPartition = $state('');
 
+  // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
+  // from ever firing. Manually notify the host whenever the displayed content changes.
+  const INLINE_HEIGHTS = { gallery: 600, indexing: 280 };
+  $effect(() => {
+    if (!modeKnown || !mcpApp || !mcpReady || isFullscreen) return;
+    const h = INLINE_HEIGHTS[mode] ?? 400;
+    mcpApp.sendSizeChanged({ height: h }).catch(() => {});
+  });
+
   function applySession(session, tok, page) {
     if (tok !== undefined) token = tok;
     matches = session.matches ?? [];

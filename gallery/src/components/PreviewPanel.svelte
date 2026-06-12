@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   const THUMBNAIL_TILE_SIZE = 256; // px per tile side in the AVIF grid
 
@@ -26,6 +26,7 @@
   // .viewer has flex:1 + min-height:0 + overflow:hidden, so the browser sets its size
   // purely from the flex algorithm — it cannot be inflated by its children.
   // This avoids feedback loops while correctly tracking fullscreen ↔ inline transitions.
+  let viewerEl = $state(null);
   let viewerW = $state(0);
   let viewerH = $state(0);
 
@@ -73,12 +74,25 @@
     return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * THUMBNAIL_TILE_SIZE}px;`;
   }
 
-  onMount(() => window.addEventListener('keydown', onKeydown));
+  onMount(async () => {
+    window.addEventListener('keydown', onKeydown);
+    // bind:clientHeight fires via ResizeObserver, which is async (next animation frame).
+    // If viewerH is still 0 after a tick, measure directly so containerSize is correct
+    // from the first render rather than falling back to window.innerHeight.
+    await tick();
+    requestAnimationFrame(() => {
+      if (viewerEl && viewerH === 0) {
+        const rect = viewerEl.getBoundingClientRect();
+        viewerH = rect.height;
+        viewerW = rect.width;
+      }
+    });
+  });
   onDestroy(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <div class="panel">
-  <div class="viewer" bind:clientWidth={viewerW} bind:clientHeight={viewerH}>
+  <div class="viewer" bind:this={viewerEl} bind:clientWidth={viewerW} bind:clientHeight={viewerH}>
     <!--
       Container pre-sized to the photo's actual aspect ratio.
       Height capped at 90vh; width follows aspect ratio, capped at 100vw.
