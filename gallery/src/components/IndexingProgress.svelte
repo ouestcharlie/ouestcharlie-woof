@@ -13,6 +13,7 @@
   let stopping = $state(false);
 
   let pollInterval = null;
+  let rootEl = $state(null);
 
   async function poll() {
     if (!serverUrl || !sessionId) return;
@@ -108,7 +109,7 @@
 
   onMount(() => {
     poll();
-    pollInterval = setInterval(poll, 1000);
+    pollInterval = setInterval(poll, 250);
   });
 
   onDestroy(() => {
@@ -116,9 +117,22 @@
   });
 
   let progressPct = $derived(total > 0 ? Math.min(100, (progress / total) * 100) : 0);
+
+  // Notify host of height change after each status transition so the iframe
+  // resizes to fit the new content (html/body are fixed-height so autoResize
+  // via ResizeObserver never fires for content-driven changes).
+  $effect(() => {
+    void status; // depend on status so this re-runs on every transition
+    if (!mcpApp || !rootEl) return;
+    // Use rAF to let Svelte flush DOM updates before measuring.
+    requestAnimationFrame(() => {
+      const h = rootEl.scrollHeight;
+      if (h > 0) mcpApp.sendSizeChanged({ height: h }).catch(() => {});
+    });
+  });
 </script>
 
-<div class="indexing">
+<div class="indexing" bind:this={rootEl}>
   <header class="indexing-header">
     <h1>Indexing {library}{partition ? ' / ' + partition : ''}</h1>
     <div class="header-right">
@@ -161,7 +175,7 @@
           {/if}
           {#if summary.totalErrors !== undefined && summary.totalErrors > 0}
             <li class="error-count">
-              <details>
+              <details ontoggle={() => { if (mcpApp && rootEl) mcpApp.sendSizeChanged({ height: rootEl.scrollHeight }).catch(() => {}); }}>
                 <summary>Errors: <strong>{summary.totalErrors}</strong></summary>
                 {#if summary.topErrorDetails?.length}
                   <ul class="error-details">
@@ -198,7 +212,7 @@
   .indexing {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    min-height: 0;
     padding: 1.5rem;
     background: var(--color-background-tertiary);
     color: var(--color-text-primary);
@@ -232,7 +246,7 @@
   }
 
   .stop-row {
-    margin-top: auto;
+    margin-top: 1rem;
     display: flex;
     justify-content: flex-end;
     padding-top: 1rem;
