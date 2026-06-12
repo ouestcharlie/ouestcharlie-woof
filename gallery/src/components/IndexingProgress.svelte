@@ -203,6 +203,8 @@
     background: var(--color-background-tertiary);
     color: var(--color-text-primary);
     font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: var(--font-text-sm-size, 14px);
+    line-height: var(--font-text-sm-line-height, 1.4);
     box-sizing: border-box;
   }
 
@@ -217,8 +219,9 @@
 
   .indexing-header h1 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--font-heading-md-size, 16px);
     font-weight: var(--font-weight-semibold, 600);
+    line-height: var(--font-heading-md-line-height, 1.4);
   }
 
   .header-right {
@@ -236,19 +239,19 @@
   }
 
   .stop-btn {
-    font-size: 0.85rem;
+    font-size: var(--font-text-sm-size, 14px);
     padding: 0.4rem 1.1rem;
     border-radius: var(--border-radius-xs, 4px);
-    border: var(--border-width-regular, 0.5px) solid rgba(244, 67, 54, 0.5);
+    border: var(--border-width-regular, 0.5px) solid var(--color-border-danger);
     background: transparent;
-    color: #f44336;
+    color: var(--color-text-danger);
     cursor: pointer;
     font-weight: var(--font-weight-semibold, 600);
     width: fit-content;
   }
 
   .stop-btn:hover:not(:disabled) {
-    background: rgba(244, 67, 54, 0.1);
+    background: var(--color-background-danger);
   }
 
   .stop-btn:disabled {
@@ -257,7 +260,7 @@
   }
 
   .indexing-status {
-    font-size: 0.75rem;
+    font-size: var(--font-text-xs-size, 12px);
     padding: 0.2rem 0.5rem;
     border-radius: var(--border-radius-xs, 4px);
     font-weight: var(--font-weight-semibold, 600);
@@ -266,28 +269,28 @@
   }
 
   .indexing-status.running {
-    background: var(--color-accent-secondary, #1a3a5c);
-    color: var(--color-accent-primary, #4fc3f7);
+    background: var(--color-background-info);
+    color: var(--color-text-info);
   }
 
   .indexing-status.cancelling {
-    background: rgba(255, 167, 38, 0.15);
-    color: #ffa726;
+    background: var(--color-background-warning);
+    color: var(--color-text-warning);
   }
 
   .indexing-status.cancelled {
-    background: rgba(158, 158, 158, 0.15);
-    color: #9e9e9e;
+    background: var(--color-background-secondary);
+    color: var(--color-text-tertiary);
   }
 
   .indexing-status.completed {
-    background: rgba(76, 175, 80, 0.15);
-    color: #4caf50;
+    background: var(--color-background-success);
+    color: var(--color-text-success);
   }
 
   .indexing-status.failed {
-    background: rgba(244, 67, 54, 0.15);
-    color: #f44336;
+    background: var(--color-background-danger);
+    color: var(--color-text-danger);
   }
 
   .progress-section {
@@ -301,34 +304,34 @@
     height: 0.5rem;
     appearance: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--border-radius-xs, 4px);
     background: var(--color-background-secondary);
     overflow: hidden;
   }
 
   progress::-webkit-progress-bar {
     background: var(--color-background-secondary);
-    border-radius: 4px;
+    border-radius: var(--border-radius-xs, 4px);
   }
 
   progress::-webkit-progress-value {
-    background: var(--color-accent-primary, #4fc3f7);
-    border-radius: 4px;
+    background: var(--color-border-info);
+    border-radius: var(--border-radius-xs, 4px);
     transition: width 0.3s ease;
   }
 
   progress::-moz-progress-bar {
-    background: var(--color-accent-primary, #4fc3f7);
-    border-radius: 4px;
+    background: var(--color-border-info);
+    border-radius: var(--border-radius-xs, 4px);
   }
 
   .progress-label {
-    font-size: 0.8rem;
+    font-size: var(--font-text-xs-size, 12px);
     color: var(--color-text-secondary);
   }
 
   .progress-message {
-    font-size: 0.8rem;
+    font-size: var(--font-text-xs-size, 12px);
     color: var(--color-text-tertiary);
     font-family: var(--font-mono, monospace);
     white-space: nowrap;
@@ -337,16 +340,17 @@
   }
 
   .summary-card {
-    background: var(--color-background-surface, var(--color-background-secondary));
+    background: var(--color-background-secondary);
     border: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
     border-radius: var(--border-radius-sm, 6px);
     padding: 1rem 1.25rem;
   }
 
   .summary-title {
+    font-size: var(--font-text-sm-size, 14px);
     font-weight: var(--font-weight-semibold, 600);
     margin-bottom: 0.75rem;
-    color: #4caf50;
+    color: var(--color-text-success);
   }
 
   .summary-list {
@@ -359,12 +363,12 @@
   }
 
   .summary-list li {
-    font-size: 0.9rem;
+    font-size: var(--font-text-sm-size, 14px);
     color: var(--color-text-secondary);
   }
 
   .summary-list .error-count {
-    color: #f44336;
+    color: var(--color-text-danger);
   }
 
   .summary-list .error-count details summary {
@@ -377,7 +381,7 @@
 
   .summary-list .error-count details summary::before {
     content: '▶';
-    font-size: 0.6rem;
+    font-size: var(--font-text-xs-size, 12px);
     transition: transform 0.15s ease;
   }
 
@@ -395,7 +399,7 @@
   }
 
   .error-details li {
-    font-size: 0.78rem;
+    font-size: var(--font-text-xs-size, 12px);
     font-family: var(--font-mono, monospace);
     color: var(--color-text-secondary);
     word-break: break-all;
@@ -403,39 +407,41 @@
 
   .summary-empty {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-text-sm-size, 14px);
     color: var(--color-text-tertiary);
   }
 
   .error-card {
-    background: rgba(244, 67, 54, 0.08);
-    border: var(--border-width-regular, 0.5px) solid rgba(244, 67, 54, 0.3);
+    background: var(--color-background-danger);
+    border: var(--border-width-regular, 0.5px) solid var(--color-border-danger);
     border-radius: var(--border-radius-sm, 6px);
     padding: 1rem 1.25rem;
   }
 
   .error-title {
+    font-size: var(--font-text-sm-size, 14px);
     font-weight: var(--font-weight-semibold, 600);
-    color: #f44336;
+    color: var(--color-text-danger);
     margin-bottom: 0.5rem;
   }
 
   .error-message {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-text-sm-size, 14px);
     color: var(--color-text-secondary);
     font-family: var(--font-mono, monospace);
   }
 
   .cancelled-card {
-    background: var(--color-background-surface, var(--color-background-secondary));
+    background: var(--color-background-secondary);
     border: var(--border-width-regular, 0.5px) solid var(--color-border-primary);
     border-radius: var(--border-radius-sm, 6px);
     padding: 1rem 1.25rem;
   }
 
   .cancelled-title {
+    font-size: var(--font-text-sm-size, 14px);
     font-weight: var(--font-weight-semibold, 600);
-    color: #9e9e9e;
+    color: var(--color-text-tertiary);
   }
 </style>
