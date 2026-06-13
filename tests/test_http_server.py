@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import urllib.error
 import urllib.request
@@ -9,9 +10,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from woof.agent_client import AgentError
 from woof.config import LibraryConfig
 from woof.gallery_session_manager import GallerySessionManager, SessionHandler
 from woof.http_server import start_http_server
+from woof.indexing_session_manager import IndexingSessionManager
 
 _DEFAULT_SERVER_PAGE = 513
 
@@ -61,8 +64,6 @@ def test_gallery_unknown_token_returns_404() -> None:
 
 
 def test_results_endpoint_returns_session_data() -> None:
-    import json
-
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "library": "testlib"}]
     mgr = GallerySessionManager()
     tok = mgr.create(
@@ -273,6 +274,47 @@ def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
         assert data["pageMap"] == [{"pageSize": 500, "pageCount": 2, "totalCount": 600}]
 
 
+def test_indexing_endpoint_returns_session() -> None:
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    server_url = start_http_server(indexing_session_manager=imgr)
+    with urllib.request.urlopen(f"{server_url}/api/indexing/{sid}") as resp:
+        data = json.load(resp)
+    assert data["status"] == "running"
+    assert data["library_name"] == "lib"
+
+
+def test_indexing_endpoint_unknown_returns_404() -> None:
+    imgr = IndexingSessionManager()
+    server_url = start_http_server(indexing_session_manager=imgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/indexing/nope")
+    assert exc_info.value.code == 404
+
+
+def test_cancel_endpoint_returns_cancelling() -> None:
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    imgr.register_task(sid, MagicMock(spec=asyncio.Task))
+    server_url = start_http_server(indexing_session_manager=imgr)
+    req = urllib.request.Request(f"{server_url}/api/indexing/{sid}/cancel", method="POST", data=b"")
+    with urllib.request.urlopen(req) as resp:
+        data = json.load(resp)
+    assert data["status"] == "cancelling"
+    assert imgr.get(sid)["status"] == "cancelling"
+
+
+def test_cancel_endpoint_returns_409_when_not_running() -> None:
+    imgr = IndexingSessionManager()
+    sid = imgr.start("lib", "")
+    imgr.complete(sid, {})
+    server_url = start_http_server(indexing_session_manager=imgr)
+    req = urllib.request.Request(f"{server_url}/api/indexing/{sid}/cancel", method="POST", data=b"")
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 409
+
+
 def test_cors_header_present_on_responses() -> None:
     """Responses to cross-origin requests must carry Access-Control-Allow-Origin: *.
 
@@ -292,3 +334,51 @@ def test_cors_header_present_on_responses() -> None:
     req = urllib.request.Request(url, headers={"Origin": "http://example.com"})
     with urllib.request.urlopen(req) as resp:
         assert resp.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_indexing_endpoint_returns_503_when_not_configured() -> None:
+    server_url = start_http_server()
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/indexing/any-id")
+    assert exc_info.value.code == 503
+
+
+def test_cancel_endpoint_returns_503_when_not_configured() -> None:
+    server_url = start_http_server()
+    req = urllib.request.Request(
+        f"{server_url}/api/indexing/any-id/cancel", method="POST", data=b""
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 503
+
+
+def test_cancel_endpoint_returns_409_for_unknown_session() -> None:
+    imgr = IndexingSessionManager()
+    server_url = start_http_server(indexing_session_manager=imgr)
+    req = urllib.request.Request(
+        f"{server_url}/api/indexing/no-such/cancel", method="POST", data=b""
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 409
+
+
+def test_page_endpoint_returns_400_for_invalid_page() -> None:
+    mgr = GallerySessionManager()
+    tok = mgr.create(LibraryConfig(name="lib", type="filesystem", path="/tmp"), None, {}, 500, 1)
+    server_url = start_http_server(session_manager=mgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/abc")
+    assert exc_info.value.code == 400
+
+
+def test_page_endpoint_returns_502_on_fetch_failure() -> None:
+    agent = MagicMock()
+    agent.call_tool = AsyncMock(side_effect=AgentError("agent down"))
+    mgr = GallerySessionManager()
+    tok = mgr.create(LibraryConfig(name="lib", type="filesystem", path="/tmp"), agent, {}, 500, 600)
+    server_url = start_http_server(session_manager=mgr)
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1")
+    assert exc_info.value.code == 502

@@ -192,58 +192,130 @@ async def test_get_fields_retries_after_error(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_index_library_calls_whitebeard(server: WoofServer) -> None:
-    mock_result: dict[str, Any] = {"photosProcessed": 5, "errors": 0}
-    mock = AsyncMock(return_value=mock_result)
-    with patch.object(server._agent, "call_tool", new=mock):
+async def test_index_library_launches_background_task(server: WoofServer) -> None:
+    """index_library returns immediately with type='indexing' and a session_id."""
+    captured: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        captured["module"] = module
+        captured["tool_name"] = tool_name
+        captured["args"] = args
+        return None  # no real task
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        result = await tool_fn(
-            ctx=None, library_name="testlib", partition="", force_extract_exif=False
-        )
-        assert result == mock_result
-        mock.assert_called_once()
-        assert mock.call_args[0][0] == "whitebeard"
-        assert mock.call_args[0][1] == "index_library"
-        args = mock.call_args[0][2]
-        assert args["generate_thumbnails"] is True
-        assert args["force_extract_exif"] is False
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    assert result["type"] == "indexing"
+    assert "session_id" in result
+    assert result["library_name"] == "testlib"
+    assert captured["module"] == "whitebeard"
+    assert captured["tool_name"] == "index_library"
+    assert captured["args"]["generate_thumbnails"] is True
+    assert captured["args"]["force_extract_exif"] is False
 
 
 @pytest.mark.asyncio
 async def test_index_library_with_partition(server: WoofServer) -> None:
-    mock = AsyncMock(return_value={})
-    with patch.object(server._agent, "call_tool", new=mock):
+    captured: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        captured["tool_name"] = tool_name
+        captured["args"] = args
+        return None
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        await tool_fn(
-            ctx=None,
-            library_name="testlib",
-            partition="2024/2024-07",
-            force_extract_exif=False,
+        result = await tool_fn(
+            library_name="testlib", partition="2024/2024-07", force_extract_exif=False
         )
-        assert mock.call_args[0][1] == "index_partition"
-        assert mock.call_args[0][2]["partition"] == "2024/2024-07"
+
+    assert captured["tool_name"] == "index_partition"
+    assert captured["args"]["partition"] == "2024/2024-07"
+    assert result["partition"] == "2024/2024-07"
 
 
 @pytest.mark.asyncio
 async def test_index_library_unknown_library(server: WoofServer) -> None:
     tool_fn = await _get_tool(server, "index_library")
     with pytest.raises(ValueError, match="not found"):
-        await tool_fn(ctx=None, library_name="unknown", partition="", force_extract_exif=False)
+        await tool_fn(library_name="unknown", partition="", force_extract_exif=False)
 
 
 @pytest.mark.asyncio
-async def test_index_library_agent_error_is_logged(
-    server: WoofServer, caplog: pytest.LogCaptureFixture
-) -> None:
-    mock = AsyncMock(side_effect=AgentError("whitebeard crashed"))
-    with patch.object(server._agent, "call_tool", new=mock):
+async def test_index_library_callbacks_update_session(server: WoofServer) -> None:
+    """on_progress / on_complete callbacks wire into the indexing session manager."""
+    callbacks: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        callbacks["on_progress"] = on_progress
+        callbacks["on_complete"] = on_complete
+        callbacks["on_error"] = on_error
+        return None
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        with caplog.at_level(logging.ERROR, logger="woof.server"):
-            result = await tool_fn(
-                ctx=None, library_name="testlib", partition="", force_extract_exif=False
-            )
-    assert "error" in result
-    assert any("whitebeard crashed" in r.message for r in caplog.records)
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    sid = result["session_id"]
+    callbacks["on_progress"](42.0, 100.0, "msg")
+    s = server._indexing_sessions.get(sid)
+    assert s["progress"] == 42.0
+
+    callbacks["on_complete"]({"photosIndexed": 7})
+    s = server._indexing_sessions.get(sid)
+    assert s["status"] == "completed"
+    assert s["summary"]["photosIndexed"] == 7
+
+
+@pytest.mark.asyncio
+async def test_index_library_registers_task(server: WoofServer) -> None:
+    """index_library registers the returned task with the session manager."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    fake_task = MagicMock(spec=asyncio.Task)
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        return fake_task
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
+        tool_fn = await _get_tool(server, "index_library")
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    sid = result["session_id"]
+    assert server._indexing_sessions._tasks[sid] is fake_task
+
+
+@pytest.mark.asyncio
+async def test_index_library_on_error_cancelled_calls_cancelled(server: WoofServer) -> None:
+    """_on_error with CancelledError transitions session to 'cancelled', not 'failed'."""
+    import asyncio
+
+    callbacks: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        callbacks["on_error"] = on_error
+        return None
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
+        tool_fn = await _get_tool(server, "index_library")
+        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+
+    sid = result["session_id"]
+    callbacks["on_error"](asyncio.CancelledError())
+    s = server._indexing_sessions.get(sid)
+    assert s["status"] == "cancelled"
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import logging
 import os
 import secrets
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -302,6 +303,54 @@ class AgentClient:
             "WOOF_AGENT_TOKEN": secrets.token_urlsafe(32),
         }
 
+    def call_tool_background(
+        self,
+        module: str,
+        tool_name: str,
+        args: dict[str, Any],
+        library: LibraryConfig,
+        *,
+        on_progress: Callable[[float, float, str], None] | None = None,
+        on_complete: Callable[[Any], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> asyncio.Task:
+        """Spawn *module.tool_name* as a background asyncio Task and return immediately.
+
+        Callbacks are invoked on the MCP event loop (same loop as the HTTP server
+        via serve_in_loop), so no locking is needed for IndexingSessionManager.
+        """
+        progress_cb = _make_progress_forwarder_fn(on_progress) if on_progress else None
+
+        async def _run() -> None:
+            try:
+                result = await self._call_ephemeral(module, tool_name, args, library, progress_cb)
+                if on_complete:
+                    on_complete(result)
+            except asyncio.CancelledError as exc:
+                # Task was cancelled (e.g. user clicked Stop). Notify caller so the
+                # session manager can transition to "cancelled", then re-raise to keep
+                # the task properly cancelled.
+                _log.debug("%s.%s background task cancelled", module, tool_name)
+                if on_error:
+                    on_error(exc)
+                raise
+            except AgentError as exc:
+                _log.error("%s.%s background task failed: %s", module, tool_name, exc)
+                if on_error:
+                    on_error(exc)
+            except Exception as exc:
+                _log.error(
+                    "%s.%s background task unexpected error: %s",
+                    module,
+                    tool_name,
+                    exc,
+                    exc_info=True,
+                )
+                if on_error:
+                    on_error(exc)
+
+        return asyncio.create_task(_run(), name=f"{module}-bg")
+
     async def _call_ephemeral(
         self,
         module: str,
@@ -357,5 +406,19 @@ def _make_progress_forwarder(ctx: Context) -> Any:
             )
         except Exception:
             _log.debug("Failed to forward progress notification", exc_info=True)
+
+    return _handler
+
+
+def _make_progress_forwarder_fn(
+    on_progress: Callable[[float, float, str], None],
+) -> Any:
+    """Return a progress_callback that invokes a plain synchronous callable."""
+
+    async def _handler(progress: float, total: float | None, message: str | None) -> None:
+        try:
+            on_progress(progress, total if total is not None else 1.0, message or "")
+        except Exception:
+            _log.debug("Failed to forward progress to callback", exc_info=True)
 
     return _handler

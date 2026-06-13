@@ -3,6 +3,7 @@
   import { App, applyHostStyleVariables, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
+  import IndexingProgress from './components/IndexingProgress.svelte';
 
   let serverUrl = $state(null);
   let token = $state(null);
@@ -17,9 +18,24 @@
   let serverPageLoading = $state(false);
   let selectedIndex = $state(null);
   let mcpApp = $state(null);
+  let mcpReady = $state(false); // true once app.connect() resolves
   let isFullscreen = $state(false);
   let canFullscreen = $state(false);
   let view = $state('grid'); // 'grid' | 'preview'
+  let mode = $state('gallery'); // 'gallery' | 'indexing'
+  let modeKnown = $state(false); // false until first ontoolresult or URL param processed
+  let indexingSessionId = $state(null);
+  let indexingLibrary = $state('');
+  let indexingPartition = $state('');
+
+  // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
+  // from ever firing. Manually notify the host whenever the displayed content changes.
+  const INLINE_HEIGHTS = { gallery: 600, indexing: 280 };
+  $effect(() => {
+    if (!modeKnown || !mcpApp || !mcpReady || isFullscreen) return;
+    const h = INLINE_HEIGHTS[mode] ?? 400;
+    mcpApp.sendSizeChanged({ height: h }).catch(() => {});
+  });
 
   function applySession(session, tok, page) {
     if (tok !== undefined) token = tok;
@@ -52,12 +68,23 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown);
-    // Path 1: URL ?token= param — works in Chrome and any direct HTTP access.
+    // Path 1: URL params — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
-    const urlToken = new URLSearchParams(location.search).get('token');
-    if (urlToken) {
+    const urlParams = new URLSearchParams(location.search);
+    const urlToken = urlParams.get('token');
+    const urlSessionId = urlParams.get('sessionId');
+    if (urlSessionId) {
       serverUrl = location.origin;
+      indexingSessionId = urlSessionId;
+      indexingLibrary = urlParams.get('library') ?? '';
+      indexingPartition = urlParams.get('partition') ?? '';
+      mode = 'indexing';
+      modeKnown = true;
+      loading = false;
+    } else if (urlToken) {
+      serverUrl = location.origin;
+      modeKnown = true;
       fetch(`${serverUrl}/api/results/${urlToken}`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
         .then(data => applySession(data, urlToken, 0))
@@ -76,6 +103,20 @@
         // Set serverUrl from the tool result before fetching — in the MCP iframe
         // context location.origin is ui://… not the Woof HTTP server URL.
         serverUrl = result.serverUrl;
+
+        if (result.type === 'indexing') {
+          indexingSessionId = result.session_id;
+          indexingLibrary = result.library_name;
+          indexingPartition = result.partition ?? '';
+          mode = 'indexing';
+          modeKnown = true;
+          loading = false;
+          return;
+        }
+
+        // Gallery mode (result.type === 'gallery' or legacy without type field)
+        mode = 'gallery';
+        modeKnown = true;
         querySummary = result.querySummary;
         try {
           const data = await fetch(`${serverUrl}/api/results/${result.token}`)
@@ -97,6 +138,7 @@
         if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       };
       app.connect().then(() => {
+        mcpReady = true;
         const ctx = app.getHostContext();
         canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
         isFullscreen = ctx?.displayMode === 'fullscreen';
@@ -143,81 +185,94 @@
 </script>
 
 <div class="app">
-  <header>
-    <h1>{querySummary || 'OuEstCharlie'}</h1>
-    <div class="header-actions">
-      {#if view === 'preview' || selectedIndex !== null}
-        <button
-          class="view-btn"
-          onclick={() => { view = view === 'grid' ? 'preview' : 'grid'; }}
-          title={view === 'grid' ? 'Show preview' : 'Back to grid'}
-        >
-          {#if view === 'grid'}
-            <!-- carousel icon -->
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M2 4h12v8H2V4zm-2 1v6h1V5H0zm15 0v6h1V5h-1zM3 5h10v6H3V5z"/>
-            </svg>
-          {:else}
-            <!-- grid icon -->
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z"/>
-            </svg>
-          {/if}
-        </button>
-      {/if}
-      {#if canFullscreen && !isFullscreen}
-        <button
-          class="view-btn"
-          onclick={toggleFullscreen}
-          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-        >
-          {#if isFullscreen}
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M5.5 1H2a1 1 0 0 0-1 1v3.5h1.5V2.5H5.5V1zM1 11.5V15a1 1 0 0 0 1 1h3.5v-1.5H2.5V11.5H1zM14 1h-3.5v1.5h2.5V5.5H15V2a1 1 0 0 0-1-1zM13.5 13.5H11V15h3.5a1 1 0 0 0 1-1v-3.5H14v2.5z"/>
-            </svg>
-          {:else}
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M1 1h4.5v1.5H2.5V5.5H1V1zM10.5 1H15v4.5h-1.5V2.5H10.5V1zM1 10.5h1.5v2.5h3v1.5H1v-4zM13.5 13H10.5v1.5H15V10.5h-1.5V13z"/>
-            </svg>
-          {/if}
-        </button>
-      {/if}
-    </div>
-  </header>
-
-  <div class="view" class:hidden={view !== 'grid'}>
-    <PhotoGrid
-      {matches}
-      loading={loading || serverPageLoading}
-      {selectedIndex}
-      {thumbnailTile}
-      serverPage={serverPage}
-      {pageMap}
-      onFetchServerPage={fetchServerPage}
-      onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
-      onPageSelect={(i) => { selectedIndex = i; }}
+  {#if !modeKnown}
+    <!-- waiting for first tool result — render nothing to avoid gallery skeleton flash -->
+  {:else if mode === 'indexing'}
+    <IndexingProgress
+      {serverUrl}
+      sessionId={indexingSessionId}
+      library={indexingLibrary}
+      partition={indexingPartition}
+      {mcpApp}
+      {mcpReady}
     />
-  </div>
+  {:else}
+    <header>
+      <h1>{querySummary || 'OuEstCharlie'}</h1>
+      <div class="header-actions">
+        {#if view === 'preview' || selectedIndex !== null}
+          <button
+            class="view-btn"
+            onclick={() => { view = view === 'grid' ? 'preview' : 'grid'; }}
+            title={view === 'grid' ? 'Show preview' : 'Back to grid'}
+          >
+            {#if view === 'grid'}
+              <!-- carousel icon -->
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M2 4h12v8H2V4zm-2 1v6h1V5H0zm15 0v6h1V5h-1zM3 5h10v6H3V5z"/>
+              </svg>
+            {:else}
+              <!-- grid icon -->
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z"/>
+              </svg>
+            {/if}
+          </button>
+        {/if}
+        {#if canFullscreen && !isFullscreen}
+          <button
+            class="view-btn"
+            onclick={toggleFullscreen}
+            title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+          >
+            {#if isFullscreen}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M5.5 1H2a1 1 0 0 0-1 1v3.5h1.5V2.5H5.5V1zM1 11.5V15a1 1 0 0 0 1 1h3.5v-1.5H2.5V11.5H1zM14 1h-3.5v1.5h2.5V5.5H15V2a1 1 0 0 0-1-1zM13.5 13.5H11V15h3.5a1 1 0 0 0 1-1v-3.5H14v2.5z"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M1 1h4.5v1.5H2.5V5.5H1V1zM10.5 1H15v4.5h-1.5V2.5H10.5V1zM1 10.5h1.5v2.5h3v1.5H1v-4zM13.5 13H10.5v1.5H15V10.5h-1.5V13z"/>
+              </svg>
+            {/if}
+          </button>
+        {/if}
+      </div>
+    </header>
 
-  {#if selectedIndex !== null}
-    <div class="view" class:hidden={view !== 'preview'}>
-      <PreviewPanel
+    <div class="view" class:hidden={view !== 'grid'}>
+      <PhotoGrid
         {matches}
+        loading={loading || serverPageLoading}
         {selectedIndex}
-        onNavigate={(i) => (selectedIndex = i)}
-        {previewUrl}
         {thumbnailTile}
+        serverPage={serverPage}
+        {pageMap}
+        onFetchServerPage={fetchServerPage}
+        onSelect={(i) => { selectedIndex = i; view = 'preview'; }}
+        onPageSelect={(i) => { selectedIndex = i; }}
       />
     </div>
-  {/if}
 
-  <div class="status">
-    {#if view === 'preview' && selectedIndex !== null}
-      {selectedIndex + 1} / {grandTotalCount}
-    {:else}
-      {status}
+    {#if selectedIndex !== null}
+      <div class="view" class:hidden={view !== 'preview'}>
+        <PreviewPanel
+          {matches}
+          {selectedIndex}
+          onNavigate={(i) => (selectedIndex = i)}
+          {previewUrl}
+          {thumbnailTile}
+        />
+      </div>
     {/if}
-  </div>
+
+    <div class="status">
+      {#if view === 'preview' && selectedIndex !== null}
+        {selectedIndex + 1} / {grandTotalCount}
+      {:else}
+        {status}
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

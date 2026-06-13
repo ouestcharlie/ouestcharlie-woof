@@ -10,6 +10,7 @@ URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
   GET /api/results/{token}                     — JSON session data (matches + metadata)
   GET /api/results/{token}/page/{page}         — load 0-indexed Wally page into session
+  GET /api/indexing/{session_id}               — JSON indexing session state
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
   GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
   GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
@@ -63,6 +64,7 @@ async def serve_in_loop(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
+    indexing_session_manager: Any | None = None,
 ) -> None:
     """Run the HTTP server on a pre-bound socket within the caller's event loop.
 
@@ -73,13 +75,19 @@ async def serve_in_loop(
     Any synchronous CPU-bound work called from request handlers must go through
     ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
     """
-    app = _build_app(session_manager, wally_connection_fn, server_url=server_url)
+    app = _build_app(
+        session_manager,
+        wally_connection_fn,
+        server_url=server_url,
+        indexing_session_manager=indexing_session_manager,
+    )
     await _serve_bare(app, sock)
 
 
 def start_http_server(
     session_manager: GallerySessionManager | None = None,
     wally_connection_fn: Any | None = None,
+    indexing_session_manager: Any | None = None,
 ) -> str:
     """Start the gallery/proxy HTTP server in a daemon thread.
 
@@ -105,7 +113,12 @@ def start_http_server(
     port: int = sock.getsockname()[1]
     server_url = f"http://localhost:{port}"
 
-    app = _build_app(mgr, wally_connection_fn, server_url=server_url)
+    app = _build_app(
+        mgr,
+        wally_connection_fn,
+        server_url=server_url,
+        indexing_session_manager=indexing_session_manager,
+    )
     ready = threading.Event()
 
     def _run() -> None:
@@ -152,6 +165,7 @@ def _build_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
+    indexing_session_manager: Any | None = None,
 ) -> Any:
     """Build and return the Starlette ASGI application."""
 
@@ -223,10 +237,30 @@ def _build_app(
             media_type=upstream.headers.get("content-type", "image/jpeg"),
         )
 
+    async def api_indexing(request: Request) -> Response:
+        if indexing_session_manager is None:
+            return JSONResponse({"error": "not configured"}, status_code=503)
+        sid = request.path_params["session_id"]
+        session = indexing_session_manager.get(sid)
+        if session is None:
+            return JSONResponse({"error": f"Session {sid!r} not found"}, status_code=404)
+        return JSONResponse(session)
+
+    async def api_indexing_cancel(request: Request) -> Response:
+        if indexing_session_manager is None:
+            return JSONResponse({"error": "not configured"}, status_code=503)
+        sid = request.path_params["session_id"]
+        ok = indexing_session_manager.cancel(sid)
+        if not ok:
+            return JSONResponse({"error": "not cancellable"}, status_code=409)
+        return JSONResponse({"status": "cancelling"})
+
     routes = [
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
+        Route("/api/indexing/{session_id}/cancel", api_indexing_cancel, methods=["POST"]),
+        Route("/api/indexing/{session_id}", api_indexing),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]

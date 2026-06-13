@@ -27,3 +27,4 @@ venv
 uvx
 est
 darktable
+asyncio
