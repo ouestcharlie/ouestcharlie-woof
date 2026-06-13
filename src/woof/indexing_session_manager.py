@@ -46,30 +46,37 @@ class IndexingSessionManager:
         }
         return session_id
 
-    def update(self, session_id: str, progress: float, total: float, message: str) -> None:
+    def update(self, session_id: str, progress: float, total: float, message: str) -> bool:
         """Update progress fields for an in-progress session."""
         session = self._sessions.get(session_id)
         if session is None:
-            return
+            _log.warning(f"Cannot update session '{session_id}' because it is not found")
+            return False
         session["progress"] = progress
         session["total"] = total
         session["message"] = message
+        return True
 
-    def complete(self, session_id: str, summary: Any) -> None:
+    def complete(self, session_id: str, summary: Any) -> bool:
         """Mark a session as completed and store its summary."""
         session = self._sessions.get(session_id)
         if session is None:
-            return
+            _log.warning(f"Cannot set complete on session '{session_id}' because it is not found")
+            return False
         session["status"] = "completed"
         session["summary"] = summary
+        _log.debug(f"Session '{session_id} is completed")
+        return True
 
-    def fail(self, session_id: str, error: str) -> None:
+    def fail(self, session_id: str, error: str) -> bool:
         """Mark a session as failed and store the error message."""
         session = self._sessions.get(session_id)
         if session is None:
-            return
+            return False
         session["status"] = "failed"
         session["error"] = error
+        _log.debug(f"Session '{session_id} has failed")
+        return True
 
     def register_task(self, session_id: str, task: asyncio.Task) -> None:
         """Associate an asyncio Task with a session so it can be cancelled."""
@@ -83,19 +90,28 @@ class IndexingSessionManager:
         """
         session = self._sessions.get(session_id)
         if session is None or session["status"] != "running":
+            _log.warning(
+                f"Cannot cancel session '{session_id}'"
+                "because it is not found or not in running state"
+            )
             return False
         session["status"] = "cancelling"
         task = self._tasks.get(session_id)
         if task:
             task.cancel()
-        return True
+            _log.debug(f"Session '{session_id} being cancelled")
+            return True
+        _log.warning(f"Session '{session_id} not cancelled since it is missing a task")
+        return False
 
-    def cancelled(self, session_id: str) -> None:
+    def cancelled(self, session_id: str) -> bool:
         """Mark a session as cancelled (called when CancelledError is received)."""
         session = self._sessions.get(session_id)
         if session is None:
-            return
+            _log.warning(f"Cannot set cancelled session '{session_id}' because it is not found")
+            return False
         session["status"] = "cancelled"
+        return True
 
     def get(self, session_id: str) -> dict[str, Any] | None:
         """Return the session dict, or None if not found."""

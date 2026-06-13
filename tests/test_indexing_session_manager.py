@@ -23,9 +23,15 @@ def test_update_writes_progress():
     assert s["message"] == "msg"
 
 
-def test_update_unknown_session_is_noop():
+def test_update_returns_true_on_success():
     mgr = IndexingSessionManager()
-    mgr.update("no-such", 1.0, 10.0, "x")  # must not raise
+    sid = mgr.start("lib", "2024")
+    assert mgr.update(sid, 1.0, 10.0, "x") is True
+
+
+def test_update_unknown_session_returns_false():
+    mgr = IndexingSessionManager()
+    assert mgr.update("no-such", 1.0, 10.0, "x") is False
 
 
 def test_complete_stores_summary():
@@ -37,13 +43,23 @@ def test_complete_stores_summary():
     assert s["summary"]["photosIndexed"] == 99
 
 
+def test_complete_returns_false_for_unknown_session():
+    mgr = IndexingSessionManager()
+    assert mgr.complete("no-such", {}) is False
+
+
 def test_fail_stores_error():
     mgr = IndexingSessionManager()
     sid = mgr.start("lib", "")
-    mgr.fail(sid, "boom")
+    assert mgr.fail(sid, "boom") is True
     s = mgr.get(sid)
     assert s["status"] == "failed"
     assert s["error"] == "boom"
+
+
+def test_fail_returns_false_for_unknown_session():
+    mgr = IndexingSessionManager()
+    assert mgr.fail("no-such", "boom") is False
 
 
 def test_get_unknown_returns_none():
@@ -102,9 +118,15 @@ def test_cancelled_transitions_to_cancelled():
     assert mgr.get(sid)["status"] == "cancelled"
 
 
-def test_cancelled_unknown_session_is_noop():
+def test_cancelled_returns_true_on_success():
     mgr = IndexingSessionManager()
-    mgr.cancelled("no-such")  # must not raise
+    sid = mgr.start("lib", "")
+    assert mgr.cancelled(sid) is True
+
+
+def test_cancelled_unknown_session_returns_false():
+    mgr = IndexingSessionManager()
+    assert mgr.cancelled("no-such") is False
 
 
 def test_eviction_cleans_up_task():

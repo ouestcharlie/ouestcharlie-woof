@@ -15,6 +15,10 @@ Exceptions that are re-raised still need a log before the `raise`.
 
 Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 
+## Python Style
+
+- **No inline imports**: all `import` statements must be at the top of the file. Never place imports inside functions or test bodies.
+
 ## Testing
 
 ### Python (Woof server)

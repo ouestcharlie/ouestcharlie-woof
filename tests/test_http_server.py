@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import urllib.error
 import urllib.request
@@ -12,6 +13,7 @@ import pytest
 from woof.config import LibraryConfig
 from woof.gallery_session_manager import GallerySessionManager, SessionHandler
 from woof.http_server import start_http_server
+from woof.indexing_session_manager import IndexingSessionManager
 
 _DEFAULT_SERVER_PAGE = 513
 
@@ -61,8 +63,6 @@ def test_gallery_unknown_token_returns_404() -> None:
 
 
 def test_results_endpoint_returns_session_data() -> None:
-    import json
-
     matches = [{"partition": "2024/2024-07", "filename": "a.jpg", "library": "testlib"}]
     mgr = GallerySessionManager()
     tok = mgr.create(
@@ -274,8 +274,6 @@ def test_page_endpoint_passes_session_object_to_fetch_fn() -> None:
 
 
 def test_indexing_endpoint_returns_session() -> None:
-    from woof.indexing_session_manager import IndexingSessionManager
-
     imgr = IndexingSessionManager()
     sid = imgr.start("lib", "")
     server_url = start_http_server(indexing_session_manager=imgr)
@@ -286,8 +284,6 @@ def test_indexing_endpoint_returns_session() -> None:
 
 
 def test_indexing_endpoint_unknown_returns_404() -> None:
-    from woof.indexing_session_manager import IndexingSessionManager
-
     imgr = IndexingSessionManager()
     server_url = start_http_server(indexing_session_manager=imgr)
     with pytest.raises(urllib.error.HTTPError) as exc_info:
@@ -296,12 +292,9 @@ def test_indexing_endpoint_unknown_returns_404() -> None:
 
 
 def test_cancel_endpoint_returns_cancelling() -> None:
-    import urllib.request
-
-    from woof.indexing_session_manager import IndexingSessionManager
-
     imgr = IndexingSessionManager()
     sid = imgr.start("lib", "")
+    imgr.register_task(sid, MagicMock(spec=asyncio.Task))
     server_url = start_http_server(indexing_session_manager=imgr)
     req = urllib.request.Request(f"{server_url}/api/indexing/{sid}/cancel", method="POST", data=b"")
     with urllib.request.urlopen(req) as resp:
@@ -311,10 +304,6 @@ def test_cancel_endpoint_returns_cancelling() -> None:
 
 
 def test_cancel_endpoint_returns_409_when_not_running() -> None:
-    import urllib.request
-
-    from woof.indexing_session_manager import IndexingSessionManager
-
     imgr = IndexingSessionManager()
     sid = imgr.start("lib", "")
     imgr.complete(sid, {})
