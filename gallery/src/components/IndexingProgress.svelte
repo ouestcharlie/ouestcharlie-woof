@@ -126,6 +126,7 @@
     if (!mcpApp || !rootEl) return;
     // Use rAF to let Svelte flush DOM updates before measuring.
     requestAnimationFrame(() => {
+      if (!rootEl) return;
       const h = rootEl.scrollHeight;
       if (h > 0) mcpApp.sendSizeChanged({ height: h }).catch(() => {});
     });
