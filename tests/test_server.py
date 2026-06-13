@@ -136,6 +136,25 @@ async def test_list_search_fields_wally_error_returns_empty_fields(
     assert result == {"name": "testlib", "fields": []}
 
 
+@pytest.mark.asyncio
+async def test_list_search_fields_propagates_full_text_search(server: WoofServer) -> None:
+    """full_text_search block from Wally must be passed through to the caller."""
+    fts_block = {
+        "description": "Search text fields with a single query string.",
+        "fields": [{"name": "description", "column": "description", "label": "Description"}],
+    }
+    mock = AsyncMock(
+        return_value={
+            "fields": [{"name": "rating", "type": "INT_RANGE"}],
+            "full_text_search": fts_block,
+        }
+    )
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "list_search_fields")
+        result = await tool_fn()
+    assert result["full_text_search"] == fts_block
+
+
 # ---------------------------------------------------------------------------
 # _get_fields (lazy cache)
 # ---------------------------------------------------------------------------
@@ -397,6 +416,28 @@ async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None
         args_passed = mock.call_args[0][2]
         assert "filters" not in args_passed
         assert args_passed["root"] == ""
+
+
+@pytest.mark.asyncio
+async def test_search_photos_forwards_full_text_filter(server: WoofServer) -> None:
+    """full_text_filter must be forwarded to Wally verbatim."""
+    mock = AsyncMock(return_value={"matches": []})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib", full_text_filter=fts)
+        args_passed = mock.call_args[0][2]
+        assert args_passed["full_text_filter"] == fts
+
+
+@pytest.mark.asyncio
+async def test_search_photos_omits_full_text_filter_when_none(server: WoofServer) -> None:
+    mock = AsyncMock(return_value={"matches": []})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib")
+        args_passed = mock.call_args[0][2]
+        assert "full_text_filter" not in args_passed
 
 
 @pytest.mark.asyncio

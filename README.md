@@ -133,6 +133,8 @@ Once indexing is complete, just ask:
 
 > *"In Woof, show me pictures taken near Paris"*
 
+> *"Search Woof for photos with 'Tour Eiffel' in the description"*
+
 > *"How many photos do I have in Woof?"*
 
 The gallery panel will appear inline in your conversation with matching results.
@@ -161,13 +163,14 @@ Woof is an **early preview** targeting a focused V1 scope:
 | Local filesystem indexing (macOS, Linux, Windows) | Working |
 | Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
 | JPEG, PNG, TIFF, HEIC, RAW support | Working (HEIC and RAW dependant on the build options) |
-| Date, GPS bounding box, camera make and model, dimensions search | Working |
+| Date, GPS bounding box, camera make and model, dimensions, tags search | Working |
+| Full-text search on photo description | Working |
 | Gallery view (Claude Desktop) | Working |
 | Video support | Planned for V2 |
 | Albums and smart filters | Planned for V2 |
 | Share pictures with host (Claude Desktop, ChatGPT, Goose...) | Planned for V2 |
 | Enrichment agents (faces, scene recognition) | Planned for V2 |
-| Change detection / automatic re-indexing | Planned for V2 |
+| Change detection / automatic re-indexing | Partial (added and removed pictures) |
 | Mobile companion app | Planned for V3 |
 | Native cloud libraries (S3, OneDrive, GCS…) | Planned for V3 |
 
