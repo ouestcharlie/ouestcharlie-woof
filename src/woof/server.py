@@ -419,6 +419,9 @@ class WoofServer:
                     stats[name] = None
                 else:
                     stats[name] = {"min": min(values), "max": max(values)}
+        scores = [m["score"] for m in matches if m.get("score") is not None]
+        if scores:
+            stats["score"] = {"min": min(scores), "max": max(scores)}
         return stats
 
     async def _get_fields_raw(self, library: LibraryConfig) -> dict[str, Any]:

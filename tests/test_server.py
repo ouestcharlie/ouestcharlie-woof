@@ -384,6 +384,20 @@ def test_search_stats_no_dates_gives_none() -> None:
     assert WoofServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
 
 
+def test_search_stats_includes_score_when_present() -> None:
+    matches = _make_matches(partitions=["p", "p", "p"])
+    for i, score in enumerate([0.5, 3.2, 8.7]):
+        matches[i]["score"] = score
+    stats = WoofServer._search_stats(matches, [])
+    assert stats["score"] == {"min": 0.5, "max": 8.7}
+
+
+def test_search_stats_no_score_key_when_absent() -> None:
+    matches = _make_matches(partitions=["p", "p"])
+    stats = WoofServer._search_stats(matches, [])
+    assert "score" not in stats
+
+
 # ---------------------------------------------------------------------------
 # search_photos
 # ---------------------------------------------------------------------------
