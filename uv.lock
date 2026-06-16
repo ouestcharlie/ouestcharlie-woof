@@ -888,7 +888,7 @@ dependencies = [
 requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "duckdb", specifier = ">=1.0" },
-    { name = "lancedb", specifier = ">=0.20" },
+    { name = "lancedb", specifier = ">=0.33" },
     { name = "mcp", specifier = ">=1.27" },
     { name = "ouestcharlie-imageproc", specifier = "~=2.2" },
     { name = "pyarrow", specifier = ">=18" },

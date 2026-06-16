@@ -136,6 +136,25 @@ async def test_list_search_fields_wally_error_returns_empty_fields(
     assert result == {"name": "testlib", "fields": []}
 
 
+@pytest.mark.asyncio
+async def test_list_search_fields_propagates_full_text_search(server: WoofServer) -> None:
+    """full_text_search block from Wally must be passed through to the caller."""
+    fts_block = {
+        "description": "Search text fields with a single query string.",
+        "fields": [{"name": "description", "column": "description", "label": "Description"}],
+    }
+    mock = AsyncMock(
+        return_value={
+            "fields": [{"name": "rating", "type": "INT_RANGE"}],
+            "full_text_search": fts_block,
+        }
+    )
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "list_search_fields")
+        result = await tool_fn()
+    assert result["full_text_search"] == fts_block
+
+
 # ---------------------------------------------------------------------------
 # _get_fields (lazy cache)
 # ---------------------------------------------------------------------------
@@ -365,6 +384,20 @@ def test_search_stats_no_dates_gives_none() -> None:
     assert WoofServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
 
 
+def test_search_stats_includes_score_when_present() -> None:
+    matches = _make_matches(partitions=["p", "p", "p"])
+    for i, score in enumerate([0.5, 3.2, 8.7]):
+        matches[i]["score"] = score
+    stats = WoofServer._search_stats(matches, [])
+    assert stats["score"] == {"min": 0.5, "max": 8.7}
+
+
+def test_search_stats_no_score_key_when_absent() -> None:
+    matches = _make_matches(partitions=["p", "p"])
+    stats = WoofServer._search_stats(matches, [])
+    assert "score" not in stats
+
+
 # ---------------------------------------------------------------------------
 # search_photos
 # ---------------------------------------------------------------------------
@@ -397,6 +430,28 @@ async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None
         args_passed = mock.call_args[0][2]
         assert "filters" not in args_passed
         assert args_passed["root"] == ""
+
+
+@pytest.mark.asyncio
+async def test_search_photos_forwards_full_text_filter(server: WoofServer) -> None:
+    """full_text_filter must be forwarded to Wally verbatim."""
+    mock = AsyncMock(return_value={"matches": []})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib", full_text_filter=fts)
+        args_passed = mock.call_args[0][2]
+        assert args_passed["full_text_filter"] == fts
+
+
+@pytest.mark.asyncio
+async def test_search_photos_omits_full_text_filter_when_none(server: WoofServer) -> None:
+    mock = AsyncMock(return_value={"matches": []})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib")
+        args_passed = mock.call_args[0][2]
+        assert "full_text_filter" not in args_passed
 
 
 @pytest.mark.asyncio

@@ -46,7 +46,7 @@ class WoofServer:
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
         self._indexing_sessions = IndexingSessionManager()
-        self._library_fields: dict[str, list[Any]] = {}  # library name → field defs, loaded lazily
+        self._library_fields: dict[str, dict[str, Any]] = {}  # library name → full Wally response
 
         # Bind port before MCP starts so server_url is known synchronously.
         _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -138,7 +138,8 @@ class WoofServer:
                 library = self._require_library(library_name)
             else:
                 library = self.config.libraries[0]
-            return {"name": library.name, "fields": await self._get_fields(library)}
+            raw = await self._get_fields_raw(library)
+            return {"name": library.name, **raw}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def get_partition_summaries() -> list[Any]:
@@ -243,6 +244,7 @@ class WoofServer:
             ctx: Context,
             library_name: str,
             filters: dict | None = None,
+            full_text_filter: dict | None = None,
             root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
@@ -271,6 +273,11 @@ class WoofServer:
                         # 4K landscape photos
                         {"width": {"min": 3840}}
 
+                full_text_filter: Full-text search over one or more text fields.
+                    Shape: ``{"query": "Canyon", "columns": ["description"]}``.
+                    Results are relevance-ranked; each match includes ``score``.
+                    See ``list_search_fields`` → ``full_text_search.fields`` for
+                    valid column names. Compatible with ``filters``.
                 root: Sub-path to search within the library (default "" = entire
                     library). E.g. "2024/2024-07" to restrict to one partition.
             """
@@ -285,6 +292,8 @@ class WoofServer:
             }
             if filters is not None:
                 args["filters"] = filters
+            if full_text_filter is not None:
+                args["full_text_filter"] = full_text_filter
 
             fields = await self._get_fields(library)
 
@@ -410,26 +419,33 @@ class WoofServer:
                     stats[name] = None
                 else:
                     stats[name] = {"min": min(values), "max": max(values)}
+        scores = [m["score"] for m in matches if m.get("score") is not None]
+        if scores:
+            stats["score"] = {"min": min(scores), "max": max(scores)}
         return stats
 
-    async def _get_fields(self, library: LibraryConfig) -> list[Any]:
-        """Return field definitions for a library, fetching from Wally on first call.
+    async def _get_fields_raw(self, library: LibraryConfig) -> dict[str, Any]:
+        """Return the full Wally list_search_fields response, fetching on first call.
 
         The result is cached per library name for the lifetime of the server.
-        Returns an empty list if the agent call fails.
+        Returns ``{"fields": []}`` if the agent call fails.
         """
         if library.name not in self._library_fields:
             try:
                 result = await self._agent.call_tool("wally", "list_search_fields", {}, library)
-                self._library_fields[library.name] = result.get("fields", [])  # type: ignore[union-attr]
+                self._library_fields[library.name] = result or {}  # type: ignore[assignment]
             except AgentError as exc:
                 _log.warning(
                     "list_search_fields failed for %r, stats will be empty: %s",
                     library.name,
                     exc,
                 )
-                return []
+                return {"fields": []}
         return self._library_fields[library.name]
+
+    async def _get_fields(self, library: LibraryConfig) -> list[Any]:
+        """Return only the SQL field list (for _search_stats)."""
+        return (await self._get_fields_raw(library)).get("fields", [])
 
     def _require_library(self, name: str) -> LibraryConfig:
         library = self.config.get_library(name)
