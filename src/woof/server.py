@@ -245,7 +245,6 @@ class WoofServer:
             library_name: str,
             filters: dict | None = None,
             full_text_filter: dict | None = None,
-            root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
@@ -273,19 +272,19 @@ class WoofServer:
                         # 4K landscape photos
                         {"width": {"min": 3840}}
 
+                        # All photos under the 2024/ directory tree
+                        {"directory": {"value": "2024", "mode": "startswith"}}
+
                 full_text_filter: Full-text search over one or more text fields.
                     Shape: ``{"query": "Canyon", "columns": ["description"]}``.
                     Results are relevance-ranked; each match includes ``score``.
                     See ``list_search_fields`` → ``full_text_search.fields`` for
                     valid column names. Compatible with ``filters``.
-                root: Sub-path to search within the library (default "" = entire
-                    library). E.g. "2024/2024-07" to restrict to one partition.
             """
             library = self._require_library(library_name)
             # Woof's MCP search always starts a 0, further pages managed by the Gallery
             page = 0
             args: dict[str, Any] = {
-                "root": root,
                 "sort_by": sort_by,
                 "sort_order": sort_order,
                 "page": page,

@@ -429,7 +429,7 @@ async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None
         await tool_fn(ctx=None, library_name="testlib")
         args_passed = mock.call_args[0][2]
         assert "filters" not in args_passed
-        assert args_passed["root"] == ""
+        assert "partitions" not in args_passed
 
 
 @pytest.mark.asyncio
