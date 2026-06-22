@@ -258,22 +258,23 @@ class WoofServer:
 
             Args:
                 library_name: Name of the library to search.
-                filters: Optional dict mapping field names to filter values.
-                    Call ``list_search_fields`` to get valid fields and formats.
-                    Examples::
+                filters: Filter expression forwarded to Wally. Three forms:
 
-                        # Photos taken in 2024 rated 4–5 stars
+                    Flat dict (implicit AND)::
+
                         {"dateTaken": {"min": "2024", "max": "2024"},
                          "rating": {"min": 4, "max": 5}}
 
-                        # Tagged "vacation" AND "portrait", shot on Nikon
-                        {"tags": ["vacation", "portrait"], "make": "nikon"}
+                    ``{"all": [...]}`` — explicit AND group::
 
-                        # 4K landscape photos
-                        {"width": {"min": 3840}}
+                        {"all": [{"make": "nikon"}, {"width": {"min": 3840}}]}
 
-                        # All photos under the 2024/ directory tree
-                        {"directory": {"value": "2024", "mode": "startswith"}}
+                    ``{"any": [...]}`` — OR group; groups can be nested::
+
+                        {"all": [
+                            {"dateTaken": {"min": "2024", "max": "2024"}},
+                            {"any": [{"make": "nikon"}, {"make": "canon"}]}
+                        ]}
 
                 full_text_filter: Full-text search over one or more text fields.
                     Shape: ``{"query": "Canyon", "columns": ["description"]}``.
