@@ -245,7 +245,6 @@ class WoofServer:
             library_name: str,
             filters: dict | None = None,
             full_text_filter: dict | None = None,
-            root: str = "",
             sort_by: str = "date_taken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
@@ -259,33 +258,33 @@ class WoofServer:
 
             Args:
                 library_name: Name of the library to search.
-                filters: Optional dict mapping field names to filter values.
-                    Call ``list_search_fields`` to get valid fields and formats.
-                    Examples::
+                filters: Filter expression forwarded to Wally. Three forms:
 
-                        # Photos taken in 2024 rated 4–5 stars
-                        {"dateTaken": {"min": "2024", "max": "2024"},
-                         "rating": {"min": 4, "max": 5}}
+                    Single field::
 
-                        # Tagged "vacation" AND "portrait", shot on Nikon
-                        {"tags": ["vacation", "portrait"], "make": "nikon"}
+                        {"make": "nikon"}
 
-                        # 4K landscape photos
-                        {"width": {"min": 3840}}
+                    ``{"all": [...]}`` — AND group (all must match)::
+
+                        {"all": [{"make": "nikon"}, {"width": {"min": 3840}}]}
+
+                    ``{"any": [...]}`` — OR group; groups can be nested::
+
+                        {"all": [
+                            {"dateTaken": {"min": "2024", "max": "2024"}},
+                            {"any": [{"make": "nikon"}, {"make": "canon"}]}
+                        ]}
 
                 full_text_filter: Full-text search over one or more text fields.
                     Shape: ``{"query": "Canyon", "columns": ["description"]}``.
                     Results are relevance-ranked; each match includes ``score``.
                     See ``list_search_fields`` → ``full_text_search.fields`` for
                     valid column names. Compatible with ``filters``.
-                root: Sub-path to search within the library (default "" = entire
-                    library). E.g. "2024/2024-07" to restrict to one partition.
             """
             library = self._require_library(library_name)
             # Woof's MCP search always starts a 0, further pages managed by the Gallery
             page = 0
             args: dict[str, Any] = {
-                "root": root,
                 "sort_by": sort_by,
                 "sort_order": sort_order,
                 "page": page,
