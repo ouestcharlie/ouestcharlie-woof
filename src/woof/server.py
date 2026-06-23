@@ -260,12 +260,11 @@ class WoofServer:
                 library_name: Name of the library to search.
                 filters: Filter expression forwarded to Wally. Three forms:
 
-                    Flat dict (implicit AND)::
+                    Single field::
 
-                        {"dateTaken": {"min": "2024", "max": "2024"},
-                         "rating": {"min": 4, "max": 5}}
+                        {"make": "nikon"}
 
-                    ``{"all": [...]}`` — explicit AND group::
+                    ``{"all": [...]}`` — AND group (all must match)::
 
                         {"all": [{"make": "nikon"}, {"width": {"min": 3840}}]}
 
