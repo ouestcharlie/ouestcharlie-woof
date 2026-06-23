@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   const THUMBNAIL_TILE_SIZE = 256; // px per tile side in the AVIF grid
 
@@ -22,25 +22,11 @@
   let previewLoaded = $state(false);
   $effect(() => { jpegUrl; previewLoaded = false; });
 
-  // Bind .viewer (the flex child between .panel and .preview-container).
-  // .viewer has flex:1 + min-height:0 + overflow:hidden, so the browser sets its size
-  // purely from the flex algorithm — it cannot be inflated by its children.
-  // This avoids feedback loops while correctly tracking fullscreen ↔ inline transitions.
-  let viewerEl = $state(null);
-  let viewerW = $state(0);
-  let viewerH = $state(0);
-
-  let containerSize = $derived(
-    (() => {
-      const maxW = viewerW || window.innerWidth;
-      const maxH = Math.max(100, viewerH || window.innerHeight);
-      const w = match?.width, h = match?.height;
-      if (!w || !h) return { width: Math.min(maxH, maxW), height: Math.min(maxH, maxW) };
-      let height = maxH;
-      let width = height * (w / h);
-      if (width > maxW) { width = maxW; height = width / (w / h); }
-      return { width, height };
-    })()
+  // aspect-ratio driven by the photo's natural dimensions.
+  // CSS max-width/max-height on .preview-container handle clamping to the viewer bounds,
+  // so no JS measurement is needed and the layout reflows automatically on any size change.
+  let aspectRatio = $derived(
+    match?.width && match?.height ? match.width / match.height : 1
   );
 
   let hasPrev = $derived(selectedIndex > 0);
@@ -74,34 +60,13 @@
     return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * THUMBNAIL_TILE_SIZE}px;`;
   }
 
-  onMount(async () => {
-    window.addEventListener('keydown', onKeydown);
-    // bind:clientHeight fires via ResizeObserver, which is async (next animation frame).
-    // If viewerH is still 0 after a tick, measure directly so containerSize is correct
-    // from the first render rather than falling back to window.innerHeight.
-    await tick();
-    requestAnimationFrame(() => {
-      if (viewerEl && viewerH === 0) {
-        const rect = viewerEl.getBoundingClientRect();
-        viewerH = rect.height;
-        viewerW = rect.width;
-      }
-    });
-  });
-  onDestroy(() => window.removeEventListener('keydown', onKeydown));
+  onMount(() => { window.addEventListener('keydown', onKeydown); });
+  onDestroy(() => { window.removeEventListener('keydown', onKeydown); });
 </script>
 
 <div class="panel">
-  <div class="viewer" bind:this={viewerEl} bind:clientWidth={viewerW} bind:clientHeight={viewerH}>
-    <!--
-      Container pre-sized to the photo's actual aspect ratio.
-      Height capped at 90vh; width follows aspect ratio, capped at 100vw.
-      Nav buttons are overlaid on the image edges.
-    -->
-    <div
-      class="preview-container"
-      style="width: {containerSize.width}px; height: {containerSize.height}px;"
-    >
+  <div class="viewer">
+    <div class="preview-container" style="aspect-ratio: {aspectRatio};">
       <!--
         Image is always in the DOM (when jpegUrl is available) so the browser
         fetches it and fires onload reliably — display:none suppresses onload
@@ -173,6 +138,11 @@
     border-radius: var(--border-radius-xs, 4px);
     flex-shrink: 0;
     background: var(--color-background-secondary);
+    max-width: 100%;
+    max-height: 100%;
+    /* width/height resolved by CSS from aspect-ratio + max constraints */
+    width: 100%;
+    height: 100%;
   }
 
   .thumb-placeholder {
