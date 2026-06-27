@@ -142,7 +142,7 @@
     max-height: 100%;
     /* width/height resolved by CSS from aspect-ratio + max constraints */
     width: 100%;
-    height: 100%;
+    /*height: 100%;*/
   }
 
   .thumb-placeholder {
@@ -204,6 +204,7 @@
   }
 
   .meta {
+    flex-shrink: 0;
     text-align: center;
     font-size: 0.85rem;
     color: var(--color-text-secondary);
