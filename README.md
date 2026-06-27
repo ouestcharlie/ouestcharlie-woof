@@ -46,6 +46,10 @@ Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.
 
 Python packages of OuEstCharlie Woof are managed by [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and the command `uvx`. uv might be already available on your system.
 
+System prerequisites (all install options):
+- **macOS**: `brew install inih brotli gettext` (required by pyexiv2 at runtime)
+- **Linux/Windows**: no extra steps
+
 
 #### Connect to Claude Desktop
 
