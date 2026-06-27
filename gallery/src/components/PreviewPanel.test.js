@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import PreviewPanel from './PreviewPanel.svelte';
 
@@ -23,25 +23,23 @@ const previewUrl = (m) =>
     ? `http://127.0.0.1:8080/previews/test/${m.partition}/${m.contentHash}.jpg`
     : null;
 
-const thumbnailTile = () => null;
-
 function makeProps(matches, selectedIndex = 0) {
   return {
     matches,
     selectedIndex,
     onNavigate: vi.fn(),
     previewUrl,
-    thumbnailTile,
   };
 }
 
 describe('PreviewPanel — loading placeholder / swap', () => {
-  it('shows loading placeholder and the img before onload fires', () => {
-    const { getByText, getByAltText } = render(PreviewPanel, makeProps([MATCH]));
+  it('shows incoming img (not yet loaded) before onload fires', () => {
+    const { getByAltText } = render(PreviewPanel, makeProps([MATCH]));
 
-    // Placeholder visible, img already in DOM (to allow the browser to fetch).
-    expect(getByText('Loading…')).toBeTruthy();
-    expect(getByAltText('IMG_001.jpg')).toBeTruthy();
+    // Img is in the DOM so the browser can fetch it, but not yet marked loaded.
+    const img = getByAltText('IMG_001.jpg');
+    expect(img.classList.contains('incoming')).toBe(true);
+    expect(img.classList.contains('loaded')).toBe(false);
   });
 
   it('removes the placeholder once onload fires', async () => {
@@ -67,7 +65,7 @@ describe('PreviewPanel — loading placeholder / swap', () => {
   });
 
   it('resets to loading when navigating to a different photo', async () => {
-    const { getByAltText, getByText, rerender } = render(
+    const { getByAltText, rerender } = render(
       PreviewPanel,
       makeProps([MATCH, MATCH2]),
     );
@@ -76,7 +74,10 @@ describe('PreviewPanel — loading placeholder / swap', () => {
 
     await rerender(makeProps([MATCH, MATCH2], 1));
 
-    expect(getByText('Loading…')).toBeTruthy();
+    // New image is in the DOM but not yet marked loaded.
+    const img = getByAltText('IMG_002.jpg');
+    expect(img.classList.contains('incoming')).toBe(true);
+    expect(img.classList.contains('loaded')).toBe(false);
   });
 });
 
@@ -139,5 +140,71 @@ describe('PreviewPanel — metadata', () => {
   it('omits camera line when make/model absent', () => {
     const { queryByText } = render(PreviewPanel, makeProps([MATCH]));
     expect(queryByText(/Canon/)).toBeNull();
+  });
+});
+
+describe('PreviewPanel — crossfade / shownUrl layer', () => {
+  it('adds loaded class to incoming img after onload', async () => {
+    const { getByAltText } = render(PreviewPanel, makeProps([MATCH]));
+    const img = getByAltText('IMG_001.jpg');
+    expect(img.classList.contains('loaded')).toBe(false);
+    await fireEvent.load(img);
+    expect(img.classList.contains('loaded')).toBe(true);
+  });
+
+  it('keeps previous image visible as background while next image loads', async () => {
+    const { getByAltText, container, rerender } = render(PreviewPanel, makeProps([MATCH, MATCH2]));
+    await fireEvent.load(getByAltText('IMG_001.jpg'));
+
+    await rerender(makeProps([MATCH, MATCH2], 1));
+
+    // shownUrl layer shows the previous image (aria-hidden), incoming shows the new one
+    const hidden = container.querySelector('img[aria-hidden="true"]');
+    expect(hidden).not.toBeNull();
+    expect(hidden.src).toContain('abc123');
+    expect(getByAltText('IMG_002.jpg')).toBeTruthy();
+  });
+
+  it('updates background layer to the new image once it finishes loading', async () => {
+    const { getByAltText, container, rerender } = render(PreviewPanel, makeProps([MATCH, MATCH2]));
+    await fireEvent.load(getByAltText('IMG_001.jpg'));
+    await rerender(makeProps([MATCH, MATCH2], 1));
+    await fireEvent.load(getByAltText('IMG_002.jpg'));
+
+    // shownUrl is now xyz789 — background layer updated to the newly loaded image
+    const hidden = container.querySelector('img[aria-hidden="true"]');
+    expect(hidden).not.toBeNull();
+    expect(hidden.src).toContain('xyz789');
+  });
+});
+
+describe('PreviewPanel — spinner delay', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('does not show spinner immediately on first load', () => {
+    const { container } = render(PreviewPanel, makeProps([MATCH]));
+    expect(container.querySelector('.spinner')).toBeNull();
+  });
+
+  it('shows spinner after 300ms if image has not loaded', async () => {
+    const { container } = render(PreviewPanel, makeProps([MATCH]));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(container.querySelector('.spinner')).not.toBeNull();
+  });
+
+  it('does not show spinner if image loads before 300ms', async () => {
+    const { container, getByAltText } = render(PreviewPanel, makeProps([MATCH]));
+    await fireEvent.load(getByAltText('IMG_001.jpg'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(container.querySelector('.spinner')).toBeNull();
+  });
+
+  it('hides spinner once image loads even after 300ms', async () => {
+    const { container, getByAltText } = render(PreviewPanel, makeProps([MATCH]));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(container.querySelector('.spinner')).not.toBeNull();
+    await fireEvent.load(getByAltText('IMG_001.jpg'));
+    expect(container.querySelector('.spinner')).toBeNull();
   });
 });

@@ -260,7 +260,6 @@
           {selectedIndex}
           onNavigate={(i) => (selectedIndex = i)}
           {previewUrl}
-          {thumbnailTile}
         />
       </div>
     {/if}
