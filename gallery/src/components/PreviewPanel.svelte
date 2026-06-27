@@ -18,7 +18,16 @@
   // jpegUrl becomes shownUrl only once the img fires onload, avoiding flicker.
   let shownUrl = $state(null);
   let previewLoaded = $state(false);
-  $effect(() => { jpegUrl; previewLoaded = false; });
+  // showSpinner is delayed so it only appears if loading takes more than ~300ms.
+  let showSpinner = $state(false);
+  let spinnerTimer = null;
+  $effect(() => {
+    jpegUrl;
+    previewLoaded = false;
+    showSpinner = false;
+    clearTimeout(spinnerTimer);
+    spinnerTimer = setTimeout(() => { if (!previewLoaded) showSpinner = true; }, 300);
+  });
 
   // aspect-ratio driven by the photo's natural dimensions.
   // CSS max-width/max-height on .preview-container handle clamping to the viewer bounds,
@@ -73,14 +82,13 @@
           src={jpegUrl}
           class="preview-img incoming"
           class:loaded={previewLoaded}
-          onload={() => { previewLoaded = true; shownUrl = jpegUrl; }}
+          onload={() => { previewLoaded = true; showSpinner = false; shownUrl = jpegUrl; }}
           alt={match.filename}
         />
       {/if}
 
-      <!-- Spinner shown on first load only (no previous image to display). -->
-      {#if !previewLoaded && !shownUrl}
-        <div class="loading-overlay">
+      {#if showSpinner}
+        <div class="loading-overlay" class:dim={!!shownUrl}>
           <div class="spinner"></div>
         </div>
       {/if}
@@ -159,6 +167,11 @@
     align-items: center;
     justify-content: center;
     background: var(--color-background-secondary);
+  }
+
+  /* When a previous image is already shown, use a translucent overlay instead */
+  .loading-overlay.dim {
+    background: rgba(0, 0, 0, 0.5);
   }
 
   .spinner {
