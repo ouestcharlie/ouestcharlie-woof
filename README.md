@@ -2,7 +2,11 @@
 
 # Woof — See your Photo Gallery in your AI assistant
 
-> **Early preview release.** Woof is functional but rough around the edges. Expect missing features, occasional errors, and breaking changes between releases. See the [status section](#status) below.
+[![Status: Early Preview](https://img.shields.io/badge/status-early%20preview-orange)](#status)
+
+[![MCP Server](https://badge.mcpx.dev?type=server)](https://modelcontextprotocol.io/) [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+
+
 
 Woof is the **MCP App** to **"Où est Charlie ?"**, a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude, Goose...).
 
@@ -167,9 +171,10 @@ Woof is an **early preview** targeting a focused V1 scope:
 | Local filesystem indexing (macOS, Linux, Windows) | Working |
 | Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
 | JPEG, PNG, TIFF, HEIC, RAW support | Working (HEIC and RAW dependant on the build options) |
-| Date, GPS bounding box, camera make and model, dimensions, tags search | Working |
+| Date, dimensions, GPS bounding box, camera make and model, camera settings, tags search | Working |
 | Full-text search on photo description | Working |
-| Gallery view (Claude Desktop) | Working |
+| Sort ascending or descending on any field | Working |
+| Gallery view (Claude Desktop or Goose) as grid or preview  | Working |
 | Video support | Planned for V2 |
 | Albums and smart filters | Planned for V2 |
 | Share pictures with host (Claude Desktop, ChatGPT, Goose...) | Planned for V2 |
@@ -210,4 +215,4 @@ For developer and architecture documentation, see [README_DEV.md](README_DEV.md)
 
 ## License
 
-MIT license
+[MIT license](LICENCE)
