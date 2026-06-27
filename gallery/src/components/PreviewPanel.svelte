@@ -1,21 +1,17 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
 
-  const THUMBNAIL_TILE_SIZE = 256; // px per tile side in the AVIF grid
-
   /**
    * @type {{
    *   matches: any[],
    *   selectedIndex: number,
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
-   *   thumbnailTile: (match: any) => {url: string, col: number, row: number, cols: number} | null,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, thumbnailTile } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl } = $props();
 
   let match = $derived(matches[selectedIndex]);
-  let thumbTile = $derived(thumbnailTile(match));
   let jpegUrl = $derived(previewUrl(match));
 
   // Reset loaded state when the photo URL changes.
@@ -52,14 +48,6 @@
     });
   }
 
-  // CSS background-position for the thumbnail tile used as blur placeholder.
-  function thumbBgStyle(tile) {
-    if (!tile) return '';
-    const { url, col, row, cols } = tile;
-    const pctX = cols > 1 ? (col / (cols - 1)) * 100 : 0;
-    return `background-image: url(${url}); background-size: ${cols * 100}%; background-position: ${pctX}% ${row * THUMBNAIL_TILE_SIZE}px;`;
-  }
-
   onMount(() => { window.addEventListener('keydown', onKeydown); });
   onDestroy(() => { window.removeEventListener('keydown', onKeydown); });
 </script>
@@ -82,17 +70,13 @@
       {/if}
 
       <!--
-        Placeholder rendered on top (later in DOM = higher stacking order).
-        Removed once the image has loaded, revealing the img underneath.
+        Spinner overlay shown until the image finishes loading.
+        Rendered on top (later in DOM = higher stacking order).
       -->
       {#if !previewLoaded}
-        {#if thumbTile}
-          <div class="thumb-placeholder" style={thumbBgStyle(thumbTile)}></div>
-        {:else if jpegUrl}
-          <div class="placeholder"><span>Loading…</span></div>
-        {:else}
-          <div class="placeholder"><span>{match.filename}</span></div>
-        {/if}
+        <div class="loading-overlay">
+          <div class="spinner"></div>
+        </div>
       {/if}
 
       <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
@@ -145,14 +129,6 @@
     /*height: 100%;*/
   }
 
-  .thumb-placeholder {
-    position: absolute;
-    inset: 0;
-    background-repeat: no-repeat;
-    filter: blur(8px);
-    transform: scale(1.05); /* hide blur edge artifacts */
-  }
-
   .preview-img {
     position: absolute;
     inset: 0;
@@ -161,15 +137,26 @@
     object-fit: contain;
   }
 
-  .placeholder {
+  .loading-overlay {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-text-tertiary);
-    font-size: 0.8rem;
     background: var(--color-background-secondary);
+  }
+
+  .spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 2px solid var(--color-border-primary);
+    border-top-color: var(--color-text-secondary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   /* Nav arrows overlay the image — keep semi-transparent black regardless of theme */
