@@ -14,7 +14,9 @@
   let match = $derived(matches[selectedIndex]);
   let jpegUrl = $derived(previewUrl(match));
 
-  // Reset loaded state when the photo URL changes.
+  // shownUrl: the last fully-loaded URL, kept visible while the next image loads.
+  // jpegUrl becomes shownUrl only once the img fires onload, avoiding flicker.
+  let shownUrl = $state(null);
   let previewLoaded = $state(false);
   $effect(() => { jpegUrl; previewLoaded = false; });
 
@@ -55,25 +57,29 @@
 <div class="panel">
   <div class="viewer">
     <div class="preview-container" style="aspect-ratio: {aspectRatio};">
+      <!-- Previous image stays visible underneath while the next one loads. -->
+      {#if shownUrl}
+        <img src={shownUrl} class="preview-img" alt="" aria-hidden="true" />
+      {/if}
+
       <!--
-        Image is always in the DOM (when jpegUrl is available) so the browser
+        Incoming image. Always in DOM (when jpegUrl is available) so the browser
         fetches it and fires onload reliably — display:none suppresses onload
         in some sandboxed environments (e.g. Claude Desktop iframe).
+        Fades in once loaded, then becomes the new shownUrl.
       -->
       {#if jpegUrl}
         <img
           src={jpegUrl}
-          class="preview-img"
-          onload={() => (previewLoaded = true)}
+          class="preview-img incoming"
+          class:loaded={previewLoaded}
+          onload={() => { previewLoaded = true; shownUrl = jpegUrl; }}
           alt={match.filename}
         />
       {/if}
 
-      <!--
-        Spinner overlay shown until the image finishes loading.
-        Rendered on top (later in DOM = higher stacking order).
-      -->
-      {#if !previewLoaded}
+      <!-- Spinner shown on first load only (no previous image to display). -->
+      {#if !previewLoaded && !shownUrl}
         <div class="loading-overlay">
           <div class="spinner"></div>
         </div>
@@ -135,6 +141,15 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+
+  .preview-img.incoming {
+    opacity: 0;
+  }
+
+  .preview-img.incoming.loaded {
+    opacity: 1;
+    transition: opacity 0.25s ease-in;
   }
 
   .loading-overlay {
