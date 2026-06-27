@@ -58,7 +58,7 @@ Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.jso
   "mcpServers": {
     "woof": {
       "command": "uvx",
-      "args": ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
+      "args": ["--python", "3.13", "--from", "ouestcharlie-woof", "woof"]
     }
   }
 }
@@ -88,7 +88,7 @@ extensions:
   woof:
     type: stdio
     cmd: uvx
-    args: ["--python", "3.12", "--from", "ouestcharlie-woof", "woof"]
+    args: ["--python", "3.13", "--from", "ouestcharlie-woof", "woof"]
     enabled: true
 ```
 
