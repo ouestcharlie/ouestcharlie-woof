@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from woof.config import LibraryConfig, WoofConfig
+from woof.config import LibraryConfig, WoofConfig, _resolve_to_unc
 
 
 @pytest.fixture()
@@ -146,14 +147,14 @@ def test_get_library_missing_returns_none() -> None:
 # ------------------------------------------------------------------
 
 
-def test_to_agent_env() -> None:
+def test_to_dict() -> None:
     b = LibraryConfig(name="x", type="filesystem", path="/mnt/photos")
-    assert b.to_agent_env() == {"name": "x", "type": "filesystem", "root": "/mnt/photos"}
+    assert b.to_dict() == {"name": "x", "type": "filesystem", "path": "/mnt/photos"}
 
 
-def test_to_agent_env_cloud_mount() -> None:
+def test_to_dict_cloud_mount() -> None:
     b = LibraryConfig(name="kdrive", type="cloud_mount", path="/mnt/kdrive")
-    assert b.to_agent_env() == {"name": "kdrive", "type": "cloud_mount", "root": "/mnt/kdrive"}
+    assert b.to_dict() == {"name": "kdrive", "type": "cloud_mount", "path": "/mnt/kdrive"}
 
 
 # ------------------------------------------------------------------
@@ -166,3 +167,76 @@ def test_default_config_dir_is_platform_specific() -> None:
 
     cfg = WoofConfig()
     assert cfg.config_dir == Path(user_config_dir("ouestcharlie"))
+
+
+def test_to_dict_includes_lancedb_index_path() -> None:
+    b = LibraryConfig(
+        name="nas", type="filesystem", path="/mnt/nas", lancedb_index_path="/local/index"
+    )
+    assert b.to_dict()["lancedb_index_path"] == "/local/index"
+
+
+def test_to_dict_omits_lancedb_index_path_when_none() -> None:
+    b = LibraryConfig(name="x", type="filesystem", path="/photos")
+    assert "lancedb_index_path" not in b.to_dict()
+
+
+# ------------------------------------------------------------------
+# _resolve_to_unc
+# ------------------------------------------------------------------
+
+
+def test_resolve_to_unc_non_windows_returns_none() -> None:
+    with patch("woof.config.sys") as mock_sys:
+        mock_sys.platform = "darwin"
+        result = _resolve_to_unc("/some/local/path")
+    assert result is None
+
+
+def test_resolve_to_unc_explicit_unc_path() -> None:
+    unc = r"\\server\share\photos"
+    with (
+        patch("woof.config.sys") as mock_sys,
+        patch("woof.config.Path") as mock_path_cls,
+    ):
+        mock_sys.platform = "win32"
+        resolved = MagicMock()
+        resolved.anchor = r"\\server\share\\"
+        resolved.__str__ = lambda self: unc
+        mock_path_cls.return_value.resolve.return_value = resolved
+        result = _resolve_to_unc(unc)
+    assert result == unc
+
+
+def test_resolve_to_unc_local_drive_returns_none() -> None:
+    mock_ctypes = MagicMock()
+    mock_ctypes.windll.kernel32.GetDriveTypeW.return_value = 3  # DRIVE_FIXED
+    with (
+        patch("woof.config.sys") as mock_sys,
+        patch("woof.config.Path") as mock_path_cls,
+        patch.dict("sys.modules", {"ctypes": mock_ctypes}),
+    ):
+        mock_sys.platform = "win32"
+        resolved = MagicMock()
+        resolved.anchor = "C:\\"
+        mock_path_cls.return_value.resolve.return_value = resolved
+        result = _resolve_to_unc("C:\\photos")
+    assert result is None
+
+
+def test_resolve_to_unc_mapped_drive_wnet_failure_returns_none() -> None:
+    """When WNetGetUniversalNameW fails (non-zero return), result is None."""
+    mock_ctypes = MagicMock()
+    mock_ctypes.windll.kernel32.GetDriveTypeW.return_value = 4  # DRIVE_REMOTE
+    mock_ctypes.windll.mpr.WNetGetUniversalNameW.return_value = 1  # ERROR
+    with (
+        patch("woof.config.sys") as mock_sys,
+        patch("woof.config.Path") as mock_path_cls,
+        patch.dict("sys.modules", {"ctypes": mock_ctypes}),
+    ):
+        mock_sys.platform = "win32"
+        resolved = MagicMock()
+        resolved.anchor = "Z:\\"
+        mock_path_cls.return_value.resolve.return_value = resolved
+        result = _resolve_to_unc("Z:\\photos")
+    assert result is None
