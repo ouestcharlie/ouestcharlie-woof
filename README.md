@@ -7,12 +7,11 @@
 [![MCP Server](https://badge.mcpx.dev?type=server)](https://modelcontextprotocol.io/) [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
 
-
-Woof is the **MCP App** to **"Où est Charlie ?"**, a media management system that keeps your photos (later movies and other media) exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude, Goose...).
+Woof is a media management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude Desktop, Goose...).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
-Où est Charlie?? That's "Where is Wally?" in French.
+Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" in French), a full framework to manage you photos (later movies and other media).
 
 ## What makes it different
 
@@ -20,7 +19,7 @@ Most photo managers lock your library into a cloud service (Google Photos, iClou
 
 - **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
 - **Privacy by design.** Only metadata travels to your AI assistant — your actual photos are served locally by Woof. Your pictures are never uploaded to any AI service unless you explicitly ask.
-- **No database.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
+- **No database lock-in.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
 - **Open formats, forever.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. Every tool you already use — Lightroom, darktable, ExifTool — can read your metadata today and long after OuEstCharlie is gone.
 - **Your photos are never touched.** Woof reads your library as-is. It never modifies, moves, or deletes your original files. It also honors existing XMP metadata from Lightroom, darktable, or any other tool — rather than overwriting it.
 - **Works with your existing folder structure.** Just point Woof at your photos folder. No migration, no reorganization required.
@@ -31,7 +30,7 @@ Most photo managers lock your library into a cloud service (Google Photos, iClou
 
 ## Installation
 
-Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects to your AI desktop client and exposes your photo library as a set of tools.
+Woof runs as a local [MCP](https://modelcontextprotocol.io/) server. It connects to your AI desktop client (Claude Desktop, Goose...) and exposes your photo library as a set of tools.
 
 
 ### Option A — Bundle install (recommended but Claude Desktop only)
@@ -76,7 +75,7 @@ Restart Claude Desktop. Woof will appear as an MCP integration, and the gallery 
 
 #### Connect to ChatGPT Desktop
 
-**NOTE: As o May 2026, ChatGPT is no longer supporting local MCP servers. Following is not longer available!**
+**NOTE: As of May 2026, ChatGPT is no longer supporting local MCP servers. Following is not longer available!**
 
 
 #### Connect to Goose
