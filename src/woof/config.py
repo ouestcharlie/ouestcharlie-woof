@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -12,6 +14,67 @@ from platformdirs import user_config_dir
 _log = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_DIR = Path(user_config_dir("ouestcharlie"))
+
+
+def _resolve_to_unc(path: str) -> str | None:
+    """On Windows, return the UNC path if *path* is or resolves to a UNC share; else None.
+
+    Handles both explicit UNC paths (\\\\server\\share\\...) and mapped drive
+    letters (Z:\\...) backed by a network share.
+    Uses Path.resolve() — same pattern as LocalBackend — to expand drive letters
+    to their real UNC target before checking.
+    """
+    if sys.platform != "win32":
+        return None
+    _log.debug("_resolve_to_unc: incoming path %r", path)
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return None
+    _log.debug("_resolve_to_unc: resolved to %r", resolved)
+    if resolved.anchor.startswith("\\\\"):
+        return str(resolved)
+    # Mapped drive: ask Windows for the universal name via WNetGetUniversalNameW
+    import ctypes
+
+    UNIVERSAL_NAME_INFO_LEVEL = 1
+    DRIVE_REMOTE = 4
+    drive_root = resolved.anchor  # e.g. "Z:\\"
+    if not drive_root:
+        return None
+    drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_root)
+    _log.debug("_resolve_to_unc: drive %r has type %d (REMOTE=4)", drive_root, drive_type)
+    if drive_type != DRIVE_REMOTE:
+        return None
+    buf = ctypes.create_unicode_buffer(1024)
+    buf_size = ctypes.c_ulong(ctypes.sizeof(buf))
+    if (
+        ctypes.windll.mpr.WNetGetUniversalNameW(
+            drive_root, UNIVERSAL_NAME_INFO_LEVEL, buf, ctypes.byref(buf_size)
+        )
+        != 0
+    ):
+        return None
+
+    class _UniversalNameInfo(ctypes.Structure):
+        _fields_ = [("lpUniversalName", ctypes.c_wchar_p)]
+
+    unc_root = _UniversalNameInfo.from_buffer(buf).lpUniversalName
+    rel = str(resolved)[len(drive_root) :]
+    return f"{unc_root}\\{rel}" if rel else unc_root
+
+
+def get_local_lance_index_path(library_name: str) -> str | None:
+    """Return a local NTFS index path for *library_name* on Windows, else None.
+
+    Used when the library root is a UNC path where object_store is unreliable.
+    Falls back to ~/AppData/Local if LOCALAPPDATA is unset.
+    """
+    if sys.platform != "win32":
+        return None
+    local_app_data = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in library_name)
+    return str(Path(local_app_data) / "ouestcharlie" / "indexes" / safe_name)
 
 
 @dataclass
@@ -24,10 +87,26 @@ class LibraryConfig:
     """Storage type: "filesystem" for a local folder, "cloud_mount" for a FUSE/CF-API mount."""
     path: str
     """Absolute path to the photo root directory."""
+    lancedb_index_path: str | None = None
+    """Optional override for the LanceDB index location."""
 
-    def to_agent_env(self) -> dict[str, str]:
-        """Serialise to the dict expected by WOOF_BACKEND_CONFIG."""
-        return {"name": self.name, "type": self.type, "root": self.path}
+    @classmethod
+    def create(cls, name: str, path: str, library_type: str = "filesystem") -> LibraryConfig:
+        """Create a LibraryConfig, auto-detecting a local LanceDB path for UNC roots.
+
+        On Windows, when *path* resolves to a UNC share (explicit ``\\\\server\\share``
+        or a mapped drive letter), ``lancedb_index_path`` is set to a local NTFS
+        location so object_store can operate reliably.
+        """
+        lance_path = get_local_lance_index_path(name) if _resolve_to_unc(path) is not None else None
+        return cls(name=name, type=library_type, path=path, lancedb_index_path=lance_path)
+
+    def to_dict(self) -> dict[str, str]:
+        """Serialize to a plain dict of all non-None fields."""
+        result: dict[str, str] = {"name": self.name, "path": self.path, "type": self.type}
+        if self.lancedb_index_path is not None:
+            result["lancedb_index_path"] = self.lancedb_index_path
+        return result
 
 
 @dataclass
@@ -84,6 +163,15 @@ class WoofConfig:
                 _log.info("Migrating library %r type 'local' → 'filesystem'", b.name)
                 b.type = "filesystem"
                 migrated = True
+            if b.lancedb_index_path is None and _resolve_to_unc(b.path) is not None:
+                b.lancedb_index_path = get_local_lance_index_path(b.name)
+                if b.lancedb_index_path:
+                    _log.info(
+                        "Migrating library %r: setting lancedb_index_path to %r",
+                        b.name,
+                        b.lancedb_index_path,
+                    )
+                    migrated = True
         return migrated
 
     def get_library(self, name: str) -> LibraryConfig | None:

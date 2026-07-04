@@ -108,19 +108,15 @@ class WoofServer:
                     FUSE/Windows-CF-API cloud-sync folder (kDrive, OneDrive,
                     Google Drive, Dropbox).
             """
-            library = LibraryConfig(name=name, type=library_type, path=path)
+            library = LibraryConfig.create(name=name, path=path, library_type=library_type)
             self.config.add_library(library)
             _log.info("Library %r added at %s (type=%s)", name, path, library_type)
-            return {"name": name, "path": path, "type": library_type, "status": "added"}
+            return {**library.to_dict(), "status": "added"}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_libraries() -> dict[str, Any]:
             """List all registered photo libraries."""
-            return {
-                "libraries": [
-                    {"name": b.name, "type": b.type, "path": b.path} for b in self.config.libraries
-                ]
-            }
+            return {"libraries": [b.to_dict() for b in self.config.libraries]}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_search_fields(library_name: str = "") -> dict:

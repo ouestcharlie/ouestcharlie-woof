@@ -299,7 +299,7 @@ class AgentClient:
     def _build_env(self, library: LibraryConfig) -> dict[str, str]:
         return {
             **os.environ,
-            "WOOF_BACKEND_CONFIG": json.dumps(library.to_agent_env()),
+            "WOOF_BACKEND_CONFIG": json.dumps(library.to_dict()),
             "WOOF_AGENT_TOKEN": secrets.token_urlsafe(32),
         }
 
