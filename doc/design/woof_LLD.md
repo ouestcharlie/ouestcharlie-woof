@@ -235,6 +235,18 @@ Woof then performs the MCP `initialize` handshake over stdio, receiving the agen
 
 Wally prints a `WALLY_READY port=<n>` line to stdout once its HTTP server is bound. `AgentClient` reads this line before completing the MCP handshake and stores the port for use by the media proxy. This avoids a pre-assigned port (which could conflict with other processes).
 
+## Configuration (`config.py`)
+
+### LanceDB index location on Windows UNC paths
+
+`object_store` (the Rust storage layer under Lance) is unreliable on UNC paths and mapped network drives. When a library root resolves to a UNC share on Windows, the LanceDB index is redirected to `%LOCALAPPDATA%\ouestcharlie\indexes\<library_name>` so it stays on local NTFS.
+
+`_resolve_to_unc` uses `Path.resolve()` first (same as `LocalBackend._resolve()`), then falls back to `WNetGetUniversalNameW` for mapped drives whose resolved anchor is not already `\\`. The ctypes import is lazy and gated on `sys.platform == "win32"` so the module loads without error on other platforms.
+
+`to_dict()` is the single serializer for `LibraryConfig` — used both for `WOOF_BACKEND_CONFIG` (agent env) and MCP tool responses. The `status` key is added by `server.py`, not by `LibraryConfig`, so the config stays unaware of MCP concerns.
+
+`_migrate()` backfills the `lancedb_index_path` for existing UNC libraries on first Woof start after upgrade (OEC-31c).
+
 ## Background Daemon [Planned]
 
 Woof runs as a launchd agent (macOS) started at login, independently of Claude Desktop. This enables:
