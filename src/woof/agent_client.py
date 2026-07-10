@@ -178,9 +178,15 @@ class _WallySidecar:
                         if not future.done():
                             future.set_exception(exc)
 
-        except BaseException as exc:
+        except asyncio.CancelledError as exc:
             if not self._ready_event.is_set():
-                self._start_error = exc if isinstance(exc, Exception) else RuntimeError(str(exc))
+                self._start_error = RuntimeError(str(exc))
+                self._ready_event.set()
+            _log.debug("Wally session loop cancelled: %s", exc)
+            raise
+        except Exception as exc:
+            if not self._ready_event.is_set():
+                self._start_error = exc
                 self._ready_event.set()
             _log.debug("Wally session loop exited: %s", exc)
         finally:
