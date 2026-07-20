@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ouestcharlie/ouestcharlie-woof",
+  "description": "An MCP server and app to search and browse your photos while preserving your privacy",
+  "repository": {
+    "url": "https://github.com/ouestcharlie/ouestcharlie-woof",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "ouestcharlie-woof",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+      ]
+    }
+  ]
+}
