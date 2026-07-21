@@ -4,8 +4,18 @@
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
   import IndexingProgress from './components/IndexingProgress.svelte';
+  import { initServerOrigins, fetchResults, fetchResultsPage, thumbnailUrl, previewUrl } from './lib/api.svelte.js';
 
-  let serverUrl = $state(null);
+  function embeddedServerUrls() {
+    const raw = document.documentElement.dataset.serverUrls;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   let token = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
@@ -50,11 +60,10 @@
   }
 
   async function fetchServerPage(page) {
-    if (!token || !serverUrl) return;
+    if (!token) return;
     serverPageLoading = true;
     try {
-      const data = await fetch(`${serverUrl}/api/results/${token}/page/${page}`)
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
+      const data = await fetchResultsPage(token, page);
       matches = data.matches ?? [];
       serverPage = page;
     } catch (err) {
@@ -68,6 +77,8 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown);
+    initServerOrigins(embeddedServerUrls() ?? [location.origin]);
+
     // Path 1: URL params — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
     // rely on it throwing before this fallback would otherwise run.
@@ -75,7 +86,6 @@
     const urlToken = urlParams.get('token');
     const urlSessionId = urlParams.get('sessionId');
     if (urlSessionId) {
-      serverUrl = location.origin;
       indexingSessionId = urlSessionId;
       indexingLibrary = urlParams.get('library') ?? '';
       indexingPartition = urlParams.get('partition') ?? '';
@@ -83,10 +93,8 @@
       modeKnown = true;
       loading = false;
     } else if (urlToken) {
-      serverUrl = location.origin;
       modeKnown = true;
-      fetch(`${serverUrl}/api/results/${urlToken}`)
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
+      fetchResults(urlToken)
         .then(data => applySession(data, urlToken, 0))
         .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
     }
@@ -100,9 +108,10 @@
         const text = (content ?? []).find(b => b.type === 'text')?.text;
         if (!text) return;
         const result = JSON.parse(text);
-        // Set serverUrl from the tool result before fetching — in the MCP iframe
-        // context location.origin is ui://… not the Woof HTTP server URL.
-        serverUrl = result.serverUrl;
+        // Refresh candidate origins from the tool result — in the MCP iframe
+        // context location.origin is ui://… not the Woof HTTP server URL, and
+        // the server may have restarted on a new port since the page loaded.
+        initServerOrigins(result.serverUrls ?? [result.serverUrl]);
 
         if (result.type === 'indexing') {
           indexingSessionId = result.session_id;
@@ -119,8 +128,7 @@
         modeKnown = true;
         querySummary = result.querySummary;
         try {
-          const data = await fetch(`${serverUrl}/api/results/${result.token}`)
-            .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)));
+          const data = await fetchResults(result.token);
           applySession(data, result.token, 0);
         } catch (err) {
           if (!matches.length) status = `Error loading gallery: ${err.message}`;
@@ -154,10 +162,8 @@
    * Returns tile geometry for clipping a thumbnail AVIF grid, or null if unavailable.
    */
   function thumbnailTile(match) {
-    const { avifHash } = match;
-    if (!serverUrl || !match.library || !avifHash || match.tileIndex == null) return null;
-    const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    const url = `${serverUrl}/thumbnail/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(avifHash)}`;
+    const url = thumbnailUrl(match);
+    if (!url) return null;
     const col = match.tileIndex % AVIF_GRID_COLS;
     const row = Math.floor(match.tileIndex / AVIF_GRID_COLS);
     return { url, col, row, cols: AVIF_GRID_COLS };
@@ -173,15 +179,6 @@
     await mcpApp.requestDisplayMode({ mode: targetMode });
   }
 
-  /**
-   * Returns the direct JPEG preview URL for a photo, or null if unavailable.
-   * The JPEG is generated on-demand by Wally and cached on disk.
-   */
-  function previewUrl(match) {
-    if (!serverUrl || !match.library || !match.contentHash) return null;
-    const encodedPartition = match.partition.split('/').map(encodeURIComponent).join('/');
-    return `${serverUrl}/previews/${encodeURIComponent(match.library)}/${encodedPartition}/${encodeURIComponent(match.contentHash)}.jpg`;
-  }
 </script>
 
 <div class="app">
@@ -189,7 +186,6 @@
     <!-- waiting for first tool result — render nothing to avoid gallery skeleton flash -->
   {:else if mode === 'indexing'}
     <IndexingProgress
-      {serverUrl}
       sessionId={indexingSessionId}
       library={indexingLibrary}
       partition={indexingPartition}

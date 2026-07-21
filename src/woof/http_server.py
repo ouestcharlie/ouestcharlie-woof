@@ -22,6 +22,7 @@ All library media (thumbnails and previews) is served by Wally and proxied here.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import socket
 import threading
@@ -46,16 +47,24 @@ _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 
-def get_gallery_html(server_url: str) -> str:
+def get_gallery_html(server_url: str, server_urls: list[str] | None = None) -> str:
     """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
     those relative-rooted paths with {server_url}/gallery-static/ so the MCP
     Apps iframe (and direct browser access) can load JS/CSS.
+
+    ``server_urls`` (defaulting to a single-element list of ``server_url``) is
+    embedded as a ``data-server-urls`` attribute on ``<html>`` so the frontend can
+    try each candidate origin in turn — different MCP hosts accept different
+    loopback hostnames in their CSP. A data attribute (rather than an inline
+    ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
     """
+    candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
-        return html.replace("/gallery-static/", f"{server_url}/gallery-static/")
+        html = html.replace("/gallery-static/", f"{server_url}/gallery-static/")
+        return html.replace("<html", f"<html data-server-urls='{json.dumps(candidates)}'", 1)
     return _gallery_placeholder()
 
 

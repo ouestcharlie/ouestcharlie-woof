@@ -53,7 +53,12 @@ class WoofServer:
         _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _sock.bind(("127.0.0.1", 0))
         self._http_sock = _sock
-        self.server_url = f"http://localhost:{_sock.getsockname()[1]}"
+        _port = _sock.getsockname()[1]
+        # Different MCP hosts accept different loopback hostnames in their iframe CSP
+        # (Claude Desktop Chat requires "localhost"; Claude CoWork blocks it and requires
+        # "127.0.0.1"). Expose both as candidates; the gallery frontend tries each in order.
+        self.server_urls = [f"http://localhost:{_port}", f"http://127.0.0.1:{_port}"]
+        self.server_url = self.server_urls[0]
 
         agent = self._agent
 
@@ -233,6 +238,7 @@ class WoofServer:
                 "library_name": library_name,
                 "partition": partition,
                 "serverUrl": self.server_url,
+                "serverUrls": self.server_urls,
             }
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -359,6 +365,7 @@ class WoofServer:
                 "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
+                "serverUrls": self.server_urls,
                 "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
                 "totalCount": data.totalCount,
             }
@@ -368,20 +375,18 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        origin = self.server_url
-
         @self.mcp.resource(
             _GALLERY_URI,
             mime_type="text/html;profile=mcp-app",
             app=AppConfig(
                 csp=ResourceCSP(
-                    resource_domains=[origin],
-                    connect_domains=[origin],
+                    resource_domains=self.server_urls,
+                    connect_domains=self.server_urls,
                 )
             ),
         )
         async def gallery_resource() -> str:
-            return get_gallery_html(self.server_url)
+            return get_gallery_html(self.server_url, self.server_urls)
 
     # ------------------------------------------------------------------
     # Helpers

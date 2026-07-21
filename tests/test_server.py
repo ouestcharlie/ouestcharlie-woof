@@ -230,6 +230,7 @@ async def test_index_library_launches_background_task(server: WoofServer) -> Non
     assert result["type"] == "indexing"
     assert "session_id" in result
     assert result["library_name"] == "testlib"
+    assert result["serverUrls"] == server.server_urls
     assert captured["module"] == "whitebeard"
     assert captured["tool_name"] == "index_library"
     assert captured["args"]["generate_thumbnails"] is True
@@ -541,6 +542,7 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     # gallery fetches directly from the HTTP server (OEC#19).
     assert "matches" not in result
     assert result["serverUrl"] == server.server_url
+    assert result["serverUrls"] == server.server_urls
     assert result["querySummary"] == "My query"
     assert result["totalCount"] == len(matches)
     merged_token = result["token"]
@@ -591,6 +593,29 @@ async def test_browse_gallery_partial_unknown_token(server: WoofServer) -> None:
     result = await tool_fn(session_tokens=["good", "missing"])
     assert "error" in result
     assert "missing" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# server_urls / gallery CSP
+# ---------------------------------------------------------------------------
+
+
+def test_server_urls_includes_localhost_and_loopback_ip(server: WoofServer) -> None:
+    # Different MCP hosts accept different loopback hostnames in their CSP
+    # (Claude Desktop Chat requires "localhost", Claude CoWork requires
+    # "127.0.0.1") — both must be offered for the same port.
+    port = server.server_url.rsplit(":", 1)[1]
+    assert server.server_urls == [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    assert server.server_url == server.server_urls[0]
+
+
+@pytest.mark.asyncio
+async def test_gallery_resource_csp_declares_all_server_urls(server: WoofServer) -> None:
+    resources = await server.mcp.list_resources()
+    gallery = next(r for r in resources if str(r.uri) == "ui://gallery/ouestcharlie")
+    csp = gallery.meta["ui"]["csp"]
+    assert csp["resourceDomains"] == server.server_urls
+    assert csp["connectDomains"] == server.server_urls
 
 
 # ---------------------------------------------------------------------------

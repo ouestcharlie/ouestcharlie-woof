@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import IndexingProgress from './IndexingProgress.svelte';
+import { initServerOrigins } from '../lib/api.svelte.js';
+
+beforeEach(() => initServerOrigins(['http://localhost']));
 
 function mockFetch(sessions) {
   let call = 0;
@@ -22,7 +25,7 @@ function failedSession(error = 'disk full') {
   return { status: 'failed', progress: 0, total: 1, message: '', summary: null, error };
 }
 
-const baseProps = { serverUrl: 'http://localhost', sessionId: 'abc', library: 'MyLib', partition: '' };
+const baseProps = { sessionId: 'abc', library: 'MyLib', partition: '' };
 
 afterEach(() => vi.restoreAllMocks());
 
