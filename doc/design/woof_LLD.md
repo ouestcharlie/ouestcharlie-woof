@@ -141,9 +141,9 @@ The Woof HTTP port is communicated to the gallery iframe via the MCP App tool re
 
 ### Runtime model
 
-The HTTP server (uvicorn/Starlette) runs as an `asyncio` task on the **same event loop as the MCP server** (FastMCP). The task is started inside `WoofServer._lifespan` via `asyncio.create_task(serve_in_loop(...))` and cancelled on MCP shutdown.
+The HTTP server (uvicorn/Starlette) runs as an `asyncio` task on the **same event loop as the MCP server** (FastMCP). The task is started inside `McpServer._lifespan` via `asyncio.create_task(serve_in_loop(...))` and cancelled on MCP shutdown.
 
-`WoofServer.__init__` binds the HTTP socket synchronously (before `mcp.run()`), so `server_url` is known at construction time and can be embedded in tool results before the loop starts.
+`McpServer.__init__` binds the HTTP socket synchronously (before `mcp.run()`), so `server_url` is known at construction time and can be embedded in tool results before the loop starts.
 
 Because the two servers share one OS thread, **any synchronous work in an HTTP request handler that runs longer than ~1 ms must be offloaded via `loop.run_in_executor`** — blocking the loop stalls both HTTP responses and MCP message processing simultaneously.
 
@@ -354,7 +354,7 @@ Woof will compute partition health indicators by reading manifest metadata. Thes
 
 ## Error Handling
 
-Agent errors in `index_backend` and `search_photos` are logged at `ERROR` level via the `woof.server` logger before being returned to Claude as `{"error": "..."}` dicts. This ensures errors are visible in the Woof process log even when Claude's response summarizes them briefly.
+Agent errors in `index_backend` and `search_photos` are logged at `ERROR` level via the `woof.mcp_server` logger before being returned to Claude as `{"error": "..."}` dicts. This ensures errors are visible in the Woof process log even when Claude's response summarizes them briefly.
 
 ### Error categorization [Planned]
 

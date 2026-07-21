@@ -1,9 +1,8 @@
 """Thin stdio↔HTTP bridge for Woof's HTTP-mode transport.
 
 MCP hosts (Claude Desktop, Goose, etc.) still spawn one stdio subprocess per
-connection. Rather than each of those being a full Woof instance (which is
-what caused OEC-32's CSP bug — multiple Woof processes, each with its own
-port, sharing no state), each spawned process is now this small bridge:
+connection. Rather than each of those being a full Woof instance each spawned
+process is now this small bridge:
 
 1. Discover (or lazily start) the one persistent Woof HTTP instance.
 2. Relay MCP JSON-RPC messages between this process's stdio and Woof's
@@ -13,7 +12,7 @@ port, sharing no state), each spawned process is now this small bridge:
    bridge connection open, so Woof knows this connection is still active.
 
 No Node.js / ``mcp-remote`` dependency — pure Python using the same MCP SDK
-primitives Woof/Wally already depend on.
+primitives Woof already depend on.
 """
 
 from __future__ import annotations

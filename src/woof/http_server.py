@@ -117,7 +117,7 @@ def start_http_server(
     HTTP server shares the MCP event loop.
 
     Args:
-        session_manager: Gallery session manager shared with WoofServer.
+        session_manager: Gallery session manager shared with McpServer.
         wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
             for the named Wally sidecar.
 

@@ -49,7 +49,7 @@ from woof.discovery import (
     write_discovery,
 )
 from woof.gallery_session_manager import GallerySessionManager
-from woof.server import WoofServer
+from woof.mcp_server import McpServer
 
 _TRANSPORT = os.environ.get("WOOF_TRANSPORT", "http")
 
@@ -58,9 +58,9 @@ _agent = AgentClient()
 _session_manager = GallerySessionManager()
 
 if _TRANSPORT == "stdio":
-    _server = WoofServer(_config, agent_client=_agent, session_manager=_session_manager)
+    _server = McpServer(_config, agent_client=_agent, session_manager=_session_manager)
 else:
-    _server = WoofServer(
+    _server = McpServer(
         _config,
         agent_client=_agent,
         session_manager=_session_manager,

@@ -1,4 +1,4 @@
-"""WoofServer — FastMCP server exposing OuEstCharlie tools to Claude Desktop."""
+"""McpServer — FastMCP server exposing OuEstCharlie tools to Claude Desktop."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _log = logging.getLogger(__name__)
 _GALLERY_URI = "ui://gallery/ouestcharlie"
 
 
-class WoofServer:
+class McpServer:
     """Woof MCP server.
 
     Exposes tools to Claude Desktop and registers the gallery

@@ -1,4 +1,4 @@
-"""Tests for WoofServer's HTTP-mode combined app (OEC-27)."""
+"""Tests for McpServer's HTTP-mode combined app (OEC-27)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 
 from woof.config import LibraryConfig, WoofConfig
 from woof.discovery import ActivityTracker
-from woof.server import WoofServer
+from woof.mcp_server import McpServer
 
 
 @pytest.fixture()
@@ -29,7 +29,7 @@ class _FakeShutdownHandle:
         self.requested = True
 
 
-def _build_app(server: WoofServer, *, tracker: ActivityTracker | None = None, handle=None):
+def _build_app(server: McpServer, *, tracker: ActivityTracker | None = None, handle=None):
     return server.build_http_app(
         activity_tracker=tracker or ActivityTracker(),
         shutdown_handle=handle or _FakeShutdownHandle(),
@@ -37,24 +37,24 @@ def _build_app(server: WoofServer, *, tracker: ActivityTracker | None = None, ha
 
 
 def test_build_http_app_requires_http_transport_and_token(config: WoofConfig) -> None:
-    server = WoofServer(config)  # default stdio, no token
+    server = McpServer(config)  # default stdio, no token
     with pytest.raises(RuntimeError):
         _build_app(server)
 
 
 def test_stdio_mode_tool_results_have_no_server_token(config: WoofConfig) -> None:
-    server = WoofServer(config)
+    server = McpServer(config)
     assert server._token is None
 
 
 def test_http_mode_server_urls_and_token_set(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     assert server.server_urls[0].startswith("http://localhost:")
     assert server._token == "secret"
 
 
 def test_healthz_requires_bearer_token(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         unauth = client.get("/healthz")
@@ -70,7 +70,7 @@ def test_rejected_response_still_carries_cors_header(config: WoofConfig) -> None
     surface a misleading "blocked by CORS policy" error instead of the real
     auth/host failure.
     """
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         resp = client.get("/healthz", headers={"Origin": "https://example.claudemcpcontent.com"})
@@ -85,7 +85,7 @@ def test_cors_preflight_for_authorization_header_succeeds(config: WoofConfig) ->
     which trigger a preflight OPTIONS the browser requires a 200 for before
     it will even attempt the real request.
     """
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         resp = client.options(
@@ -105,7 +105,7 @@ def test_gallery_static_is_exempt_from_bearer_auth(config: WoofConfig) -> None:
     attach a bearer token at all, and the bundle carries no user data — so this
     path must be reachable without auth (HostOriginGuard still applies).
     """
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         resp = client.get("/gallery-static/nonexistent.js")
@@ -115,7 +115,7 @@ def test_gallery_static_is_exempt_from_bearer_auth(config: WoofConfig) -> None:
 
 
 def test_wrong_host_header_is_rejected_even_with_valid_token(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         resp = client.get(
@@ -126,7 +126,7 @@ def test_wrong_host_header_is_rejected_even_with_valid_token(config: WoofConfig)
 
 
 def test_keepalive_touches_activity_tracker(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     tracker = ActivityTracker()
     app = _build_app(server, tracker=tracker)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
@@ -139,7 +139,7 @@ def test_keepalive_touches_activity_tracker(config: WoofConfig) -> None:
 
 
 def test_shutdown_route_invokes_handle(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     handle = _FakeShutdownHandle()
     app = _build_app(server, handle=handle)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
@@ -149,7 +149,7 @@ def test_shutdown_route_invokes_handle(config: WoofConfig) -> None:
 
 
 def test_mcp_mounted_at_slash_mcp_requires_auth(config: WoofConfig) -> None:
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
         resp = client.post("/mcp", json={})
@@ -166,7 +166,7 @@ def test_authenticated_initialize_reaches_mounted_mcp_app_at_trailing_slash(
     `build_http_app` now builds the inner app with `path="/"` so it lines up
     with what's left after the outer strip.
     """
-    server = WoofServer(config, transport="http", token="secret")
+    server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
     init_payload = {
         "jsonrpc": "2.0",
