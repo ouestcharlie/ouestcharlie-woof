@@ -16,11 +16,9 @@ from mcp.types import ToolAnnotations
 
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
-from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager
-from .http_server import _build_app, get_gallery_html, serve_in_loop
+from .http_server import get_gallery_html, serve_in_loop
 from .indexing_session_manager import IndexingSessionManager
-from .security import allowed_hosts_for_port
 
 _log = logging.getLogger(__name__)
 
@@ -50,10 +48,9 @@ class McpServer:
         Args:
             transport: ``"stdio"`` (default) keeps today's behavior — FastMCP's
                 own lifespan spins up a *separate* gallery/media HTTP server on
-                the shared event loop. ``"http"`` (OEC-27) skips that: the
-                caller is expected to use ``build_http_app()`` to get one
-                combined ASGI app (MCP + gallery, mounted together) and serve
-                it directly, so only one HTTP server ever runs.
+                the shared event loop. ``"http"`` skips that: ``__main__.py``
+                builds and serves one combined ASGI app (MCP + gallery,
+                mounted together) itself, so only one HTTP server ever runs.
             token: Bearer token for HTTP mode (ignored in stdio mode, where
                 routes stay unauthenticated as before). Also embedded in the
                 gallery HTML / tool results so the frontend can authenticate.
@@ -84,9 +81,9 @@ class McpServer:
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
             # HTTP server shares this event loop — no cross-thread bridging needed.
             # Any synchronous work in request handlers must use run_in_executor.
-            # In HTTP mode (OEC-27) the caller serves one combined app itself
-            # (see build_http_app) — starting a second gallery server here would
-            # duplicate it on the same socket, which uvicorn can't bind twice.
+            # In HTTP mode, __main__.py serves one combined app itself —
+            # starting a second gallery server here would duplicate it on the
+            # same socket, which uvicorn can't bind twice.
             http_task = (
                 asyncio.create_task(
                     serve_in_loop(
@@ -111,37 +108,6 @@ class McpServer:
         self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
         self._register_tools()
         self._register_gallery_resource()
-
-    def build_http_app(self, *, activity_tracker: ActivityTracker, shutdown_handle: Any) -> Any:
-        """Build the single combined ASGI app for HTTP mode (OEC-27).
-
-        Mounts FastMCP's own ``http_app()`` at ``/mcp`` alongside the gallery
-        and media routes, all served by one uvicorn instance on
-        ``self._http_sock`` — this is what lets every bridge connection reach
-        exactly one Woof instance regardless of how many separate MCP
-        connections the host opens (the root cause behind OEC-32's CSP bug).
-        Requires ``transport="http"`` and a ``token`` to have been passed to
-        ``__init__``.
-        """
-        if self._transport != "http" or self._token is None:
-            raise RuntimeError("build_http_app requires transport='http' and a token")
-        # path="/" here, NOT "/mcp": this app is mounted at "/mcp" by _build_app
-        # below via Mount("/mcp", app=mcp_asgi_app), which strips that prefix
-        # before dispatching. Registering the inner app's own route at "/mcp"
-        # too would double it up (Mount strips "/mcp", leaving "/", which
-        # wouldn't match an inner route still expecting "/mcp").
-        mcp_asgi_app = self.mcp.http_app(path="/")
-        return _build_app(
-            self._sessions,
-            self._wally_connection,
-            self.server_url,
-            indexing_session_manager=self._indexing_sessions,
-            mcp_asgi_app=mcp_asgi_app,
-            activity_tracker=activity_tracker,
-            shutdown_handle=shutdown_handle,
-            auth_token=self._token,
-            allowed_hosts=allowed_hosts_for_port(self._port),
-        )
 
     def _wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
         return self._agent.get_wally_connection(library_name)

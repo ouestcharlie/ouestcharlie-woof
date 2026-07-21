@@ -4,7 +4,7 @@ Woof runs as a single persistent HTTP server; any number of ``woof-bridge``
 stdio processes may connect to it concurrently. This module lets those
 independent bridge processes agree on — and safely start — exactly one Woof
 instance, and lets a running Woof instance decide for itself when it's safe
-to shut down (see OEC-27).
+to shut down.
 
 Layout (both files live in ``platformdirs.user_config_dir("ouestcharlie")``):
   woof-discovery.json  — ``{"pid": <int>, "port": <int>, "token": <str>}``, mode 0600

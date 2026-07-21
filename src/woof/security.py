@@ -1,6 +1,7 @@
-"""ASGI security middleware for Woof's HTTP-mode server (OEC-27).
+"""ASGI security/lifecycle middleware for Woof's HTTP-mode server.
 
-Two independent concerns, both required on every route:
+Independent concerns, composed together by ``__main__.py`` around the
+combined MCP + gallery app:
   - BearerGuard: authenticates the caller (bridge, or gallery iframe via
     Authorization header / ``?token=`` query param for requests — like
     ``<img src>`` — that cannot carry custom headers).
@@ -8,6 +9,9 @@ Two independent concerns, both required on every route:
     of the loopback origins Woof itself is bound to, mitigating DNS rebinding
     (a remote page tricking a browser into resolving an attacker-controlled
     hostname to 127.0.0.1 and issuing same-origin-looking requests).
+  - ActivityMiddleware: touches an ``ActivityTracker`` on every request that
+    reaches it, so idle-shutdown accounts for all traffic (MCP tool calls
+    included), not just explicit ``/keepalive`` pings.
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
+
+from .discovery import ActivityTracker
 
 
 class BearerGuard(BaseHTTPMiddleware):
@@ -61,6 +67,23 @@ class HostOriginGuard(BaseHTTPMiddleware):
         host = request.headers.get("host", "")
         if host not in self._allowed_hosts:
             return Response("Forbidden (invalid Host header)", status_code=403)
+        return await call_next(request)
+
+
+class ActivityMiddleware(BaseHTTPMiddleware):
+    """Touches an :class:`~woof.discovery.ActivityTracker` on every request that reaches it.
+
+    Should be placed inside ``BearerGuard``/``HostOriginGuard`` in the
+    middleware stack so only authenticated, correctly-addressed traffic
+    counts as activity.
+    """
+
+    def __init__(self, app: ASGIApp, *, tracker: ActivityTracker) -> None:
+        super().__init__(app)
+        self._tracker = tracker
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        self._tracker.touch()
         return await call_next(request)
 
 

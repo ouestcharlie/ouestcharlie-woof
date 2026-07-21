@@ -87,7 +87,7 @@ describe('api.svelte.js — origin fallback', () => {
   });
 });
 
-describe('api.svelte.js — bearer token (OEC-27 HTTP mode)', () => {
+describe('api.svelte.js — bearer token (HTTP mode)', () => {
   it('attaches an Authorization header to GET requests once a token is set', async () => {
     initServerOrigins(['http://localhost:1']);
     initServerToken('secret');

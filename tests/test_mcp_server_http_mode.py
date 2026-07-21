@@ -1,4 +1,12 @@
-"""Tests for McpServer's HTTP-mode combined app (OEC-27)."""
+"""Tests for the HTTP-mode combined app (MCP + gallery + security middleware).
+
+This composition lives inline in ``__main__.py::_run_http`` (mirroring how
+Wally's ``__main__.py`` assembles its own ASGI stack) rather than as a method
+on ``McpServer`` — so these tests replicate the same small assembly from the
+same public building blocks (``McpServer.mcp``, ``http_server.build_gallery_app``,
+``security.*``) instead of importing ``woof.__main__`` directly, which would
+trigger real socket binding and config loading as a module-level side effect.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +14,15 @@ import time
 from pathlib import Path
 
 import pytest
+from starlette.applications import Starlette
+from starlette.routing import Mount
 from starlette.testclient import TestClient
 
 from woof.config import LibraryConfig, WoofConfig
 from woof.discovery import ActivityTracker
+from woof.http_server import build_gallery_app, with_permissive_cors
 from woof.mcp_server import McpServer
+from woof.security import ActivityMiddleware, BearerGuard, HostOriginGuard, allowed_hosts_for_port
 
 
 @pytest.fixture()
@@ -30,15 +42,35 @@ class _FakeShutdownHandle:
 
 
 def _build_app(server: McpServer, *, tracker: ActivityTracker | None = None, handle=None):
-    return server.build_http_app(
-        activity_tracker=tracker or ActivityTracker(),
-        shutdown_handle=handle or _FakeShutdownHandle(),
+    """Replicates __main__.py::_run_http's ASGI stack assembly for testing."""
+    assert server._token is not None
+    tracker = tracker or ActivityTracker()
+    handle = handle or _FakeShutdownHandle()
+    mcp_app = server.mcp.http_app(path="/")
+    gallery_app = build_gallery_app(
+        server._sessions,
+        server._wally_connection,
+        server.server_url,
+        indexing_session_manager=server._indexing_sessions,
+        token=server._token,
+        activity_tracker=tracker,
+        shutdown_handle=handle,
     )
+    combined = Starlette(
+        routes=[Mount("/mcp", app=mcp_app), Mount("/", app=gallery_app)],
+        lifespan=mcp_app.router.lifespan_context,
+    )
+    combined = ActivityMiddleware(combined, tracker=tracker)
+    combined = BearerGuard(
+        combined, token=server._token, exempt_path_prefixes=("/gallery-static/",)
+    )
+    combined = HostOriginGuard(combined, allowed_hosts=allowed_hosts_for_port(server._port))
+    return with_permissive_cors(combined)
 
 
-def test_build_http_app_requires_http_transport_and_token(config: WoofConfig) -> None:
+def test_build_app_requires_a_token(config: WoofConfig) -> None:
     server = McpServer(config)  # default stdio, no token
-    with pytest.raises(RuntimeError):
+    with pytest.raises(AssertionError):
         _build_app(server)
 
 
@@ -162,9 +194,14 @@ def test_authenticated_initialize_reaches_mounted_mcp_app_at_trailing_slash(
     """Regression test for a double-mount bug: `self.mcp.http_app(path="/mcp")`
     registered the inner app's own route at "/mcp" too, so after the outer
     `Mount("/mcp", ...)` stripped its prefix, nothing matched and `/mcp/`
-    404'd — only the bare, unauthenticated-friendly `/mcp` 307-redirected.
-    `build_http_app` now builds the inner app with `path="/"` so it lines up
-    with what's left after the outer strip.
+    404'd. Building the inner app with `path="/"` instead lines it up with
+    what's left after the outer strip.
+
+    Bare "/mcp" (no trailing slash) 404s here rather than 307-redirecting —
+    confirmed in isolation to be a Starlette quirk of having a second
+    `Mount("/", app=gallery_app)` alongside `Mount("/mcp", ...)`, unrelated to
+    our own code. Not a functional regression: the bridge always requests the
+    canonical "/mcp/" form directly (see bridge.py), never the bare path.
     """
     server = McpServer(config, transport="http", token="secret")
     app = _build_app(server)
@@ -184,10 +221,8 @@ def test_authenticated_initialize_reaches_mounted_mcp_app_at_trailing_slash(
         "Content-Type": "application/json",
     }
     with TestClient(app, base_url=f"http://localhost:{server._port}") as client:
-        # Bare "/mcp" still 307-redirects (inherent Starlette Mount behavior) —
-        # the bridge requests the trailing-slash form directly to avoid this.
         bare = client.post("/mcp", json=init_payload, headers=headers, follow_redirects=False)
-        assert bare.status_code == 307
+        assert bare.status_code == 404
 
         resp = client.post("/mcp/", json=init_payload, headers=headers)
         assert resp.status_code == 200

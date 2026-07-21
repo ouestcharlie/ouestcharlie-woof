@@ -49,7 +49,9 @@ from woof.discovery import (
     write_discovery,
 )
 from woof.gallery_session_manager import GallerySessionManager
+from woof.http_server import build_gallery_app, with_permissive_cors
 from woof.mcp_server import McpServer
+from woof.security import ActivityMiddleware, BearerGuard, HostOriginGuard, allowed_hosts_for_port
 
 _TRANSPORT = os.environ.get("WOOF_TRANSPORT", "http")
 
@@ -83,7 +85,7 @@ class _ShutdownHandle:
 
 
 # Idle timeout before a quiet (no bridge keepalives/requests) HTTP-mode
-# instance shuts itself down — see OEC-27 §2. Configurable for testing.
+# instance shuts itself down. Configurable for testing.
 _IDLE_TIMEOUT_SECONDS = float(os.environ.get("WOOF_IDLE_TIMEOUT_SECONDS", str(15 * 60)))
 _IDLE_CHECK_INTERVAL_SECONDS = 30.0
 
@@ -92,10 +94,52 @@ async def _run_http() -> None:
     import asyncio
 
     import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
 
     tracker = ActivityTracker()
     handle = _ShutdownHandle()
-    app = _server.build_http_app(activity_tracker=tracker, shutdown_handle=handle)
+
+    # Layer the ASGI stack (innermost first):
+    # each module builds its own piece independently (FastMCP's
+    # own http_app, the gallery/media routes) and this is the one place that
+    # combines and wraps them — no module reaches into another's internals.
+    #
+    # path="/" here, NOT "/mcp": this app is mounted at "/mcp" below via
+    # Mount("/mcp", app=mcp_app), which strips that prefix before dispatching.
+    # Registering the inner app's own route at "/mcp" too would double it up
+    # (Mount strips "/mcp", leaving "/", which wouldn't match an inner route
+    # still expecting "/mcp").
+    assert _server._token is not None  # guaranteed by the http-mode branch above
+    mcp_app = _server.mcp.http_app(path="/")
+    gallery_app = build_gallery_app(
+        _server._sessions,
+        _server._wally_connection,
+        _server.server_url,
+        indexing_session_manager=_server._indexing_sessions,
+        token=_server._token,
+        activity_tracker=tracker,
+        shutdown_handle=handle,
+    )
+    # FastMCP's http_app() returns a StarletteWithLifespan subclass exposing a
+    # convenience `.lifespan` property, but we only depend on plain Starlette
+    # here — `.router.lifespan_context` is the same underlying value and is
+    # part of base Starlette's public API.
+    combined = Starlette(
+        routes=[Mount("/mcp", app=mcp_app), Mount("/", app=gallery_app)],
+        lifespan=mcp_app.router.lifespan_context,
+    )
+    combined = ActivityMiddleware(combined, tracker=tracker)
+    combined = BearerGuard(
+        combined, token=_server._token, exempt_path_prefixes=("/gallery-static/",)
+    )
+    combined = HostOriginGuard(combined, allowed_hosts=allowed_hosts_for_port(_server._port))
+    # CORS must be outermost: browsers require CORS headers on every
+    # cross-origin response, including error responses (e.g. a 401 from
+    # BearerGuard or 403 from HostOriginGuard) — otherwise a rejected request
+    # surfaces to the browser as an opaque "blocked by CORS policy" error
+    # that hides the real (auth/host) cause.
+    app = with_permissive_cors(combined)
 
     config = uvicorn.Config(app, log_level="info", access_log=False)
     uv_server = uvicorn.Server(config)

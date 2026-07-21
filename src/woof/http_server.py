@@ -32,7 +32,6 @@ from urllib.parse import quote
 
 import httpx
 from starlette.applications import Starlette
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -42,7 +41,6 @@ from starlette.types import ASGIApp
 
 from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager, PageOutOfRange
-from .security import BearerGuard, HostOriginGuard
 
 _log = logging.getLogger(__name__)
 
@@ -97,11 +95,13 @@ async def serve_in_loop(
     Any synchronous CPU-bound work called from request handlers must go through
     ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
     """
-    app = _build_app(
-        session_manager,
-        wally_connection_fn,
-        server_url=server_url,
-        indexing_session_manager=indexing_session_manager,
+    app = with_permissive_cors(
+        build_gallery_app(
+            session_manager,
+            wally_connection_fn,
+            server_url=server_url,
+            indexing_session_manager=indexing_session_manager,
+        )
     )
     await _serve_bare(app, sock)
 
@@ -135,11 +135,13 @@ def start_http_server(
     port: int = sock.getsockname()[1]
     server_url = f"http://localhost:{port}"
 
-    app = _build_app(
-        mgr,
-        wally_connection_fn,
-        server_url=server_url,
-        indexing_session_manager=indexing_session_manager,
+    app = with_permissive_cors(
+        build_gallery_app(
+            mgr,
+            wally_connection_fn,
+            server_url=server_url,
+            indexing_session_manager=indexing_session_manager,
+        )
     )
     ready = threading.Event()
 
@@ -183,42 +185,45 @@ async def _serve_bare(app: Any, sock: socket.socket) -> None:
     await server.serve(sockets=[sock])
 
 
-def _build_app(
+def build_gallery_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
     indexing_session_manager: Any | None = None,
     *,
-    mcp_asgi_app: Starlette | None = None,
+    token: str | None = None,
     activity_tracker: ActivityTracker | None = None,
     shutdown_handle: Any | None = None,
-    auth_token: str | None = None,
-    allowed_hosts: set[str] | None = None,
-) -> Any:
-    """Build and return the Starlette ASGI application.
+) -> ASGIApp:
+    """Build the gallery/media/lifecycle Starlette app — no MCP awareness at all.
 
-    The extra keyword-only arguments are only used in HTTP mode
-    (``woof --transport http``); the stdio-mode gallery server and existing
-    tests call this with none of them, preserving today's unauthenticated
-    behavior exactly.
+    This app knows nothing about the MCP endpoint or about auth/CORS
+    middleware; callers compose it with those independently:
 
-    - ``mcp_asgi_app``: FastMCP's own ``http_app()``, mounted at ``/mcp`` so
-      one uvicorn server answers both MCP and gallery/media traffic.
-    - ``activity_tracker``: touched on every successfully authenticated
-      request (and by ``/keepalive``) so idle-shutdown can decide when it's
-      safe to exit.
-    - ``shutdown_handle``: object with a ``.request()`` method invoked by
-      ``POST /shutdown``.
-    - ``auth_token`` / ``allowed_hosts``: when set, wrap the app in
-      ``BearerGuard`` / ``HostOriginGuard`` respectively.
+    - stdio mode (``serve_in_loop``/``start_http_server``) serves this app
+      alone, on its own port, unauthenticated — unchanged from before.
+    - HTTP mode (``__main__.py``) mounts this app alongside FastMCP's own
+      ``http_app()`` under one combined Starlette app, then wraps the
+      *combined* app in ``ActivityMiddleware``/``BearerGuard``/
+      ``HostOriginGuard``/``CORSMiddleware`` itself — mirroring how Wally's
+      ``__main__.py`` composes its own ASGI stack, rather than this module
+      reaching into another module's app or vice versa.
+
+    Args:
+        token: Embedded into the gallery HTML (``data-server-token``) so the
+            frontend can authenticate — this is HTTP mode's bearer token
+            value, not a wrapping concern of this function.
+        activity_tracker: touched by the ``/keepalive`` route.
+        shutdown_handle: object with a ``.request()`` method invoked by
+            ``POST /shutdown``.
     """
 
     async def gallery_token(request: Request) -> Response:
-        token = request.path_params["token"]
-        session = session_manager.get(token)
+        path_token = request.path_params["token"]
+        session = session_manager.get(path_token)
         if session is None:
             return Response(status_code=404)
-        html = get_gallery_html(server_url, token=auth_token)
+        html = get_gallery_html(server_url, token=token)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
@@ -313,10 +318,7 @@ def _build_app(
         shutdown_handle.request()
         return JSONResponse({"status": "stopping"})
 
-    routes = []
-    if mcp_asgi_app is not None:
-        routes.append(Mount("/mcp", app=mcp_asgi_app))
-    routes += [
+    routes = [
         Route("/healthz", healthz, methods=["GET"]),
         Route("/keepalive", keepalive, methods=["POST"]),
         Route("/shutdown", shutdown, methods=["POST"]),
@@ -328,47 +330,23 @@ def _build_app(
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
-    # FastMCP's http_app() returns a StarletteWithLifespan subclass exposing a
-    # convenience `.lifespan` property, but we only depend on plain Starlette
-    # here — `.router.lifespan_context` is the same underlying value and is
-    # part of base Starlette's public API.
-    lifespan = mcp_asgi_app.router.lifespan_context if mcp_asgi_app is not None else None
-    app: ASGIApp = Starlette(routes=routes, lifespan=lifespan)
-    if activity_tracker is not None:
-        app = _ActivityMiddleware(app, tracker=activity_tracker)
-    if auth_token is not None:
-        app = BearerGuard(app, token=auth_token, exempt_path_prefixes=("/gallery-static/",))
-    if allowed_hosts is not None:
-        app = HostOriginGuard(app, allowed_hosts=allowed_hosts)
-    # CORS must be outermost: browsers require CORS headers on every
-    # cross-origin response, including error responses (e.g. a 401 from
-    # BearerGuard or 403 from HostOriginGuard). Wrapping it around those
-    # guards, rather than inside them, means even rejected requests get a
-    # proper Access-Control-Allow-Origin header instead of surfacing to the
-    # browser as an opaque "blocked by CORS policy" error that hides the
-    # real (auth/host) cause.
-    # allow_methods/allow_headers default to GET-only / none in Starlette —
-    # too narrow now that the gallery frontend sends POST (cancel/keepalive)
-    # and an Authorization header (bearer token), both of which trigger a
-    # preflight OPTIONS request that CORSMiddleware itself must answer with
-    # 200 before the browser will even attempt the real request.
-    return CORSMiddleware(app, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    return Starlette(routes=routes)
 
 
-class _ActivityMiddleware(BaseHTTPMiddleware):
-    """Touches an :class:`ActivityTracker` on every request that reaches it.
+def with_permissive_cors(app: ASGIApp) -> ASGIApp:
+    """Wrap *app* with the permissive CORS config the gallery frontend needs.
 
-    Placed inside ``BearerGuard``/``HostOriginGuard`` in the middleware stack
-    so only authenticated, correctly-addressed traffic counts as activity.
+    Single source of truth for this config — used both by the standalone
+    stdio-mode gallery server (below) and by ``__main__.py`` wrapping its
+    combined MCP+gallery app for HTTP mode, so the two don't drift apart.
+
+    allow_methods/allow_headers default to GET-only / none in Starlette — too
+    narrow now that the gallery frontend sends POST (cancel/keepalive) and an
+    Authorization header (bearer token), both of which trigger a preflight
+    OPTIONS request that CORSMiddleware itself must answer with 200 before
+    the browser will even attempt the real request.
     """
-
-    def __init__(self, app: ASGIApp, *, tracker: ActivityTracker) -> None:
-        super().__init__(app)
-        self._tracker = tracker
-
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        self._tracker.touch()
-        return await call_next(request)
+    return CORSMiddleware(app, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 def _gallery_placeholder() -> str:
