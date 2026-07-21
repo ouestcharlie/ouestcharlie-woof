@@ -39,6 +39,7 @@ _log = logging.getLogger(__name__)
 _log.info("Woof starting — log: %s", _log_file)
 
 from woof.agent_client import AgentClient
+from woof.asgi_server import build_http_asgi_app, make_uvicorn_server
 from woof.config import WoofConfig
 from woof.discovery import (
     ActivityTracker,
@@ -49,9 +50,9 @@ from woof.discovery import (
     write_discovery,
 )
 from woof.gallery_session_manager import GallerySessionManager
-from woof.http_server import build_gallery_app, with_permissive_cors
+from woof.http_server import build_gallery_app
 from woof.mcp_server import McpServer
-from woof.security import ActivityMiddleware, BearerGuard, HostOriginGuard, allowed_hosts_for_port
+from woof.security import allowed_hosts_for_port
 
 _TRANSPORT = os.environ.get("WOOF_TRANSPORT", "http")
 
@@ -93,23 +94,18 @@ _IDLE_CHECK_INTERVAL_SECONDS = 30.0
 async def _run_http() -> None:
     import asyncio
 
-    import uvicorn
-    from starlette.applications import Starlette
-    from starlette.routing import Mount
-
     tracker = ActivityTracker()
     handle = _ShutdownHandle()
 
-    # Layer the ASGI stack (innermost first):
-    # each module builds its own piece independently (FastMCP's
-    # own http_app, the gallery/media routes) and this is the one place that
-    # combines and wraps them — no module reaches into another's internals.
+    # Each module builds its own piece independently (FastMCP's own
+    # http_app, the gallery/media routes); asgi_server.build_http_asgi_app is
+    # the one place that combines and wraps them — no module reaches into
+    # another's internals.
     #
-    # path="/" here, NOT "/mcp": this app is mounted at "/mcp" below via
-    # Mount("/mcp", app=mcp_app), which strips that prefix before dispatching.
-    # Registering the inner app's own route at "/mcp" too would double it up
-    # (Mount strips "/mcp", leaving "/", which wouldn't match an inner route
-    # still expecting "/mcp").
+    # path="/" here, NOT "/mcp": build_http_asgi_app mounts this at "/mcp",
+    # which strips that prefix before dispatching. Registering this app's own
+    # route at "/mcp" too would double it up (Mount strips "/mcp", leaving
+    # "/", which wouldn't match an inner route still expecting "/mcp").
     assert _server._token is not None  # guaranteed by the http-mode branch above
     mcp_app = _server.mcp.http_app(path="/")
     gallery_app = build_gallery_app(
@@ -121,28 +117,15 @@ async def _run_http() -> None:
         activity_tracker=tracker,
         shutdown_handle=handle,
     )
-    # FastMCP's http_app() returns a StarletteWithLifespan subclass exposing a
-    # convenience `.lifespan` property, but we only depend on plain Starlette
-    # here — `.router.lifespan_context` is the same underlying value and is
-    # part of base Starlette's public API.
-    combined = Starlette(
-        routes=[Mount("/mcp", app=mcp_app), Mount("/", app=gallery_app)],
-        lifespan=mcp_app.router.lifespan_context,
+    app = build_http_asgi_app(
+        mcp_app=mcp_app,
+        gallery_app=gallery_app,
+        token=_server._token,
+        allowed_hosts=allowed_hosts_for_port(_server._port),
+        activity_tracker=tracker,
     )
-    combined = ActivityMiddleware(combined, tracker=tracker)
-    combined = BearerGuard(
-        combined, token=_server._token, exempt_path_prefixes=("/gallery-static/",)
-    )
-    combined = HostOriginGuard(combined, allowed_hosts=allowed_hosts_for_port(_server._port))
-    # CORS must be outermost: browsers require CORS headers on every
-    # cross-origin response, including error responses (e.g. a 401 from
-    # BearerGuard or 403 from HostOriginGuard) — otherwise a rejected request
-    # surfaces to the browser as an opaque "blocked by CORS policy" error
-    # that hides the real (auth/host) cause.
-    app = with_permissive_cors(combined)
 
-    config = uvicorn.Config(app, log_level="info", access_log=False)
-    uv_server = uvicorn.Server(config)
+    uv_server = make_uvicorn_server(app, log_level="info")
     handle.server = uv_server
 
     async def _signal_ready() -> None:

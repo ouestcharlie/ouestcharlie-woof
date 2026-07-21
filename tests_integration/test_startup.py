@@ -23,7 +23,7 @@ from woof.agent_client import AgentClient
 from woof.config import LibraryConfig, WoofConfig
 from woof.gallery_session_manager import GallerySessionManager
 from woof.http_server import start_http_server
-from woof.server import WoofServer
+from woof.mcp_server import McpServer
 
 # ---------------------------------------------------------------------------
 # HTTP server
@@ -191,7 +191,7 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
                 agent_client=agent,
                 session_manager=session_manager,
@@ -216,7 +216,7 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
                 agent_client=agent,
                 session_manager=session_manager,
@@ -243,7 +243,7 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
                 agent_client=agent,
                 session_manager=session_manager,

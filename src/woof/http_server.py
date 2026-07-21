@@ -32,13 +32,12 @@ from urllib.parse import quote
 
 import httpx
 from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
-from starlette.types import ASGIApp
 
+from .asgi_server import serve_with_ready, with_permissive_cors
 from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager, PageOutOfRange
 
@@ -103,7 +102,7 @@ async def serve_in_loop(
             indexing_session_manager=indexing_session_manager,
         )
     )
-    await _serve_bare(app, sock)
+    await serve_with_ready(app, sock)
 
 
 def start_http_server(
@@ -147,7 +146,7 @@ def start_http_server(
 
     def _run() -> None:
         try:
-            asyncio.run(_serve_with_ready(app, sock, ready))
+            asyncio.run(serve_with_ready(app, sock, ready))
         except Exception:
             _log.exception("HTTP server thread crashed")
 
@@ -155,34 +154,6 @@ def start_http_server(
     ready.wait(timeout=5.0)
     _log.info("HTTP server listening on %s", server_url)
     return server_url
-
-
-async def _serve_with_ready(app: Any, sock: socket.socket, ready: threading.Event) -> None:
-    import uvicorn
-
-    class _Server(uvicorn.Server):
-        def install_signal_handlers(self) -> None:
-            pass  # Signal handling belongs to the main thread; no-op in daemon thread
-
-        async def startup(self, sockets: list[socket.socket] | None = None) -> None:
-            await super().startup(sockets=sockets)
-            ready.set()
-
-    config = uvicorn.Config(app, log_level="warning", access_log=False)
-    server = _Server(config)
-    await server.serve(sockets=[sock])
-
-
-async def _serve_bare(app: Any, sock: socket.socket) -> None:
-    import uvicorn
-
-    class _Server(uvicorn.Server):
-        def install_signal_handlers(self) -> None:
-            pass
-
-    config = uvicorn.Config(app, log_level="warning", access_log=False)
-    server = _Server(config)
-    await server.serve(sockets=[sock])
 
 
 def build_gallery_app(
@@ -194,20 +165,8 @@ def build_gallery_app(
     token: str | None = None,
     activity_tracker: ActivityTracker | None = None,
     shutdown_handle: Any | None = None,
-) -> ASGIApp:
-    """Build the gallery/media/lifecycle Starlette app — no MCP awareness at all.
-
-    This app knows nothing about the MCP endpoint or about auth/CORS
-    middleware; callers compose it with those independently:
-
-    - stdio mode (``serve_in_loop``/``start_http_server``) serves this app
-      alone, on its own port, unauthenticated — unchanged from before.
-    - HTTP mode (``__main__.py``) mounts this app alongside FastMCP's own
-      ``http_app()`` under one combined Starlette app, then wraps the
-      *combined* app in ``ActivityMiddleware``/``BearerGuard``/
-      ``HostOriginGuard``/``CORSMiddleware`` itself — mirroring how Wally's
-      ``__main__.py`` composes its own ASGI stack, rather than this module
-      reaching into another module's app or vice versa.
+) -> Starlette:
+    """Build the gallery/media/lifecycle Starlette app
 
     Args:
         token: Embedded into the gallery HTML (``data-server-token``) so the
@@ -331,22 +290,6 @@ def build_gallery_app(
         Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
     return Starlette(routes=routes)
-
-
-def with_permissive_cors(app: ASGIApp) -> ASGIApp:
-    """Wrap *app* with the permissive CORS config the gallery frontend needs.
-
-    Single source of truth for this config — used both by the standalone
-    stdio-mode gallery server (below) and by ``__main__.py`` wrapping its
-    combined MCP+gallery app for HTTP mode, so the two don't drift apart.
-
-    allow_methods/allow_headers default to GET-only / none in Starlette — too
-    narrow now that the gallery frontend sends POST (cancel/keepalive) and an
-    Authorization header (bearer token), both of which trigger a preflight
-    OPTIONS request that CORSMiddleware itself must answer with 200 before
-    the browser will even attempt the real request.
-    """
-    return CORSMiddleware(app, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 def _gallery_placeholder() -> str:

@@ -1,11 +1,11 @@
 """Tests for the HTTP-mode combined app (MCP + gallery + security middleware).
 
-This composition lives inline in ``__main__.py::_run_http`` (mirroring how
-Wally's ``__main__.py`` assembles its own ASGI stack) rather than as a method
-on ``McpServer`` — so these tests replicate the same small assembly from the
-same public building blocks (``McpServer.mcp``, ``http_server.build_gallery_app``,
-``security.*``) instead of importing ``woof.__main__`` directly, which would
-trigger real socket binding and config loading as a module-level side effect.
+This composition is assembled by ``asgi_server.build_http_asgi_app`` (called
+from ``__main__.py::_run_http``, mirroring how Wally's ``__main__.py``
+assembles its own ASGI stack) rather than living as a method on ``McpServer``
+— so these tests call that same function directly instead of importing
+``woof.__main__``, which would trigger real socket binding and config loading
+as a module-level side effect.
 """
 
 from __future__ import annotations
@@ -14,15 +14,14 @@ import time
 from pathlib import Path
 
 import pytest
-from starlette.applications import Starlette
-from starlette.routing import Mount
 from starlette.testclient import TestClient
 
+from woof.asgi_server import build_http_asgi_app
 from woof.config import LibraryConfig, WoofConfig
 from woof.discovery import ActivityTracker
-from woof.http_server import build_gallery_app, with_permissive_cors
+from woof.http_server import build_gallery_app
 from woof.mcp_server import McpServer
-from woof.security import ActivityMiddleware, BearerGuard, HostOriginGuard, allowed_hosts_for_port
+from woof.security import allowed_hosts_for_port
 
 
 @pytest.fixture()
@@ -56,16 +55,13 @@ def _build_app(server: McpServer, *, tracker: ActivityTracker | None = None, han
         activity_tracker=tracker,
         shutdown_handle=handle,
     )
-    combined = Starlette(
-        routes=[Mount("/mcp", app=mcp_app), Mount("/", app=gallery_app)],
-        lifespan=mcp_app.router.lifespan_context,
+    return build_http_asgi_app(
+        mcp_app=mcp_app,
+        gallery_app=gallery_app,
+        token=server._token,
+        allowed_hosts=allowed_hosts_for_port(server._port),
+        activity_tracker=tracker,
     )
-    combined = ActivityMiddleware(combined, tracker=tracker)
-    combined = BearerGuard(
-        combined, token=server._token, exempt_path_prefixes=("/gallery-static/",)
-    )
-    combined = HostOriginGuard(combined, allowed_hosts=allowed_hosts_for_port(server._port))
-    return with_permissive_cors(combined)
 
 
 def test_build_app_requires_a_token(config: WoofConfig) -> None:
