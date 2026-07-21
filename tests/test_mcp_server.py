@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -439,6 +440,26 @@ async def test_search_photos_calls_wally(server: McpServer) -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_photos_coerces_stringified_filters(server: McpServer) -> None:
+    """CoWork's MCP client serializes object-typed args as JSON strings; accept both."""
+    mock = AsyncMock(return_value={"matches": []})
+    filters = {"date": {"min": "2024"}, "rating": {"min": 4}}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib", filters=json.dumps(filters))
+        assert mock.call_args[0][2]["filters"] == filters
+
+
+@pytest.mark.asyncio
+async def test_search_photos_stringified_filters_malformed_raises(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"matches": []})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        with pytest.raises(ValueError, match="filters"):
+            await tool_fn(ctx=None, library_name="testlib", filters="not json")
+
+
+@pytest.mark.asyncio
 async def test_search_photos_omits_filters_when_none(server: McpServer) -> None:
     mock = AsyncMock(return_value={"matches": []})
     with patch.object(server._agent, "call_tool", new=mock):
@@ -459,6 +480,16 @@ async def test_search_photos_forwards_full_text_filter(server: McpServer) -> Non
         await tool_fn(ctx=None, library_name="testlib", full_text_filter=fts)
         args_passed = mock.call_args[0][2]
         assert args_passed["full_text_filter"] == fts
+
+
+@pytest.mark.asyncio
+async def test_search_photos_coerces_stringified_full_text_filter(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"matches": []})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "search_photos")
+        await tool_fn(ctx=None, library_name="testlib", full_text_filter=json.dumps(fts))
+        assert mock.call_args[0][2]["full_text_filter"] == fts
 
 
 @pytest.mark.asyncio
@@ -538,6 +569,25 @@ async def test_browse_gallery_unknown_token(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["bad-token"])
     assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_browse_gallery_coerces_stringified_session_tokens(server: McpServer) -> None:
+    """CoWork's MCP client serializes array-typed args as JSON strings; accept both."""
+    matches = _make_matches(partitions=["2024/01"])
+    token = "test-token"
+    server._sessions.sessions[token] = SessionHandler(
+        library=LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+        agent=None,
+        queryArgs={},
+        pageSize=400,
+        totalCount=1,
+        matches=matches,
+    )
+    tool_fn = await _get_tool(server, "browse_gallery")
+    result = await tool_fn(session_tokens=json.dumps([token]))
+    assert "error" not in result
+    assert result["totalCount"] == len(matches)
 
 
 @pytest.mark.asyncio
