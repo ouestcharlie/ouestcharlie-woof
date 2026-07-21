@@ -26,6 +26,10 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 .venv/bin/pytest tests/ -v
 ```
 
+### Linting
+
+Use `uv tool run ruff check ...` (not bare `ruff` or `uv run ruff`) to lint Python files.
+
 ### JavaScript / Svelte (gallery)
 ```
 cd gallery && npm test

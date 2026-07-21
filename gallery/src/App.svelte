@@ -4,10 +4,27 @@
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
   import IndexingProgress from './components/IndexingProgress.svelte';
-  import { initServerOrigins, fetchResults, fetchResultsPage, thumbnailUrl, previewUrl } from './lib/api.svelte.js';
+  import {
+    initServerOrigins,
+    initServerToken,
+    fetchResults,
+    fetchResultsPage,
+    thumbnailUrl,
+    previewUrl,
+  } from './lib/api.svelte.js';
 
   function embeddedServerUrls() {
     const raw = document.documentElement.dataset.serverUrls;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function embeddedServerToken() {
+    const raw = document.documentElement.dataset.serverToken;
     if (!raw) return null;
     try {
       return JSON.parse(raw);
@@ -78,6 +95,7 @@
   onMount(() => {
     window.addEventListener('keydown', onKeydown);
     initServerOrigins(embeddedServerUrls() ?? [location.origin]);
+    initServerToken(embeddedServerToken());
 
     // Path 1: URL params — works in Chrome and any direct HTTP access.
     // app.connect() may hang indefinitely outside Claude Desktop so we cannot
@@ -112,6 +130,7 @@
         // context location.origin is ui://… not the Woof HTTP server URL, and
         // the server may have restarted on a new port since the page loaded.
         initServerOrigins(result.serverUrls ?? [result.serverUrl]);
+        initServerToken(result.serverToken);
 
         if (result.type === 'indexing') {
           indexingSessionId = result.session_id;

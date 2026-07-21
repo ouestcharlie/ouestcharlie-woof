@@ -10,6 +10,7 @@
 
 let candidates = $state([]);
 let resolvedOrigin = $state(null);
+let authToken = $state(null);
 
 /**
  * Set (or refresh) the candidate origin list. Safe to call more than once —
@@ -24,21 +25,41 @@ export function initServerOrigins(origins) {
   }
 }
 
+/**
+ * Set (or refresh) the bearer token used to authenticate against Woof's
+ * HTTP-mode server (OEC-27). A no-op / null in stdio mode, where routes are
+ * unauthenticated.
+ * @param {string | null | undefined} token
+ */
+export function initServerToken(token) {
+  authToken = token ?? null;
+}
+
 /** Currently known-working origin, or the first untried candidate. Reactive. */
 export function getResolvedOrigin() {
   return resolvedOrigin;
+}
+
+/** Query-string suffix carrying the bearer token, for URLs (e.g. `<img src>`)
+ * that can't set an Authorization header — empty string when unauthenticated. */
+function tokenQueryParam() {
+  return authToken ? `?token=${encodeURIComponent(authToken)}` : '';
 }
 
 async function request(path, options) {
   const tryOrder = resolvedOrigin
     ? [resolvedOrigin, ...candidates.filter((origin) => origin !== resolvedOrigin)]
     : candidates;
+  const finalOptions = authToken
+    ? { ...options, headers: { ...options?.headers, Authorization: `Bearer ${authToken}` } }
+    : options;
 
   let lastError;
   for (const origin of tryOrder) {
     try {
       const url = `${origin}${path}`;
-      const response = options !== undefined ? await fetch(url, options) : await fetch(url);
+      const response =
+        finalOptions !== undefined ? await fetch(url, finalOptions) : await fetch(url);
       if (!response.ok) throw new Error(response.statusText);
       resolvedOrigin = origin;
       return response;
@@ -75,11 +96,11 @@ function encodePartition(partition) {
 /** URL for a match's proxied AVIF thumbnail grid, or null if unavailable. */
 export function thumbnailUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.avifHash || match?.tileIndex == null) return null;
-  return `${resolvedOrigin}/thumbnail/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.avifHash)}`;
+  return `${resolvedOrigin}/thumbnail/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.avifHash)}${tokenQueryParam()}`;
 }
 
 /** URL for a match's on-demand JPEG preview, or null if unavailable. */
 export function previewUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.contentHash) return null;
-  return `${resolvedOrigin}/previews/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.jpg`;
+  return `${resolvedOrigin}/previews/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.jpg${tokenQueryParam()}`;
 }

@@ -18,28 +18,23 @@ Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with 
 
 ## Repository Structure
 
+Server Python sources:
+
 ```
 src/woof/
-├── __main__.py       # Entry point (stdio MCP server)
-├── server.py         # WoofServer — FastMCP tool registration
-├── agent_client.py   # AgentClient — MCP client to Whitebeard / Wally
-├── http_server.py    # Thumbnail HTTP server (stdlib, daemon thread)
-├── config.py         # WoofConfig — ~/.ouestcharlie/config.json
-└── gallery/dist/     # Pre-built Svelte gallery bundle
 
+```
+
+Gallery in Svelte (Javascript) sources & tests:
+
+```
 gallery/              # Svelte source (npm run build → dist/)
-  src/
-    App.svelte
-    components/
-      SearchForm.svelte
-      PhotoGrid.svelte
-      PreviewPanel.svelte
-    lib/bridge.js     # MCP App postMessage bridge
+```
 
+Python tests:
+```
 tests/
-  test_config.py
-  test_http_server.py
-  test_server.py
+tests_integration
 ```
 
 ## Installation
@@ -92,33 +87,30 @@ npm run build
 .venv/bin/python -m pytest tests/ -v
 ```
 
-## Claude Desktop Integration
+## Running the application
+
+### Woof and woof-bridge
+
+The Woof server runs in Streamable HTTP. It is launched and kept alive by `woof-bridge`. 
+
+
+`woof-bridge` is a thin stdio↔HTTP proxy: it lazily starts (or reuses) one persistent Woof HTTP instance and relays MCP traffic to it, so multiple simultaneous connections from the same host (e.g. Claude CoWork) all reach the same running instance. Run `woof-bridge --stop` to stop it manually — it otherwise shuts itself down automatically after being idle for a while. 
+
+For debugging or the MCP Inspector workflow, you can still run Woof directly in stdio mode with `WOOF_TRANSPORT=stdio uvx --python 3.13 --from ouestcharlie-woof woof`.
+
 
 ### With uvx (recommended — no manual install)
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+See [README.md](README.md) for the standard startup using `woof-bridge`.
+
+### In Claude Config with a local venv (development)
 
 ```json
 {
   "mcpServers": {
     "ouestcharlie": {
-      "command": "uvx",
-      "args": ["ouestcharlie-woof"]
-    }
-  }
-}
-```
-
-`uvx` fetches the package from PyPI into an isolated environment on first run — no prior install needed.
-
-### With a local venv (development)
-
-```json
-{
-  "mcpServers": {
-    "ouestcharlie": {
-      "command": "/path/to/ouestcharlie-woof/.venv/bin/python",
-      "args": ["-m", "woof"]
+      "command": "/path/to/ouestcharlie-woof/.venv/bin/woof-bridge",
+      "args": []
     }
   }
 }
@@ -127,11 +119,33 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 Restart Claude Desktop after editing the config. Woof is launched on demand when Claude Desktop starts.
 
 
+### Check started woof
+
+
+
+```
+ cat "$HOME/Library/Application Support/ouestcharlie/woof-discovery.json"
+ ```
+
 ## MCP Inspector (development)
 
+Woof defaults to `WOOF_TRANSPORT=http` (a single persistent HTTP instance, discovered via a
+discovery file — see `woof.discovery`/`woof.bridge`). The inspector drives the module-level `mcp`
+object directly over stdio, so `WOOF_TRANSPORT` must be set to `stdio` *before* import for its
+lifespan to start the separate gallery/media server the inspector expects.
+
+Use `fastmcp dev inspector`, not the base `mcp` SDK's `mcp dev`:
+
 ```bash
-mcp dev src/woof/__main__.py
+source .venv/bin/activate
+WOOF_TRANSPORT=stdio fastmcp dev inspector src/woof/__main__.py
 ```
+
+Activate the venv rather than invoking `.venv/bin/fastmcp` directly — the Inspector UI it launches
+re-spawns the server subprocess using a bare `fastmcp` command (`fastmcp run ...`, resolved via
+`PATH`), which fails with `spawn fastmcp ENOENT` if `.venv/bin` isn't on `PATH`.
+
+(Woof's `mcp` object is a `fastmcp` (third-party package) `FastMCP` instance, not the base SDK's own `FastMCP` type that `mcp dev` expects, so `mcp dev` fails with "not a valid server object")
 
 ## Context
 

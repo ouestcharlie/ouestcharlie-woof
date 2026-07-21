@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   initServerOrigins,
+  initServerToken,
   getResolvedOrigin,
   fetchResults,
   fetchResultsPage,
@@ -10,8 +11,11 @@ import {
   previewUrl,
 } from './api.svelte.js';
 
-// Module state (resolvedOrigin) persists across tests — force a clean slate each time.
-beforeEach(() => initServerOrigins([]));
+// Module state (resolvedOrigin, authToken) persists across tests — force a clean slate each time.
+beforeEach(() => {
+  initServerOrigins([]);
+  initServerToken(null);
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe('api.svelte.js — origin fallback', () => {
@@ -83,6 +87,42 @@ describe('api.svelte.js — origin fallback', () => {
   });
 });
 
+describe('api.svelte.js — bearer token (OEC-27 HTTP mode)', () => {
+  it('attaches an Authorization header to GET requests once a token is set', async () => {
+    initServerOrigins(['http://localhost:1']);
+    initServerToken('secret');
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+
+    await fetchResults('tok');
+
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok', {
+      headers: { Authorization: 'Bearer secret' },
+    });
+  });
+
+  it('merges the Authorization header into existing request options (e.g. POST)', async () => {
+    initServerOrigins(['http://localhost:1']);
+    initServerToken('secret');
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+
+    await cancelIndexing('sess');
+
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess/cancel', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer secret' },
+    });
+  });
+
+  it('sends no Authorization header when no token is set', async () => {
+    initServerOrigins(['http://localhost:1']);
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+
+    await fetchResults('tok');
+
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok');
+  });
+});
+
 describe('api.svelte.js — URL builders', () => {
   const match = { library: 'lib', partition: '2024/07', avifHash: 'avif1', tileIndex: 3, contentHash: 'hash1' };
 
@@ -104,5 +144,12 @@ describe('api.svelte.js — URL builders', () => {
   it('returns null for previewUrl when required match fields are missing', () => {
     initServerOrigins(['http://localhost:1']);
     expect(previewUrl({ ...match, contentHash: undefined })).toBeNull();
+  });
+
+  it('appends the bearer token as a query param when set (img src cannot set headers)', () => {
+    initServerOrigins(['http://localhost:1']);
+    initServerToken('secret');
+    expect(thumbnailUrl(match)).toBe('http://localhost:1/thumbnail/lib/2024/07/avif1?token=secret');
+    expect(previewUrl(match)).toBe('http://localhost:1/previews/lib/2024/07/hash1.jpg?token=secret');
   });
 });

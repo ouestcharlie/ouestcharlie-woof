@@ -32,13 +32,17 @@ from urllib.parse import quote
 
 import httpx
 from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
+from starlette.types import ASGIApp
 
+from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager, PageOutOfRange
+from .security import BearerGuard, HostOriginGuard
 
 _log = logging.getLogger(__name__)
 
@@ -47,7 +51,9 @@ _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 
-def get_gallery_html(server_url: str, server_urls: list[str] | None = None) -> str:
+def get_gallery_html(
+    server_url: str, server_urls: list[str] | None = None, token: str | None = None
+) -> str:
     """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
@@ -59,12 +65,19 @@ def get_gallery_html(server_url: str, server_urls: list[str] | None = None) -> s
     try each candidate origin in turn — different MCP hosts accept different
     loopback hostnames in their CSP. A data attribute (rather than an inline
     ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
+
+    ``token`` (HTTP-mode only — None in stdio mode where routes are
+    unauthenticated) is embedded alongside as ``data-server-token`` so the
+    frontend can attach it as a bearer token / ``?token=`` query param.
     """
     candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
         html = html.replace("/gallery-static/", f"{server_url}/gallery-static/")
-        return html.replace("<html", f"<html data-server-urls='{json.dumps(candidates)}'", 1)
+        attrs = f"data-server-urls='{json.dumps(candidates)}'"
+        if token is not None:
+            attrs += f" data-server-token='{json.dumps(token)}'"
+        return html.replace("<html", f"<html {attrs}", 1)
     return _gallery_placeholder()
 
 
@@ -175,15 +188,37 @@ def _build_app(
     wally_connection_fn: Any | None,
     server_url: str,
     indexing_session_manager: Any | None = None,
+    *,
+    mcp_asgi_app: Starlette | None = None,
+    activity_tracker: ActivityTracker | None = None,
+    shutdown_handle: Any | None = None,
+    auth_token: str | None = None,
+    allowed_hosts: set[str] | None = None,
 ) -> Any:
-    """Build and return the Starlette ASGI application."""
+    """Build and return the Starlette ASGI application.
+
+    The extra keyword-only arguments are only used in HTTP mode
+    (``woof --transport http``); the stdio-mode gallery server and existing
+    tests call this with none of them, preserving today's unauthenticated
+    behavior exactly.
+
+    - ``mcp_asgi_app``: FastMCP's own ``http_app()``, mounted at ``/mcp`` so
+      one uvicorn server answers both MCP and gallery/media traffic.
+    - ``activity_tracker``: touched on every successfully authenticated
+      request (and by ``/keepalive``) so idle-shutdown can decide when it's
+      safe to exit.
+    - ``shutdown_handle``: object with a ``.request()`` method invoked by
+      ``POST /shutdown``.
+    - ``auth_token`` / ``allowed_hosts``: when set, wrap the app in
+      ``BearerGuard`` / ``HostOriginGuard`` respectively.
+    """
 
     async def gallery_token(request: Request) -> Response:
         token = request.path_params["token"]
         session = session_manager.get(token)
         if session is None:
             return Response(status_code=404)
-        html = get_gallery_html(server_url)
+        html = get_gallery_html(server_url, token=auth_token)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
@@ -264,7 +299,27 @@ def _build_app(
             return JSONResponse({"error": "not cancellable"}, status_code=409)
         return JSONResponse({"status": "cancelling"})
 
-    routes = [
+    async def healthz(request: Request) -> Response:
+        return JSONResponse({"status": "ok"})
+
+    async def keepalive(request: Request) -> Response:
+        if activity_tracker is not None:
+            activity_tracker.touch()
+        return JSONResponse({"status": "ok"})
+
+    async def shutdown(request: Request) -> Response:
+        if shutdown_handle is None:
+            return JSONResponse({"error": "not supported"}, status_code=503)
+        shutdown_handle.request()
+        return JSONResponse({"status": "stopping"})
+
+    routes = []
+    if mcp_asgi_app is not None:
+        routes.append(Mount("/mcp", app=mcp_asgi_app))
+    routes += [
+        Route("/healthz", healthz, methods=["GET"]),
+        Route("/keepalive", keepalive, methods=["POST"]),
+        Route("/shutdown", shutdown, methods=["POST"]),
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
@@ -273,8 +328,47 @@ def _build_app(
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
-    app = Starlette(routes=routes)
-    return CORSMiddleware(app, allow_origins=["*"])
+    # FastMCP's http_app() returns a StarletteWithLifespan subclass exposing a
+    # convenience `.lifespan` property, but we only depend on plain Starlette
+    # here — `.router.lifespan_context` is the same underlying value and is
+    # part of base Starlette's public API.
+    lifespan = mcp_asgi_app.router.lifespan_context if mcp_asgi_app is not None else None
+    app: ASGIApp = Starlette(routes=routes, lifespan=lifespan)
+    if activity_tracker is not None:
+        app = _ActivityMiddleware(app, tracker=activity_tracker)
+    if auth_token is not None:
+        app = BearerGuard(app, token=auth_token, exempt_path_prefixes=("/gallery-static/",))
+    if allowed_hosts is not None:
+        app = HostOriginGuard(app, allowed_hosts=allowed_hosts)
+    # CORS must be outermost: browsers require CORS headers on every
+    # cross-origin response, including error responses (e.g. a 401 from
+    # BearerGuard or 403 from HostOriginGuard). Wrapping it around those
+    # guards, rather than inside them, means even rejected requests get a
+    # proper Access-Control-Allow-Origin header instead of surfacing to the
+    # browser as an opaque "blocked by CORS policy" error that hides the
+    # real (auth/host) cause.
+    # allow_methods/allow_headers default to GET-only / none in Starlette —
+    # too narrow now that the gallery frontend sends POST (cancel/keepalive)
+    # and an Authorization header (bearer token), both of which trigger a
+    # preflight OPTIONS request that CORSMiddleware itself must answer with
+    # 200 before the browser will even attempt the real request.
+    return CORSMiddleware(app, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+class _ActivityMiddleware(BaseHTTPMiddleware):
+    """Touches an :class:`ActivityTracker` on every request that reaches it.
+
+    Placed inside ``BearerGuard``/``HostOriginGuard`` in the middleware stack
+    so only authenticated, correctly-addressed traffic counts as activity.
+    """
+
+    def __init__(self, app: ASGIApp, *, tracker: ActivityTracker) -> None:
+        super().__init__(app)
+        self._tracker = tracker
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        self._tracker.touch()
+        return await call_next(request)
 
 
 def _gallery_placeholder() -> str:

@@ -24,6 +24,7 @@ dependencies = [
     "starlette>=1.0",
     "uvicorn>=0.40",
     "platformdirs>=4.0",
+    "filelock>=3.13",
     "ouestcharlie-py-toolkit>=0.12.0",
     "ouestcharlie-whitebeard>=0.12.0",
     "ouestcharlie-wally>=0.12.0",
@@ -35,6 +36,7 @@ Issues = "https://github.com/ouestcharlie/ouestcharlie-woof/issues"
 
 [project.scripts]
 woof = "woof.__main__:main"
+woof-bridge = "woof.bridge:main"
 
 [tool.uv.sources]
 ouestcharlie-py-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
@@ -52,6 +54,7 @@ tmp_path_retention_policy = "none"
 filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
 ]
 
 [tool.ruff]
