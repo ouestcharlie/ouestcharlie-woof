@@ -96,7 +96,7 @@ The Woof server runs in Streamable HTTP. It is launched and kept alive by `woof-
 
 `woof-bridge` is a thin stdio↔HTTP proxy: it lazily starts (or reuses) one persistent Woof HTTP instance and relays MCP traffic to it, so multiple simultaneous connections from the same host (e.g. Claude CoWork) all reach the same running instance. Run `woof-bridge --stop` to stop it manually — it otherwise shuts itself down automatically after being idle for a while. 
 
-For debugging or the MCP Inspector workflow, you can still run Woof directly in stdio mode with `WOOF_TRANSPORT=stdio uvx --python 3.13 --from ouestcharlie-woof woof`.
+Woof only ever runs in HTTP mode — there is no stdio mode for Woof itself. For debugging with the MCP Inspector, see [MCP Inspector (development)](#mcp-inspector-development) below.
 
 
 ### With uvx (recommended — no manual install)
@@ -129,23 +129,23 @@ Restart Claude Desktop after editing the config. Woof is launched on demand when
 
 ## MCP Inspector (development)
 
-Woof defaults to `WOOF_TRANSPORT=http` (a single persistent HTTP instance, discovered via a
-discovery file — see `woof.discovery`/`woof.bridge`). The inspector drives the module-level `mcp`
-object directly over stdio, so `WOOF_TRANSPORT` must be set to `stdio` *before* import for its
-lifespan to start the separate gallery/media server the inspector expects.
+Woof runs as a single persistent HTTP instance, discovered via a discovery file (see
+`woof.discovery`/`woof.bridge`) — there's no stdio mode for Woof itself to point a Python-file-based
+inspector at. `fastmcp dev inspector`/`mcp dev` don't work here: they drive a target file's `mcp`
+object directly over stdio, bypassing our own ASGI composition (`asgi_server.build_http_asgi_app`)
+entirely — the gallery/media HTTP routes would never get served that way.
 
-Use `fastmcp dev inspector`, not the base `mcp` SDK's `mcp dev`:
+Instead, point the standalone `@modelcontextprotocol/inspector` at `woof-bridge` — since the bridge
+*is* a stdio↔HTTP proxy to a real, persistent HTTP-mode Woof instance (lazily starting one if
+needed), this exercises the actual production path, gallery routes included:
 
 ```bash
-source .venv/bin/activate
-WOOF_TRANSPORT=stdio fastmcp dev inspector src/woof/__main__.py
+npx @modelcontextprotocol/inspector .venv/bin/woof-bridge
 ```
 
-Activate the venv rather than invoking `.venv/bin/fastmcp` directly — the Inspector UI it launches
-re-spawns the server subprocess using a bare `fastmcp` command (`fastmcp run ...`, resolved via
-`PATH`), which fails with `spawn fastmcp ENOENT` if `.venv/bin` isn't on `PATH`.
-
-(Woof's `mcp` object is a `fastmcp` (third-party package) `FastMCP` instance, not the base SDK's own `FastMCP` type that `mcp dev` expects, so `mcp dev` fails with "not a valid server object")
+Trade-off versus `fastmcp dev inspector`: no `--reload` auto-restart on file edits. During
+iteration, stop the persistent instance (`.venv/bin/woof-bridge --stop`) so the next Inspector
+connection lazily starts a fresh one with your changes.
 
 ## Context
 

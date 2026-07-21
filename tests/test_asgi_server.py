@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 import threading
 import time
 
@@ -16,6 +15,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from woof.asgi_server import (
+    bind_loopback_endpoint,
     build_http_asgi_app,
     make_uvicorn_server,
     serve_with_ready,
@@ -151,7 +151,8 @@ def test_activity_tracker_touched_on_request() -> None:
 
 def test_make_uvicorn_server_wires_app_and_config() -> None:
     app = _trivial_app()
-    server = make_uvicorn_server(app, log_level="info", access_log=True)
+    endpoint = bind_loopback_endpoint()
+    server = make_uvicorn_server(app, endpoint, log_level="info", access_log=True)
     assert isinstance(server, uvicorn.Server)
     assert server.config.app is app
     assert server.config.log_level == "info"
@@ -165,13 +166,10 @@ def test_make_uvicorn_server_wires_app_and_config() -> None:
 
 @pytest.mark.asyncio
 async def test_serve_with_ready_sets_event_and_serves_requests() -> None:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
+    endpoint = bind_loopback_endpoint()
 
     ready = threading.Event()
-    task = asyncio.create_task(serve_with_ready(_trivial_app(), sock, ready))
+    task = asyncio.create_task(serve_with_ready(_trivial_app(), endpoint, ready))
     try:
         for _ in range(100):
             if ready.is_set():
@@ -180,7 +178,7 @@ async def test_serve_with_ready_sets_event_and_serves_requests() -> None:
         assert ready.is_set()
 
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"http://127.0.0.1:{port}/thing")
+            resp = await client.get(f"http://127.0.0.1:{endpoint.port}/thing")
             assert resp.status_code == 200
     finally:
         # Reach into the server via the task's underlying coroutine isn't

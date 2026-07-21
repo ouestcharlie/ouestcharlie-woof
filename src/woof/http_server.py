@@ -1,10 +1,12 @@
 """Local HTTP server for proxying media requests and serving the gallery.
 
 Runs on 127.0.0.1 with an OS-assigned port backed by Starlette + uvicorn (async
-ASGI).  In production, ``serve_in_loop`` runs uvicorn as a task on the shared MCP
-event loop — all async work on a single loop, no cross-thread bridging.
-``start_http_server`` is kept for tests: it starts the server in a daemon thread
-with its own event loop.
+ASGI). In production, ``build_gallery_app``'s app is mounted alongside the MCP
+app under one combined app (see ``asgi_server.build_http_asgi_app``, driven by
+``__main__.py``) — all async work on a single shared loop, no cross-thread
+bridging. Tests that need this app served standalone (no MCP app) should use
+``tests/http_test_server.py::start_http_server`` instead of adding a
+production entry point for it.
 
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
@@ -21,11 +23,8 @@ All library media (thumbnails and previews) is served by Wally and proxied here.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import socket
-import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -37,7 +36,6 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .asgi_server import serve_with_ready, with_permissive_cors
 from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager, PageOutOfRange
 
@@ -63,9 +61,10 @@ def get_gallery_html(
     loopback hostnames in their CSP. A data attribute (rather than an inline
     ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
 
-    ``token`` (HTTP-mode only — None in stdio mode where routes are
-    unauthenticated) is embedded alongside as ``data-server-token`` so the
-    frontend can attach it as a bearer token / ``?token=`` query param.
+    ``token`` (``None`` for the unauthenticated test-only standalone gallery
+    server, see ``tests/http_test_server.py::start_http_server``) is embedded
+    alongside as ``data-server-token`` so the frontend can attach it as a
+    bearer token / ``?token=`` query param.
     """
     candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
@@ -76,84 +75,6 @@ def get_gallery_html(
             attrs += f" data-server-token='{json.dumps(token)}'"
         return html.replace("<html", f"<html {attrs}", 1)
     return _gallery_placeholder()
-
-
-async def serve_in_loop(
-    sock: socket.socket,
-    session_manager: GallerySessionManager,
-    wally_connection_fn: Any | None,
-    server_url: str,
-    indexing_session_manager: Any | None = None,
-) -> None:
-    """Run the HTTP server on a pre-bound socket within the caller's event loop.
-
-    Intended for production use where Woof runs all async work on a single loop
-    (MCP + HTTP share one asyncio event loop).  Must be started as an
-    ``asyncio.create_task`` from inside a running loop.
-
-    Any synchronous CPU-bound work called from request handlers must go through
-    ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
-    """
-    app = with_permissive_cors(
-        build_gallery_app(
-            session_manager,
-            wally_connection_fn,
-            server_url=server_url,
-            indexing_session_manager=indexing_session_manager,
-        )
-    )
-    await serve_with_ready(app, sock)
-
-
-def start_http_server(
-    session_manager: GallerySessionManager | None = None,
-    wally_connection_fn: Any | None = None,
-    indexing_session_manager: Any | None = None,
-) -> str:
-    """Start the gallery/proxy HTTP server in a daemon thread.
-
-    Used by tests.  Production code should use ``serve_in_loop`` instead so the
-    HTTP server shares the MCP event loop.
-
-    Args:
-        session_manager: Gallery session manager shared with McpServer.
-        wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
-            for the named Wally sidecar.
-
-    Returns:
-        The full server URL (e.g. ``"http://localhost:8080"``).
-    """
-    mgr = session_manager if session_manager is not None else GallerySessionManager()
-
-    # Bind port before starting the thread so the port is known synchronously.
-    # Use the loopback IP for binding but expose the URL as "localhost" so the
-    # hostname matches what MCP Host writes into the iframe's CSP.
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    port: int = sock.getsockname()[1]
-    server_url = f"http://localhost:{port}"
-
-    app = with_permissive_cors(
-        build_gallery_app(
-            mgr,
-            wally_connection_fn,
-            server_url=server_url,
-            indexing_session_manager=indexing_session_manager,
-        )
-    )
-    ready = threading.Event()
-
-    def _run() -> None:
-        try:
-            asyncio.run(serve_with_ready(app, sock, ready))
-        except Exception:
-            _log.exception("HTTP server thread crashed")
-
-    threading.Thread(target=_run, daemon=True, name="woof-http").start()
-    ready.wait(timeout=5.0)
-    _log.info("HTTP server listening on %s", server_url)
-    return server_url
 
 
 def build_gallery_app(

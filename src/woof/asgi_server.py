@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import socket
 import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -25,13 +26,54 @@ if TYPE_CHECKING:
     from .discovery import ActivityTracker
 
 
+@dataclass
+class LoopbackEndpoint:
+    """A pre-bound loopback socket, plus the URLs used to reach it.
+
+    Shared by both the MCP app (CSP resource/connect domains, gallery URLs
+    embedded in tool results) and the gallery/media app (embedded in the
+    gallery HTML) — a single bind is the one source of truth for "which port
+    did we actually get", computed before any of those consumers exist.
+
+    ``urls`` lists both loopback hostnames since different MCP hosts accept
+    different ones in their iframe CSP (Claude Desktop Chat requires
+    "localhost"; Claude CoWork blocks it and requires "127.0.0.1") — the
+    gallery frontend tries each in order.
+    """
+
+    sock: socket.socket
+    port: int
+    urls: list[str]
+
+    @property
+    def url(self) -> str:
+        return self.urls[0]
+
+    @property
+    def allowed_hosts(self) -> set[str]:
+        """``Host`` header values that should be accepted (see ``security.HostOriginGuard``)."""
+        return {url.removeprefix("http://") for url in self.urls}
+
+
+def bind_loopback_endpoint() -> LoopbackEndpoint:
+    """Bind an OS-assigned TCP port on 127.0.0.1.
+
+    Left unbound-but-listening (not yet passed to a server) so the caller can
+    learn the port synchronously before starting anything async.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", 0))
+    port: int = sock.getsockname()[1]
+    return LoopbackEndpoint(
+        sock=sock,
+        port=port,
+        urls=[f"http://localhost:{port}", f"http://127.0.0.1:{port}"],
+    )
+
+
 def with_permissive_cors(app: ASGIApp) -> ASGIApp:
     """Wrap *app* with the permissive CORS config the gallery frontend needs.
-
-    Single source of truth for this config — used both by the standalone
-    stdio-mode gallery server (``http_server.serve_in_loop``/
-    ``start_http_server``) and by ``build_http_asgi_app`` below, so the two
-    don't drift apart.
 
     allow_methods/allow_headers default to GET-only / none in Starlette — too
     narrow now that the gallery frontend sends POST (cancel/keepalive) and an
@@ -85,26 +127,33 @@ def build_http_asgi_app(
 
 def make_uvicorn_server(
     app: ASGIApp,
+    endpoint: LoopbackEndpoint,
     *,
     log_level: str = "warning",
     access_log: bool = False,
     install_signal_handlers: bool = True,
     ready: threading.Event | None = None,
 ) -> uvicorn.Server:
-    """Build a ``uvicorn.Server`` for *app*, without starting it.
+    """Build a ``uvicorn.Server`` for *app*, bound to *endpoint*, without starting it.
+
+    The returned server always serves on *endpoint*'s pre-bound socket —
+    callers just await ``.serve()`` with no ``sockets=`` argument, so the
+    socket/port stays owned by the server rather than threaded through by
+    each caller.
 
     ``install_signal_handlers=False`` preserves a compatibility override for
     uvicorn releases where ``Server.install_signal_handlers()`` was a real
     overridable method controlling whether SIGINT/SIGTERM get registered —
     needed when uvicorn shares an event loop or daemon thread it doesn't own
-    (the stdio-mode gallery server), so the main thread retains control. On
-    current uvicorn (>=0.29ish), signal capture instead happens via
-    ``Server.capture_signals()``, which already checks
-    ``threading.current_thread() is threading.main_thread()`` itself and
-    skips real registration off the main thread automatically — so this flag
-    is inert there, but harmless, and keeps the same call shape if an older
-    uvicorn is ever installed. HTTP mode's combined server runs on the main
-    thread via ``asyncio.run`` and keeps the default ``True``.
+    (the test-only standalone gallery server,
+    ``tests/http_test_server.py::start_http_server``), so the main thread
+    retains control. On current uvicorn (>=0.29ish), signal
+    capture instead happens via ``Server.capture_signals()``, which already
+    checks ``threading.current_thread() is threading.main_thread()`` itself
+    and skips real registration off the main thread automatically — so this
+    flag is inert there, but harmless, and keeps the same call shape if an
+    older uvicorn is ever installed. Production's combined server runs on the
+    main thread via ``asyncio.run`` and keeps the default ``True``.
 
     ``ready``, if given, is set once uvicorn's ``startup()`` completes —
     useful for a caller on another thread waiting for the socket to actually
@@ -117,7 +166,7 @@ def make_uvicorn_server(
                 super().install_signal_handlers()
 
         async def startup(self, sockets: list[socket.socket] | None = None) -> None:
-            await super().startup(sockets=sockets)
+            await super().startup(sockets=sockets or [endpoint.sock])
             if ready is not None:
                 ready.set()
 
@@ -127,23 +176,25 @@ def make_uvicorn_server(
 
 async def serve_with_ready(
     app: ASGIApp,
-    sock: socket.socket,
+    endpoint: LoopbackEndpoint,
     ready: threading.Event | None = None,
     *,
     log_level: str = "warning",
     access_log: bool = False,
 ) -> None:
-    """Serve *app* on a pre-bound socket until cancelled or stopped.
+    """Serve *app* on *endpoint*'s pre-bound socket until cancelled or stopped.
 
     Never installs its own signal handlers — intended for a server sharing an
-    event loop or daemon thread it doesn't own (the stdio-mode gallery
-    server), where the main thread must retain control of SIGINT/SIGTERM.
+    event loop or daemon thread it doesn't own (the test-only standalone
+    gallery server), where the main thread must retain control of
+    SIGINT/SIGTERM.
     """
     server = make_uvicorn_server(
         app,
+        endpoint,
         log_level=log_level,
         access_log=access_log,
         install_signal_handlers=False,
         ready=ready,
     )
-    await server.serve(sockets=[sock])
+    await server.serve()

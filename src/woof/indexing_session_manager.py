@@ -16,8 +16,9 @@ _DEFAULT_MAX_SESSIONS = 20
 class IndexingSessionManager:
     """Tracks background Whitebeard indexing runs keyed by session_id.
 
-    No locking needed: serve_in_loop places HTTP and MCP on the same asyncio
-    event loop, so all reads and mutations are single-threaded.
+    No locking needed: asgi_server.build_http_asgi_app mounts HTTP and MCP
+    under one uvicorn instance on the same asyncio event loop, so all reads
+    and mutations are single-threaded.
     """
 
     def __init__(self, max_sessions: int = _DEFAULT_MAX_SESSIONS) -> None:

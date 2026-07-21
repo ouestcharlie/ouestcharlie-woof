@@ -1,27 +1,18 @@
 """Entry point for Woof — OuEstCharlie central controller.
 
-Woof supports two transports, selected via ``WOOF_TRANSPORT=stdio|http``
-(default ``http``):
+Woof runs as a single persistent HTTP server (MCP at ``/mcp``, gallery +
+media routes alongside, one uvicorn instance). It binds an ephemeral
+loopback port, writes a discovery file (``woof.discovery.write_discovery``)
+once ready, and keeps running — including across multiple separate host
+connections — until an idle timeout, an authenticated ``POST /shutdown``, or
+a signal stops it. Hosts are expected to launch ``woof-bridge`` (a thin
+stdio↔HTTP proxy, see ``woof.bridge``) rather than this module directly; the
+bridge lazily starts Woof on first connection if no live instance exists yet.
 
-- ``http`` (default): Woof runs as a single persistent HTTP server (MCP at
-  ``/mcp``, gallery + media routes alongside, one uvicorn instance). It binds
-  an ephemeral loopback port, writes a discovery file
-  (``woof.discovery.write_discovery``) once ready, and keeps running —
-  including across multiple separate host connections — until an idle
-  timeout, an authenticated ``POST /shutdown``, or a signal stops it. Hosts
-  are expected to launch ``woof-bridge`` (a thin stdio↔HTTP proxy, see
-  ``woof.bridge``) rather than this module directly; the bridge lazily starts
-  Woof on first connection if no live instance exists yet.
-- ``stdio``: the previous behavior — Woof runs directly as a stdio MCP
-  server, with a *separate* gallery/media HTTP server sharing its event loop.
-  Unauthenticated (relies on the host being the only thing that can spawn or
-  talk to this process). Use this for the MCP Inspector workflow:
+For local development with the MCP Inspector, point it at the bridge rather
+than this module directly (see README_DEV.md):
 
-    WOOF_TRANSPORT=stdio mcp dev src/woof/__main__.py
-
-  (``mcp dev`` drives the module-level ``mcp`` object directly over stdio,
-  so ``WOOF_TRANSPORT`` must be set to ``stdio`` *before* import for its
-  lifespan to start the separate gallery server the inspector expects.)
+    npx @modelcontextprotocol/inspector .venv/bin/woof-bridge
 
 Logs are written to ~/Library/Logs/ouestcharlie/woof.log (macOS) or to
 WOOF_LOG_FILE if set.
@@ -39,7 +30,7 @@ _log = logging.getLogger(__name__)
 _log.info("Woof starting — log: %s", _log_file)
 
 from woof.agent_client import AgentClient
-from woof.asgi_server import build_http_asgi_app, make_uvicorn_server
+from woof.asgi_server import bind_loopback_endpoint, build_http_asgi_app, make_uvicorn_server
 from woof.config import WoofConfig
 from woof.discovery import (
     ActivityTracker,
@@ -51,30 +42,29 @@ from woof.discovery import (
 )
 from woof.gallery_session_manager import GallerySessionManager
 from woof.http_server import build_gallery_app
+from woof.indexing_session_manager import IndexingSessionManager
 from woof.mcp_server import McpServer
-from woof.security import allowed_hosts_for_port
 
-_TRANSPORT = os.environ.get("WOOF_TRANSPORT", "http")
-
+_token = generate_token()
 _config = WoofConfig.load()
-_agent = AgentClient()
-_session_manager = GallerySessionManager()
+_agent_client = AgentClient()
+_gallery_session_manager = GallerySessionManager()
+_indexing_session_manager = IndexingSessionManager()
 
-if _TRANSPORT == "stdio":
-    _server = McpServer(_config, agent_client=_agent, session_manager=_session_manager)
-else:
-    _server = McpServer(
-        _config,
-        agent_client=_agent,
-        session_manager=_session_manager,
-        transport="http",
-        token=generate_token(),
-    )
+# Bind socket to get a loopback (local) URL
+_endpoint = bind_loopback_endpoint()
 
-mcp = _server.mcp  # module-level name required by `mcp dev`
+_mcp_server = McpServer(
+    _config,
+    server_urls=_endpoint.urls,
+    agent_client=_agent_client,
+    session_manager=_gallery_session_manager,
+    indexing_session_manager=_indexing_session_manager,
+    token=_token,
+)
 
 
-class _ShutdownHandle:
+class ShutdownHandle:
     """Wraps the uvicorn server so ``POST /shutdown`` can trigger a clean exit."""
 
     def __init__(self) -> None:
@@ -85,17 +75,17 @@ class _ShutdownHandle:
             self.server.should_exit = True  # type: ignore[attr-defined]
 
 
-# Idle timeout before a quiet (no bridge keepalives/requests) HTTP-mode
-# instance shuts itself down. Configurable for testing.
+# Idle timeout before a quiet (no bridge keepalives/requests) instance shuts
+# itself down. Configurable for testing.
 _IDLE_TIMEOUT_SECONDS = float(os.environ.get("WOOF_IDLE_TIMEOUT_SECONDS", str(15 * 60)))
 _IDLE_CHECK_INTERVAL_SECONDS = 30.0
 
 
-async def _run_http() -> None:
+async def _run() -> None:
     import asyncio
 
     tracker = ActivityTracker()
-    handle = _ShutdownHandle()
+    handle = ShutdownHandle()
 
     # Each module builds its own piece independently (FastMCP's own
     # http_app, the gallery/media routes); asgi_server.build_http_asgi_app is
@@ -106,26 +96,26 @@ async def _run_http() -> None:
     # which strips that prefix before dispatching. Registering this app's own
     # route at "/mcp" too would double it up (Mount strips "/mcp", leaving
     # "/", which wouldn't match an inner route still expecting "/mcp").
-    assert _server._token is not None  # guaranteed by the http-mode branch above
-    mcp_app = _server.mcp.http_app(path="/")
+    assert _token is not None
+    mcp_app = _mcp_server.mcp.http_app(path="/")
     gallery_app = build_gallery_app(
-        _server._sessions,
-        _server._wally_connection,
-        _server.server_url,
-        indexing_session_manager=_server._indexing_sessions,
-        token=_server._token,
+        _gallery_session_manager,
+        _mcp_server._wally_connection,
+        _endpoint.url,
+        indexing_session_manager=_indexing_session_manager,
+        token=_token,
         activity_tracker=tracker,
         shutdown_handle=handle,
     )
     app = build_http_asgi_app(
         mcp_app=mcp_app,
         gallery_app=gallery_app,
-        token=_server._token,
-        allowed_hosts=allowed_hosts_for_port(_server._port),
+        token=_token,
+        allowed_hosts=_endpoint.allowed_hosts,
         activity_tracker=tracker,
     )
 
-    uv_server = make_uvicorn_server(app, log_level="info")
+    uv_server = make_uvicorn_server(app, _endpoint, log_level="info")
     handle.server = uv_server
 
     async def _signal_ready() -> None:
@@ -133,8 +123,8 @@ async def _run_http() -> None:
             if uv_server.should_exit:
                 return
             await asyncio.sleep(0.05)
-        write_discovery(DiscoveryInfo(pid=os.getpid(), port=_server._port, token=_server._token))
-        _log.info("Woof ready — http://127.0.0.1:%d", _server._port)
+        write_discovery(DiscoveryInfo(pid=os.getpid(), port=_endpoint.port, token=_token))
+        _log.info("Woof ready — http://127.0.0.1:%d", _endpoint.port)
 
     def _request_idle_shutdown() -> None:
         _log.info("Idle for >%.0fs — shutting down", _IDLE_TIMEOUT_SECONDS)
@@ -142,7 +132,7 @@ async def _run_http() -> None:
 
     try:
         await asyncio.gather(
-            uv_server.serve(sockets=[_server._http_sock]),
+            uv_server.serve(),
             _signal_ready(),
             watch_idle(
                 tracker,
@@ -157,12 +147,9 @@ async def _run_http() -> None:
 
 
 def main() -> None:
-    if _TRANSPORT == "stdio":
-        mcp.run()
-        return
     import asyncio
 
-    asyncio.run(_run_http())
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

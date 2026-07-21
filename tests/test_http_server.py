@@ -9,11 +9,12 @@ import urllib.request
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from http_test_server import start_http_server
 
 from woof.agent_client import AgentError
 from woof.config import LibraryConfig
 from woof.gallery_session_manager import GallerySessionManager, SessionHandler
-from woof.http_server import get_gallery_html, start_http_server
+from woof.http_server import get_gallery_html
 from woof.indexing_session_manager import IndexingSessionManager
 
 _DEFAULT_SERVER_PAGE = 513

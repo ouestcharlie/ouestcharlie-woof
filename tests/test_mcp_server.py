@@ -14,6 +14,10 @@ from woof.config import LibraryConfig, WoofConfig
 from woof.gallery_session_manager import SessionHandler
 from woof.mcp_server import McpServer
 
+# These tests never serve real HTTP (they call tool functions directly), so a
+# fixed, unbound pair of URLs is enough — McpServer has no socket of its own.
+_TEST_SERVER_URLS = ["http://localhost:54321", "http://127.0.0.1:54321"]
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -29,7 +33,7 @@ def config(tmp_path: Path) -> WoofConfig:
 
 @pytest.fixture()
 def server(config: WoofConfig) -> McpServer:
-    return McpServer(config)
+    return McpServer(config, server_urls=_TEST_SERVER_URLS)
 
 
 def _make_matches(
@@ -119,7 +123,7 @@ async def test_list_search_fields_unknown_library_raises(server: McpServer) -> N
 @pytest.mark.asyncio
 async def test_list_search_fields_no_libraries_returns_empty(tmp_path: Path) -> None:
     config = WoofConfig(libraries=[], config_dir=tmp_path / ".woof")
-    server = McpServer(config)
+    server = McpServer(config, server_urls=_TEST_SERVER_URLS)
     tool_fn = await _get_tool(server, "list_search_fields")
     result = await tool_fn()
     assert result == {}

@@ -18,12 +18,16 @@ from typing import Any
 
 import httpx
 import pytest
+from http_test_server import start_http_server
 
 from woof.agent_client import AgentClient
 from woof.config import LibraryConfig, WoofConfig
 from woof.gallery_session_manager import GallerySessionManager
-from woof.http_server import start_http_server
 from woof.mcp_server import McpServer
+
+# None of these tests touch the HTTP/CSP surface, so a fixed, unbound pair of
+# URLs is enough — McpServer has no socket of its own.
+_TEST_SERVER_URLS = ["http://localhost:54321", "http://127.0.0.1:54321"]
 
 # ---------------------------------------------------------------------------
 # HTTP server
@@ -193,6 +197,7 @@ class TestFullStack:
             session_manager = GallerySessionManager()
             server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -218,6 +223,7 @@ class TestFullStack:
             session_manager = GallerySessionManager()
             server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
             )
@@ -245,6 +251,7 @@ class TestFullStack:
             session_manager = GallerySessionManager()
             server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
             )

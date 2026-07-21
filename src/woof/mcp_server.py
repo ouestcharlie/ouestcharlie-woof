@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,7 +16,7 @@ from mcp.types import ToolAnnotations
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager
-from .http_server import get_gallery_html, serve_in_loop
+from .http_server import get_gallery_html
 from .indexing_session_manager import IndexingSessionManager
 
 _log = logging.getLogger(__name__)
@@ -39,70 +38,45 @@ class McpServer:
     def __init__(
         self,
         config: WoofConfig,
+        server_urls: list[str],
         agent_client: AgentClient | None = None,
         session_manager: GallerySessionManager | None = None,
-        transport: str = "stdio",
+        indexing_session_manager: IndexingSessionManager | None = None,
         token: str | None = None,
     ) -> None:
         """
         Args:
-            transport: ``"stdio"`` (default) keeps today's behavior — FastMCP's
-                own lifespan spins up a *separate* gallery/media HTTP server on
-                the shared event loop. ``"http"`` skips that: ``__main__.py``
-                builds and serves one combined ASGI app (MCP + gallery,
-                mounted together) itself, so only one HTTP server ever runs.
-            token: Bearer token for HTTP mode (ignored in stdio mode, where
-                routes stay unauthenticated as before). Also embedded in the
-                gallery HTML / tool results so the frontend can authenticate.
+            server_urls: Candidate URLs (e.g. ``http://localhost:<port>``,
+                ``http://127.0.0.1:<port>``) this MCP server is reachable at
+                over HTTP — embedded in tool results and the gallery CSP.
+            token: Bearer token, embedded in the gallery HTML / tool results
+                so a frontend can authenticate against whatever serves
+                *server_urls*. ``None`` is only meaningful for tests that
+                construct a ``McpServer`` without ever serving it over HTTP.
         """
         self.config = config
         self._agent = agent_client or AgentClient()
         self._sessions = session_manager if session_manager is not None else GallerySessionManager()
-        self._indexing_sessions = IndexingSessionManager()
+        self._indexing_sessions = (
+            indexing_session_manager
+            if indexing_session_manager is not None
+            else IndexingSessionManager()
+        )
         self._library_fields: dict[str, dict[str, Any]] = {}  # library name → full Wally response
-        self._transport = transport
         self._token = token
-
-        # Bind port before MCP starts so server_url is known synchronously.
-        _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        _sock.bind(("127.0.0.1", 0))
-        self._http_sock = _sock
-        self._port = _sock.getsockname()[1]
-        # Different MCP hosts accept different loopback hostnames in their iframe CSP
-        # (Claude Desktop Chat requires "localhost"; Claude CoWork blocks it and requires
-        # "127.0.0.1"). Expose both as candidates; the gallery frontend tries each in order.
-        self.server_urls = [f"http://localhost:{self._port}", f"http://127.0.0.1:{self._port}"]
-        self.server_url = self.server_urls[0]
+        self.server_urls = server_urls
+        self.server_url = server_urls[0]
 
         agent = self._agent
 
         @asynccontextmanager
         async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
-            # HTTP server shares this event loop — no cross-thread bridging needed.
-            # Any synchronous work in request handlers must use run_in_executor.
-            # In HTTP mode, __main__.py serves one combined app itself —
-            # starting a second gallery server here would duplicate it on the
-            # same socket, which uvicorn can't bind twice.
-            http_task = (
-                asyncio.create_task(
-                    serve_in_loop(
-                        self._http_sock,
-                        self._sessions,
-                        self._wally_connection,
-                        self.server_url,
-                        indexing_session_manager=self._indexing_sessions,
-                    )
-                )
-                if self._transport == "stdio"
-                else None
-            )
+            # MCP and Gallery HTTP Server are sharing this event loop —
+            # no cross-thread bridging needed. Any synchronous work in
+            # request handlers must use run_in_executor.
             try:
                 yield
             finally:
-                if http_task is not None:
-                    http_task.cancel()
-                    await asyncio.gather(http_task, return_exceptions=True)
                 await agent.shutdown()
 
         self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
