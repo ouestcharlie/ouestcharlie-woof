@@ -78,7 +78,7 @@ class ShutdownHandle:
 # Idle timeout before a quiet (no bridge keepalives/requests) instance shuts
 # itself down. Configurable for testing.
 _IDLE_TIMEOUT_SECONDS = float(os.environ.get("WOOF_IDLE_TIMEOUT_SECONDS", str(15 * 60)))
-_IDLE_CHECK_INTERVAL_SECONDS = 30.0
+_IDLE_CHECK_INTERVAL_SECONDS = 5.0
 
 
 async def _run() -> None:
@@ -100,7 +100,7 @@ async def _run() -> None:
     mcp_app = _mcp_server.mcp.http_app(path="/")
     gallery_app = build_gallery_app(
         _gallery_session_manager,
-        _mcp_server._wally_connection,
+        _agent_client.get_wally_connection,
         _endpoint.url,
         indexing_session_manager=_indexing_session_manager,
         token=_token,
@@ -144,6 +144,7 @@ async def _run() -> None:
         )
     finally:
         remove_discovery()
+        await _agent_client.shutdown()
 
 
 def main() -> None:

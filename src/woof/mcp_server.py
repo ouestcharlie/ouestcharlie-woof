@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import Counter
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -39,9 +37,9 @@ class McpServer:
         self,
         config: WoofConfig,
         server_urls: list[str],
-        agent_client: AgentClient | None = None,
-        session_manager: GallerySessionManager | None = None,
-        indexing_session_manager: IndexingSessionManager | None = None,
+        agent_client: AgentClient,
+        session_manager: GallerySessionManager,
+        indexing_session_manager: IndexingSessionManager,
         token: str | None = None,
     ) -> None:
         """
@@ -55,36 +53,17 @@ class McpServer:
                 construct a ``McpServer`` without ever serving it over HTTP.
         """
         self.config = config
-        self._agent = agent_client or AgentClient()
-        self._sessions = session_manager if session_manager is not None else GallerySessionManager()
-        self._indexing_sessions = (
-            indexing_session_manager
-            if indexing_session_manager is not None
-            else IndexingSessionManager()
-        )
+        self._agent = agent_client
+        self._sessions = session_manager
+        self._indexing_sessions = indexing_session_manager
         self._library_fields: dict[str, dict[str, Any]] = {}  # library name → full Wally response
         self._token = token
         self.server_urls = server_urls
         self.server_url = server_urls[0]
 
-        agent = self._agent
-
-        @asynccontextmanager
-        async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
-            # MCP and Gallery HTTP Server are sharing this event loop —
-            # no cross-thread bridging needed. Any synchronous work in
-            # request handlers must use run_in_executor.
-            try:
-                yield
-            finally:
-                await agent.shutdown()
-
-        self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
+        self.mcp = FastMCP("ouestcharlie-woof")
         self._register_tools()
         self._register_gallery_resource()
-
-    def _wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
-        return self._agent.get_wally_connection(library_name)
 
     # ------------------------------------------------------------------
     # Tool registration

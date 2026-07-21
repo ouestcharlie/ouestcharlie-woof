@@ -33,6 +33,49 @@ def _trivial_app() -> Starlette:
 
 
 # ---------------------------------------------------------------------------
+# bind_loopback_endpoint / LoopbackEndpoint
+# ---------------------------------------------------------------------------
+
+
+def test_bind_loopback_endpoint_binds_a_real_listening_socket() -> None:
+    endpoint = bind_loopback_endpoint()
+    assert endpoint.sock.getsockname() == ("127.0.0.1", endpoint.port)
+    assert endpoint.port != 0
+
+
+def test_bind_loopback_endpoint_returns_distinct_ports() -> None:
+    # Each call binds its own OS-assigned port — no two endpoints should collide.
+    a = bind_loopback_endpoint()
+    b = bind_loopback_endpoint()
+    assert a.port != b.port
+
+
+def test_urls_include_localhost_and_loopback_ip_for_the_same_port() -> None:
+    # Different MCP hosts accept different loopback hostnames in their iframe
+    # CSP (Claude Desktop Chat requires "localhost", Claude CoWork requires
+    # "127.0.0.1") — both must be offered for the same port.
+    endpoint = bind_loopback_endpoint()
+    assert endpoint.urls == [
+        f"http://localhost:{endpoint.port}",
+        f"http://127.0.0.1:{endpoint.port}",
+    ]
+
+
+def test_url_property_is_the_first_candidate() -> None:
+    endpoint = bind_loopback_endpoint()
+    assert endpoint.url == endpoint.urls[0]
+    assert endpoint.url == f"http://localhost:{endpoint.port}"
+
+
+def test_allowed_hosts_strips_scheme_from_each_url() -> None:
+    endpoint = bind_loopback_endpoint()
+    assert endpoint.allowed_hosts == {
+        f"localhost:{endpoint.port}",
+        f"127.0.0.1:{endpoint.port}",
+    }
+
+
+# ---------------------------------------------------------------------------
 # with_permissive_cors
 # ---------------------------------------------------------------------------
 
