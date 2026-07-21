@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import Counter
 from typing import Any
@@ -20,6 +21,29 @@ from .indexing_session_manager import IndexingSessionManager
 _log = logging.getLogger(__name__)
 
 _GALLERY_URI = "ui://gallery/ouestcharlie"
+
+
+def _coerce_json_param(value: Any, expected_type: type, param_name: str) -> Any:
+    """Coerce a dict/list-typed MCP tool argument that arrived as a JSON string.
+
+    Some MCP clients (observed with Claude Desktop's CoWork mode) serialize
+    object/array-typed tool arguments to JSON strings instead of sending them
+    as native objects/arrays. Accept both shapes here so a client-side
+    serialization bug doesn't surface as an opaque downstream failure.
+    """
+    if value is None or isinstance(value, expected_type):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{param_name} must be a {expected_type.__name__} or JSON string"
+            ) from exc
+        if not isinstance(parsed, expected_type):
+            raise ValueError(f"{param_name} must decode to a {expected_type.__name__}")
+        return parsed
+    raise ValueError(f"{param_name} must be a {expected_type.__name__} or JSON string")
 
 
 class McpServer:
@@ -221,8 +245,8 @@ class McpServer:
         async def search_photos(
             ctx: Context,
             library_name: str,
-            filters: dict | None = None,
-            full_text_filter: dict | None = None,
+            filters: dict | str | None = None,
+            full_text_filter: dict | str | None = None,
             sort_by: str = "date_taken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
@@ -260,6 +284,10 @@ class McpServer:
                     valid column names. Compatible with ``filters``.
             """
             library = self._require_library(library_name)
+            parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
+            parsed_full_text_filter: dict | None = _coerce_json_param(
+                full_text_filter, dict, "full_text_filter"
+            )
             # Woof's MCP search always starts a 0, further pages managed by the Gallery
             page = 0
             args: dict[str, Any] = {
@@ -267,10 +295,10 @@ class McpServer:
                 "sort_order": sort_order,
                 "page": page,
             }
-            if filters is not None:
-                args["filters"] = filters
-            if full_text_filter is not None:
-                args["full_text_filter"] = full_text_filter
+            if parsed_filters is not None:
+                args["filters"] = parsed_filters
+            if parsed_full_text_filter is not None:
+                args["full_text_filter"] = parsed_full_text_filter
 
             fields = await self._get_fields(library)
 
@@ -309,7 +337,7 @@ class McpServer:
             annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
         )
         async def browse_gallery(
-            session_tokens: list[str],
+            session_tokens: list[str] | str,
             query_summary: str = "",
         ) -> dict[str, Any]:
             """Display photos from one or more search results in the gallery viewer.
@@ -327,7 +355,8 @@ class McpServer:
                     gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            unknown = self._sessions.unknown_tokens(session_tokens)
+            tokens: list[str] = _coerce_json_param(session_tokens, list, "session_tokens")
+            unknown = self._sessions.unknown_tokens(tokens)
             if unknown:
                 return {
                     "error": (
@@ -336,7 +365,7 @@ class McpServer:
                     )
                 }
 
-            merged_token, data = self._sessions.merge(session_tokens)
+            merged_token, data = self._sessions.merge(tokens)
             return {
                 "token": merged_token,
                 "querySummary": query_summary,
