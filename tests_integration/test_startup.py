@@ -18,12 +18,17 @@ from typing import Any
 
 import httpx
 import pytest
+from http_test_server import start_http_server
 
 from woof.agent_client import AgentClient
 from woof.config import LibraryConfig, WoofConfig
 from woof.gallery_session_manager import GallerySessionManager
-from woof.http_server import start_http_server
-from woof.server import WoofServer
+from woof.indexing_session_manager import IndexingSessionManager
+from woof.mcp_server import McpServer
+
+# None of these tests touch the HTTP/CSP surface, so a fixed, unbound pair of
+# URLs is enough — McpServer has no socket of its own.
+_TEST_SERVER_URLS = ["http://localhost:54321", "http://127.0.0.1:54321"]
 
 # ---------------------------------------------------------------------------
 # HTTP server
@@ -191,10 +196,12 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
+                indexing_session_manager=IndexingSessionManager(),
             )
 
             tool = await server.mcp.get_tool("list_search_fields")
@@ -216,10 +223,12 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
+                indexing_session_manager=IndexingSessionManager(),
             )
 
             tool = await server.mcp.get_tool("get_partition_summaries")
@@ -243,14 +252,16 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
-            server = WoofServer(
+            server = McpServer(
                 config,
+                server_urls=_TEST_SERVER_URLS,
                 agent_client=agent,
                 session_manager=session_manager,
+                indexing_session_manager=IndexingSessionManager(),
             )
             server_url = start_http_server(
                 session_manager=session_manager,
-                wally_connection_fn=server._wally_connection,
+                wally_connection_fn=agent.get_wally_connection,
             )
 
             # Trigger Wally startup

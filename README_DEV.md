@@ -18,28 +18,23 @@ Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with 
 
 ## Repository Structure
 
+Server Python sources:
+
 ```
 src/woof/
-├── __main__.py       # Entry point (stdio MCP server)
-├── server.py         # WoofServer — FastMCP tool registration
-├── agent_client.py   # AgentClient — MCP client to Whitebeard / Wally
-├── http_server.py    # Thumbnail HTTP server (stdlib, daemon thread)
-├── config.py         # WoofConfig — ~/.ouestcharlie/config.json
-└── gallery/dist/     # Pre-built Svelte gallery bundle
 
+```
+
+Gallery in Svelte (Javascript) sources & tests:
+
+```
 gallery/              # Svelte source (npm run build → dist/)
-  src/
-    App.svelte
-    components/
-      SearchForm.svelte
-      PhotoGrid.svelte
-      PreviewPanel.svelte
-    lib/bridge.js     # MCP App postMessage bridge
+```
 
+Python tests:
+```
 tests/
-  test_config.py
-  test_http_server.py
-  test_server.py
+tests_integration
 ```
 
 ## Installation
@@ -92,33 +87,30 @@ npm run build
 .venv/bin/python -m pytest tests/ -v
 ```
 
-## Claude Desktop Integration
+## Running the application
+
+### Woof and woof-bridge
+
+The Woof server runs in Streamable HTTP. It is launched and kept alive by `woof-bridge`. 
+
+
+`woof-bridge` is a thin stdio↔HTTP proxy: it lazily starts (or reuses) one persistent Woof HTTP instance and relays MCP traffic to it, so multiple simultaneous connections from the same host (e.g. Claude CoWork) all reach the same running instance. Run `woof-bridge --stop` to stop it manually — it otherwise shuts itself down automatically after being idle for a while. 
+
+Woof only ever runs in HTTP mode — there is no stdio mode for Woof itself. For debugging with the MCP Inspector, see [MCP Inspector (development)](#mcp-inspector-development) below.
+
 
 ### With uvx (recommended — no manual install)
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+See [README.md](README.md) for the standard startup using `woof-bridge`.
+
+### In Claude Config with a local venv (development)
 
 ```json
 {
   "mcpServers": {
     "ouestcharlie": {
-      "command": "uvx",
-      "args": ["ouestcharlie-woof"]
-    }
-  }
-}
-```
-
-`uvx` fetches the package from PyPI into an isolated environment on first run — no prior install needed.
-
-### With a local venv (development)
-
-```json
-{
-  "mcpServers": {
-    "ouestcharlie": {
-      "command": "/path/to/ouestcharlie-woof/.venv/bin/python",
-      "args": ["-m", "woof"]
+      "command": "/path/to/ouestcharlie-woof/.venv/bin/woof-bridge",
+      "args": []
     }
   }
 }
@@ -127,11 +119,33 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 Restart Claude Desktop after editing the config. Woof is launched on demand when Claude Desktop starts.
 
 
+### Check started woof
+
+
+
+```
+ cat "$HOME/Library/Application Support/ouestcharlie/woof-discovery.json"
+ ```
+
 ## MCP Inspector (development)
 
+Woof runs as a single persistent HTTP instance, discovered via a discovery file (see
+`woof.discovery`/`woof.bridge`) — there's no stdio mode for Woof itself to point a Python-file-based
+inspector at. `fastmcp dev inspector`/`mcp dev` don't work here: they drive a target file's `mcp`
+object directly over stdio, bypassing our own ASGI composition (`asgi_server.build_http_asgi_app`)
+entirely — the gallery/media HTTP routes would never get served that way.
+
+Instead, point the standalone `@modelcontextprotocol/inspector` at `woof-bridge` — since the bridge
+*is* a stdio↔HTTP proxy to a real, persistent HTTP-mode Woof instance (lazily starting one if
+needed), this exercises the actual production path, gallery routes included:
+
 ```bash
-mcp dev src/woof/__main__.py
+npx @modelcontextprotocol/inspector .venv/bin/woof-bridge
 ```
+
+Trade-off versus `fastmcp dev inspector`: no `--reload` auto-restart on file edits. During
+iteration, stop the persistent instance (`.venv/bin/woof-bridge --stop`) so the next Inspector
+connection lazily starts a fresh one with your changes.
 
 ## Context
 

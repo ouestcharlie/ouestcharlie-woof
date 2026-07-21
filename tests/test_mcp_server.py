@@ -1,4 +1,4 @@
-"""Tests for WoofServer tool behaviour (without a real agent process)."""
+"""Tests for McpServer tool behaviour (without a real agent process)."""
 
 from __future__ import annotations
 
@@ -9,10 +9,26 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from woof.agent_client import AgentError
+from woof.agent_client import AgentClient, AgentError
 from woof.config import LibraryConfig, WoofConfig
-from woof.gallery_session_manager import SessionHandler
-from woof.server import WoofServer
+from woof.gallery_session_manager import GallerySessionManager, SessionHandler
+from woof.indexing_session_manager import IndexingSessionManager
+from woof.mcp_server import McpServer
+
+# These tests never serve real HTTP (they call tool functions directly), so a
+# fixed, unbound pair of URLs is enough — McpServer has no socket of its own.
+_TEST_SERVER_URLS = ["http://localhost:54321", "http://127.0.0.1:54321"]
+
+
+def _make_server(config: WoofConfig) -> McpServer:
+    return McpServer(
+        config,
+        server_urls=_TEST_SERVER_URLS,
+        agent_client=AgentClient(),
+        session_manager=GallerySessionManager(),
+        indexing_session_manager=IndexingSessionManager(),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -28,8 +44,8 @@ def config(tmp_path: Path) -> WoofConfig:
 
 
 @pytest.fixture()
-def server(config: WoofConfig) -> WoofServer:
-    return WoofServer(config)
+def server(config: WoofConfig) -> McpServer:
+    return _make_server(config)
 
 
 def _make_matches(
@@ -61,7 +77,7 @@ def _make_matches(
 
 
 @pytest.mark.asyncio
-async def test_add_library(server: WoofServer, tmp_path: Path) -> None:
+async def test_add_library(server: McpServer, tmp_path: Path) -> None:
     new_path = str(tmp_path / "new")
     tool_fn = await _get_tool(server, "add_library")
     result = await tool_fn(name="newlib", path=new_path)
@@ -70,7 +86,7 @@ async def test_add_library(server: WoofServer, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_libraries(server: WoofServer) -> None:
+async def test_list_libraries(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "list_libraries")
     result = await tool_fn()
     assert any(b["name"] == "testlib" for b in result["libraries"])
@@ -82,7 +98,7 @@ async def test_list_libraries(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_search_fields_returns_fields(server: WoofServer) -> None:
+async def test_list_search_fields_returns_fields(server: McpServer) -> None:
     mock_fields = [
         {
             "name": "dateTaken",
@@ -100,7 +116,7 @@ async def test_list_search_fields_returns_fields(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_search_fields_explicit_backend(server: WoofServer) -> None:
+async def test_list_search_fields_explicit_backend(server: McpServer) -> None:
     mock_fields = [{"name": "rating", "type": "INT_RANGE"}]
     mock = AsyncMock(return_value={"fields": mock_fields})
     with patch.object(server._agent, "call_tool", new=mock):
@@ -110,7 +126,7 @@ async def test_list_search_fields_explicit_backend(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_search_fields_unknown_library_raises(server: WoofServer) -> None:
+async def test_list_search_fields_unknown_library_raises(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "list_search_fields")
     with pytest.raises(ValueError, match="not found"):
         await tool_fn(library_name="ghost")
@@ -119,7 +135,7 @@ async def test_list_search_fields_unknown_library_raises(server: WoofServer) -> 
 @pytest.mark.asyncio
 async def test_list_search_fields_no_libraries_returns_empty(tmp_path: Path) -> None:
     config = WoofConfig(libraries=[], config_dir=tmp_path / ".woof")
-    server = WoofServer(config)
+    server = _make_server(config)
     tool_fn = await _get_tool(server, "list_search_fields")
     result = await tool_fn()
     assert result == {}
@@ -127,7 +143,7 @@ async def test_list_search_fields_no_libraries_returns_empty(tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_list_search_fields_wally_error_returns_empty_fields(
-    server: WoofServer,
+    server: McpServer,
 ) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
@@ -137,7 +153,7 @@ async def test_list_search_fields_wally_error_returns_empty_fields(
 
 
 @pytest.mark.asyncio
-async def test_list_search_fields_propagates_full_text_search(server: WoofServer) -> None:
+async def test_list_search_fields_propagates_full_text_search(server: McpServer) -> None:
     """full_text_search block from Wally must be passed through to the caller."""
     fts_block = {
         "description": "Search text fields with a single query string.",
@@ -161,7 +177,7 @@ async def test_list_search_fields_propagates_full_text_search(server: WoofServer
 
 
 @pytest.mark.asyncio
-async def test_get_fields_fetches_on_first_call(server: WoofServer) -> None:
+async def test_get_fields_fetches_on_first_call(server: McpServer) -> None:
     fields = [{"name": "rating", "type": "INT_RANGE"}]
     mock = AsyncMock(return_value={"fields": fields})
     with patch.object(server._agent, "call_tool", new=mock):
@@ -171,7 +187,7 @@ async def test_get_fields_fetches_on_first_call(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_fields_reuses_cache_on_second_call(server: WoofServer) -> None:
+async def test_get_fields_reuses_cache_on_second_call(server: McpServer) -> None:
     fields = [{"name": "rating", "type": "INT_RANGE"}]
     mock = AsyncMock(return_value={"fields": fields})
     with patch.object(server._agent, "call_tool", new=mock):
@@ -183,7 +199,7 @@ async def test_get_fields_reuses_cache_on_second_call(server: WoofServer) -> Non
 
 @pytest.mark.asyncio
 async def test_get_fields_error_returns_empty_and_is_not_cached(
-    server: WoofServer,
+    server: McpServer,
 ) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
@@ -193,7 +209,7 @@ async def test_get_fields_error_returns_empty_and_is_not_cached(
 
 
 @pytest.mark.asyncio
-async def test_get_fields_retries_after_error(server: WoofServer) -> None:
+async def test_get_fields_retries_after_error(server: McpServer) -> None:
     library = server.config.libraries[0]
     fields = [{"name": "dateTaken", "type": "DATE_RANGE"}]
     mock = AsyncMock(side_effect=[AgentError("down"), {"fields": fields}])
@@ -211,7 +227,7 @@ async def test_get_fields_retries_after_error(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_index_library_launches_background_task(server: WoofServer) -> None:
+async def test_index_library_launches_background_task(server: McpServer) -> None:
     """index_library returns immediately with type='indexing' and a session_id."""
     captured: dict[str, Any] = {}
 
@@ -230,6 +246,7 @@ async def test_index_library_launches_background_task(server: WoofServer) -> Non
     assert result["type"] == "indexing"
     assert "session_id" in result
     assert result["library_name"] == "testlib"
+    assert result["serverUrls"] == server.server_urls
     assert captured["module"] == "whitebeard"
     assert captured["tool_name"] == "index_library"
     assert captured["args"]["generate_thumbnails"] is True
@@ -237,7 +254,7 @@ async def test_index_library_launches_background_task(server: WoofServer) -> Non
 
 
 @pytest.mark.asyncio
-async def test_index_library_with_partition(server: WoofServer) -> None:
+async def test_index_library_with_partition(server: McpServer) -> None:
     captured: dict[str, Any] = {}
 
     def mock_background(
@@ -259,14 +276,14 @@ async def test_index_library_with_partition(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_index_library_unknown_library(server: WoofServer) -> None:
+async def test_index_library_unknown_library(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "index_library")
     with pytest.raises(ValueError, match="not found"):
         await tool_fn(library_name="unknown", partition="", force_extract_exif=False)
 
 
 @pytest.mark.asyncio
-async def test_index_library_callbacks_update_session(server: WoofServer) -> None:
+async def test_index_library_callbacks_update_session(server: McpServer) -> None:
     """on_progress / on_complete callbacks wire into the indexing session manager."""
     callbacks: dict[str, Any] = {}
 
@@ -294,7 +311,7 @@ async def test_index_library_callbacks_update_session(server: WoofServer) -> Non
 
 
 @pytest.mark.asyncio
-async def test_index_library_registers_task(server: WoofServer) -> None:
+async def test_index_library_registers_task(server: McpServer) -> None:
     """index_library registers the returned task with the session manager."""
     import asyncio
     from unittest.mock import MagicMock
@@ -315,7 +332,7 @@ async def test_index_library_registers_task(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_index_library_on_error_cancelled_calls_cancelled(server: WoofServer) -> None:
+async def test_index_library_on_error_cancelled_calls_cancelled(server: McpServer) -> None:
     """_on_error with CancelledError transitions session to 'cancelled', not 'failed'."""
     import asyncio
 
@@ -347,18 +364,18 @@ _ALL_FIELDS = [_DATE_FIELD, _RATING_FIELD]
 
 
 def test_search_stats_empty() -> None:
-    stats = WoofServer._search_stats([], _ALL_FIELDS)
+    stats = McpServer._search_stats([], _ALL_FIELDS)
     assert stats == {"partitions": {}, "dateTaken": None, "rating": None}
 
 
 def test_search_stats_no_fields() -> None:
-    stats = WoofServer._search_stats([])
+    stats = McpServer._search_stats([])
     assert stats == {"partitions": {}}
 
 
 def test_search_stats_partition_counts_sorted() -> None:
     matches = _make_matches(partitions=["2024/03", "2024/01", "2024/03", "2024/02"])
-    stats = WoofServer._search_stats(matches)
+    stats = McpServer._search_stats(matches)
     assert stats["partitions"] == {"2024/01": 1, "2024/02": 1, "2024/03": 2}
     assert list(stats["partitions"].keys()) == ["2024/01", "2024/02", "2024/03"]
 
@@ -366,7 +383,7 @@ def test_search_stats_partition_counts_sorted() -> None:
 def test_search_stats_date_range() -> None:
     dates = ["2024-01-10T12:00:00", "2024-03-05T08:30:00", "2024-02-20T00:00:00"]
     matches = _make_matches(partitions=["p"] * 3, dates=dates)
-    stats = WoofServer._search_stats(matches, [_DATE_FIELD])
+    stats = McpServer._search_stats(matches, [_DATE_FIELD])
     assert stats["dateTaken"] == {
         "min": "2024-01-10T12:00:00",
         "max": "2024-03-05T08:30:00",
@@ -375,26 +392,26 @@ def test_search_stats_date_range() -> None:
 
 def test_search_stats_rating_range() -> None:
     matches = _make_matches(partitions=["p"] * 6, ratings=[5, 3, 5, None, 3, 1])
-    stats = WoofServer._search_stats(matches, [_RATING_FIELD])
+    stats = McpServer._search_stats(matches, [_RATING_FIELD])
     assert stats["rating"] == {"min": 1, "max": 5}
 
 
 def test_search_stats_no_dates_gives_none() -> None:
     matches = _make_matches()
-    assert WoofServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
+    assert McpServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
 
 
 def test_search_stats_includes_score_when_present() -> None:
     matches = _make_matches(partitions=["p", "p", "p"])
     for i, score in enumerate([0.5, 3.2, 8.7]):
         matches[i]["score"] = score
-    stats = WoofServer._search_stats(matches, [])
+    stats = McpServer._search_stats(matches, [])
     assert stats["score"] == {"min": 0.5, "max": 8.7}
 
 
 def test_search_stats_no_score_key_when_absent() -> None:
     matches = _make_matches(partitions=["p", "p"])
-    stats = WoofServer._search_stats(matches, [])
+    stats = McpServer._search_stats(matches, [])
     assert "score" not in stats
 
 
@@ -404,7 +421,7 @@ def test_search_stats_no_score_key_when_absent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_photos_calls_wally(server: WoofServer) -> None:
+async def test_search_photos_calls_wally(server: McpServer) -> None:
     mock_result = {
         "matches": [],
         "partitionsScanned": 3,
@@ -422,7 +439,7 @@ async def test_search_photos_calls_wally(server: WoofServer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None:
+async def test_search_photos_omits_filters_when_none(server: McpServer) -> None:
     mock = AsyncMock(return_value={"matches": []})
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
@@ -433,7 +450,7 @@ async def test_search_photos_omits_filters_when_none(server: WoofServer) -> None
 
 
 @pytest.mark.asyncio
-async def test_search_photos_forwards_full_text_filter(server: WoofServer) -> None:
+async def test_search_photos_forwards_full_text_filter(server: McpServer) -> None:
     """full_text_filter must be forwarded to Wally verbatim."""
     mock = AsyncMock(return_value={"matches": []})
     fts = {"query": "Canyon", "columns": ["description"]}
@@ -445,7 +462,7 @@ async def test_search_photos_forwards_full_text_filter(server: WoofServer) -> No
 
 
 @pytest.mark.asyncio
-async def test_search_photos_omits_full_text_filter_when_none(server: WoofServer) -> None:
+async def test_search_photos_omits_full_text_filter_when_none(server: McpServer) -> None:
     mock = AsyncMock(return_value={"matches": []})
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
@@ -455,7 +472,7 @@ async def test_search_photos_omits_full_text_filter_when_none(server: WoofServer
 
 
 @pytest.mark.asyncio
-async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None:
+async def test_search_photos_returns_stats_and_token(server: McpServer) -> None:
     matches = _make_matches(
         partitions=["2024/01", "2024/01", "2024/02"],
         dates=["2024-01-05T00:00:00", "2024-01-10T00:00:00", "2024-02-01T00:00:00"],
@@ -485,7 +502,7 @@ async def test_search_photos_returns_stats_and_token(server: WoofServer) -> None
 
 
 @pytest.mark.asyncio
-async def test_search_photos_stores_session(server: WoofServer) -> None:
+async def test_search_photos_stores_session(server: McpServer) -> None:
     matches = _make_matches(partitions=["2024/01"])
     mock = AsyncMock(return_value={"matches": matches})
     with patch.object(server._agent, "call_tool", new=mock):
@@ -499,12 +516,12 @@ async def test_search_photos_stores_session(server: WoofServer) -> None:
 
 @pytest.mark.asyncio
 async def test_search_photos_agent_error_is_logged(
-    server: WoofServer, caplog: pytest.LogCaptureFixture
+    server: McpServer, caplog: pytest.LogCaptureFixture
 ) -> None:
     mock = AsyncMock(side_effect=AgentError("wally exploded"))
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
-        with caplog.at_level(logging.ERROR, logger="woof.server"):
+        with caplog.at_level(logging.ERROR, logger="woof.mcp_server"):
             result = await tool_fn(ctx=None, library_name="testlib")
     assert "error" in result
     assert "wally exploded" in result["error"]
@@ -517,14 +534,14 @@ async def test_search_photos_agent_error_is_logged(
 
 
 @pytest.mark.asyncio
-async def test_browse_gallery_unknown_token(server: WoofServer) -> None:
+async def test_browse_gallery_unknown_token(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["bad-token"])
     assert "error" in result
 
 
 @pytest.mark.asyncio
-async def test_browse_gallery_returns_session_matches(server: WoofServer) -> None:
+async def test_browse_gallery_returns_session_matches(server: McpServer) -> None:
     matches = _make_matches(partitions=["2024/01", "2024/01"])
     token = "test-token"
     server._sessions.sessions[token] = SessionHandler(
@@ -541,6 +558,7 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
     # gallery fetches directly from the HTTP server (OEC#19).
     assert "matches" not in result
     assert result["serverUrl"] == server.server_url
+    assert result["serverUrls"] == server.server_urls
     assert result["querySummary"] == "My query"
     assert result["totalCount"] == len(matches)
     merged_token = result["token"]
@@ -548,7 +566,7 @@ async def test_browse_gallery_returns_session_matches(server: WoofServer) -> Non
 
 
 @pytest.mark.asyncio
-async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> None:
+async def test_browse_gallery_merges_and_deduplicates(server: McpServer) -> None:
     matches_a = _make_matches(partitions=["2024/01", "2024/02"])  # hash0, hash1
     matches_b = _make_matches(partitions=["2024/02", "2024/03"])  # hash0 (dup), hash1 (dup)
     # Override hashes so session B shares hash0 with session A but has a unique hash2
@@ -585,7 +603,7 @@ async def test_browse_gallery_merges_and_deduplicates(server: WoofServer) -> Non
 
 
 @pytest.mark.asyncio
-async def test_browse_gallery_partial_unknown_token(server: WoofServer) -> None:
+async def test_browse_gallery_partial_unknown_token(server: McpServer) -> None:
     server._sessions.sessions["good"] = {"matches": [], "backend": "lib", "querySummary": ""}
     tool_fn = await _get_tool(server, "browse_gallery")
     result = await tool_fn(session_tokens=["good", "missing"])
@@ -594,11 +612,34 @@ async def test_browse_gallery_partial_unknown_token(server: WoofServer) -> None:
 
 
 # ---------------------------------------------------------------------------
+# server_urls / gallery CSP
+# ---------------------------------------------------------------------------
+
+
+def test_server_urls_includes_localhost_and_loopback_ip(server: McpServer) -> None:
+    # Different MCP hosts accept different loopback hostnames in their CSP
+    # (Claude Desktop Chat requires "localhost", Claude CoWork requires
+    # "127.0.0.1") — both must be offered for the same port.
+    port = server.server_url.rsplit(":", 1)[1]
+    assert server.server_urls == [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    assert server.server_url == server.server_urls[0]
+
+
+@pytest.mark.asyncio
+async def test_gallery_resource_csp_declares_all_server_urls(server: McpServer) -> None:
+    resources = await server.mcp.list_resources()
+    gallery = next(r for r in resources if str(r.uri) == "ui://gallery/ouestcharlie")
+    csp = gallery.meta["ui"]["csp"]
+    assert csp["resourceDomains"] == server.server_urls
+    assert csp["connectDomains"] == server.server_urls
+
+
+# ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
 
 
-async def _get_tool(server: WoofServer, name: str) -> Any:
+async def _get_tool(server: McpServer, name: str) -> Any:
     """Extract a tool function from the FastMCP registry by name."""
     tool = await server.mcp.get_tool(name)
     return tool.fn

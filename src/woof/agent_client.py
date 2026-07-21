@@ -322,8 +322,9 @@ class AgentClient:
     ) -> asyncio.Task:
         """Spawn *module.tool_name* as a background asyncio Task and return immediately.
 
-        Callbacks are invoked on the MCP event loop (same loop as the HTTP server
-        via serve_in_loop), so no locking is needed for IndexingSessionManager.
+        Callbacks are invoked on the MCP event loop (the same loop the HTTP
+        server runs on — see asgi_server.build_http_asgi_app), so no locking
+        is needed for IndexingSessionManager.
         """
         progress_cb = _make_progress_forwarder_fn(on_progress) if on_progress else None
 

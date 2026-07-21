@@ -1,7 +1,8 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { fetchIndexingStatus, cancelIndexing } from '../lib/api.svelte.js';
 
-  let { serverUrl, sessionId, library, partition, mcpApp, mcpReady = false } = $props();
+  let { sessionId, library, partition, mcpApp, mcpReady = false } = $props();
 
   let status = $state('running');
   let progress = $state(0);
@@ -16,11 +17,9 @@
   let rootEl = $state(null);
 
   async function poll() {
-    if (!serverUrl || !sessionId) return;
+    if (!sessionId) return;
     try {
-      const resp = await fetch(`${serverUrl}/api/indexing/${sessionId}`);
-      if (!resp.ok) return;
-      const data = await resp.json();
+      const data = await fetchIndexingStatus(sessionId);
       status = data.status ?? 'running';
       progress = data.progress ?? 0;
       total = data.total ?? 1;
@@ -51,7 +50,7 @@
   async function stopIndexing() {
     stopping = true;
     try {
-      await fetch(`${serverUrl}/api/indexing/${sessionId}/cancel`, { method: 'POST' });
+      await cancelIndexing(sessionId);
     } catch {
       // poll will reflect the new status
     }

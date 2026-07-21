@@ -9,11 +9,12 @@ import urllib.request
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from http_test_server import start_http_server
 
 from woof.agent_client import AgentError
 from woof.config import LibraryConfig
 from woof.gallery_session_manager import GallerySessionManager, SessionHandler
-from woof.http_server import start_http_server
+from woof.http_server import get_gallery_html
 from woof.indexing_session_manager import IndexingSessionManager
 
 _DEFAULT_SERVER_PAGE = 513
@@ -53,6 +54,29 @@ def test_gallery_token_route_serves_html() -> None:
         assert "text/html" in resp.headers["Content-Type"]
         body = resp.read().decode()
         assert "<html" in body
+
+
+def test_get_gallery_html_embeds_server_urls_as_data_attribute() -> None:
+    urls = ["http://localhost:12345", "http://127.0.0.1:12345"]
+    html = get_gallery_html(urls[0], urls)
+    assert 'data-server-urls=\'["http://localhost:12345", "http://127.0.0.1:12345"]\'' in html
+    # No inline <script> should be introduced — CSP script-src should not need widening.
+    assert "<script>window" not in html
+
+
+def test_get_gallery_html_defaults_server_urls_to_single_element_list() -> None:
+    html = get_gallery_html("http://localhost:12345")
+    assert "data-server-urls='[\"http://localhost:12345\"]'" in html
+
+
+def test_get_gallery_html_embeds_token_when_provided() -> None:
+    html = get_gallery_html("http://localhost:12345", token="secret")
+    assert "data-server-token='\"secret\"'" in html
+
+
+def test_get_gallery_html_omits_token_attribute_when_none() -> None:
+    html = get_gallery_html("http://localhost:12345")
+    assert "data-server-token" not in html
 
 
 def test_gallery_unknown_token_returns_404() -> None:

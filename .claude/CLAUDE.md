@@ -18,6 +18,7 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 ## Python Style
 
 - **No inline imports**: all `import` statements must be at the top of the file. Never place imports inside functions or test bodies.
+- **Docstrings/comments describe requirements, not callers**: a class or function's docstring should state what it needs and what it does, not assume or describe the outside architecture that calls it (e.g. don't write "binding the port is `__main__.py`'s job" inside `McpServer`'s docstring — just document that `server_urls` is a required list of URLs). Keeps the module decoupled from any specific caller and avoids stale references when callers change.
 
 ## Testing
 
@@ -25,6 +26,10 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 ```
 .venv/bin/pytest tests/ -v
 ```
+
+### Linting
+
+Use `uv tool run ruff check ...` (not bare `ruff` or `uv run ruff`) to lint Python files.
 
 ### JavaScript / Svelte (gallery)
 ```

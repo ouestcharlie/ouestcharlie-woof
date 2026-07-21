@@ -1,10 +1,12 @@
 """Local HTTP server for proxying media requests and serving the gallery.
 
 Runs on 127.0.0.1 with an OS-assigned port backed by Starlette + uvicorn (async
-ASGI).  In production, ``serve_in_loop`` runs uvicorn as a task on the shared MCP
-event loop — all async work on a single loop, no cross-thread bridging.
-``start_http_server`` is kept for tests: it starts the server in a daemon thread
-with its own event loop.
+ASGI). In production, ``build_gallery_app``'s app is mounted alongside the MCP
+app under one combined app (see ``asgi_server.build_http_asgi_app``, driven by
+``__main__.py``) — all async work on a single shared loop, no cross-thread
+bridging. Tests that need this app served standalone (no MCP app) should use
+``tests/http_test_server.py::start_http_server`` instead of adding a
+production entry point for it.
 
 URL scheme:
   GET /gallery/{token}                         — gallery HTML (token identifies session)
@@ -21,22 +23,20 @@ All library media (thumbnails and previews) is served by Wally and proxied here.
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
-import socket
-import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from .discovery import ActivityTracker
 from .gallery_session_manager import GallerySessionManager, PageOutOfRange
 
 _log = logging.getLogger(__name__)
@@ -46,135 +46,64 @@ _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 
-def get_gallery_html(server_url: str) -> str:
+def get_gallery_html(
+    server_url: str, server_urls: list[str] | None = None, token: str | None = None
+) -> str:
     """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
     those relative-rooted paths with {server_url}/gallery-static/ so the MCP
     Apps iframe (and direct browser access) can load JS/CSS.
+
+    ``server_urls`` (defaulting to a single-element list of ``server_url``) is
+    embedded as a ``data-server-urls`` attribute on ``<html>`` so the frontend can
+    try each candidate origin in turn — different MCP hosts accept different
+    loopback hostnames in their CSP. A data attribute (rather than an inline
+    ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
+
+    ``token`` (``None`` for the unauthenticated test-only standalone gallery
+    server, see ``tests/http_test_server.py::start_http_server``) is embedded
+    alongside as ``data-server-token`` so the frontend can attach it as a
+    bearer token / ``?token=`` query param.
     """
+    candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
-        return html.replace("/gallery-static/", f"{server_url}/gallery-static/")
+        html = html.replace("/gallery-static/", f"{server_url}/gallery-static/")
+        attrs = f"data-server-urls='{json.dumps(candidates)}'"
+        if token is not None:
+            attrs += f" data-server-token='{json.dumps(token)}'"
+        return html.replace("<html", f"<html {attrs}", 1)
     return _gallery_placeholder()
 
 
-async def serve_in_loop(
-    sock: socket.socket,
+def build_gallery_app(
     session_manager: GallerySessionManager,
     wally_connection_fn: Any | None,
     server_url: str,
     indexing_session_manager: Any | None = None,
-) -> None:
-    """Run the HTTP server on a pre-bound socket within the caller's event loop.
-
-    Intended for production use where Woof runs all async work on a single loop
-    (MCP + HTTP share one asyncio event loop).  Must be started as an
-    ``asyncio.create_task`` from inside a running loop.
-
-    Any synchronous CPU-bound work called from request handlers must go through
-    ``run_in_executor`` — blocking the loop stalls both HTTP and MCP processing.
-    """
-    app = _build_app(
-        session_manager,
-        wally_connection_fn,
-        server_url=server_url,
-        indexing_session_manager=indexing_session_manager,
-    )
-    await _serve_bare(app, sock)
-
-
-def start_http_server(
-    session_manager: GallerySessionManager | None = None,
-    wally_connection_fn: Any | None = None,
-    indexing_session_manager: Any | None = None,
-) -> str:
-    """Start the gallery/proxy HTTP server in a daemon thread.
-
-    Used by tests.  Production code should use ``serve_in_loop`` instead so the
-    HTTP server shares the MCP event loop.
+    *,
+    token: str | None = None,
+    activity_tracker: ActivityTracker | None = None,
+    shutdown_handle: Any | None = None,
+) -> Starlette:
+    """Build the gallery/media/lifecycle Starlette app
 
     Args:
-        session_manager: Gallery session manager shared with WoofServer.
-        wally_connection_fn: Callable ``(library_name: str) -> (http_port, token)``
-            for the named Wally sidecar.
-
-    Returns:
-        The full server URL (e.g. ``"http://localhost:8080"``).
+        token: Embedded into the gallery HTML (``data-server-token``) so the
+            frontend can authenticate — this is HTTP mode's bearer token
+            value, not a wrapping concern of this function.
+        activity_tracker: touched by the ``/keepalive`` route.
+        shutdown_handle: object with a ``.request()`` method invoked by
+            ``POST /shutdown``.
     """
-    mgr = session_manager if session_manager is not None else GallerySessionManager()
-
-    # Bind port before starting the thread so the port is known synchronously.
-    # Use the loopback IP for binding but expose the URL as "localhost" so the
-    # hostname matches what MCP Host writes into the iframe's CSP.
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    port: int = sock.getsockname()[1]
-    server_url = f"http://localhost:{port}"
-
-    app = _build_app(
-        mgr,
-        wally_connection_fn,
-        server_url=server_url,
-        indexing_session_manager=indexing_session_manager,
-    )
-    ready = threading.Event()
-
-    def _run() -> None:
-        try:
-            asyncio.run(_serve_with_ready(app, sock, ready))
-        except Exception:
-            _log.exception("HTTP server thread crashed")
-
-    threading.Thread(target=_run, daemon=True, name="woof-http").start()
-    ready.wait(timeout=5.0)
-    _log.info("HTTP server listening on %s", server_url)
-    return server_url
-
-
-async def _serve_with_ready(app: Any, sock: socket.socket, ready: threading.Event) -> None:
-    import uvicorn
-
-    class _Server(uvicorn.Server):
-        def install_signal_handlers(self) -> None:
-            pass  # Signal handling belongs to the main thread; no-op in daemon thread
-
-        async def startup(self, sockets: list[socket.socket] | None = None) -> None:
-            await super().startup(sockets=sockets)
-            ready.set()
-
-    config = uvicorn.Config(app, log_level="warning", access_log=False)
-    server = _Server(config)
-    await server.serve(sockets=[sock])
-
-
-async def _serve_bare(app: Any, sock: socket.socket) -> None:
-    import uvicorn
-
-    class _Server(uvicorn.Server):
-        def install_signal_handlers(self) -> None:
-            pass
-
-    config = uvicorn.Config(app, log_level="warning", access_log=False)
-    server = _Server(config)
-    await server.serve(sockets=[sock])
-
-
-def _build_app(
-    session_manager: GallerySessionManager,
-    wally_connection_fn: Any | None,
-    server_url: str,
-    indexing_session_manager: Any | None = None,
-) -> Any:
-    """Build and return the Starlette ASGI application."""
 
     async def gallery_token(request: Request) -> Response:
-        token = request.path_params["token"]
-        session = session_manager.get(token)
+        path_token = request.path_params["token"]
+        session = session_manager.get(path_token)
         if session is None:
             return Response(status_code=404)
-        html = get_gallery_html(server_url)
+        html = get_gallery_html(server_url, token=token)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
@@ -255,7 +184,24 @@ def _build_app(
             return JSONResponse({"error": "not cancellable"}, status_code=409)
         return JSONResponse({"status": "cancelling"})
 
+    async def healthz(request: Request) -> Response:
+        return JSONResponse({"status": "ok"})
+
+    async def keepalive(request: Request) -> Response:
+        if activity_tracker is not None:
+            activity_tracker.touch()
+        return JSONResponse({"status": "ok"})
+
+    async def shutdown(request: Request) -> Response:
+        if shutdown_handle is None:
+            return JSONResponse({"error": "not supported"}, status_code=503)
+        shutdown_handle.request()
+        return JSONResponse({"status": "stopping"})
+
     routes = [
+        Route("/healthz", healthz, methods=["GET"]),
+        Route("/keepalive", keepalive, methods=["POST"]),
+        Route("/shutdown", shutdown, methods=["POST"]),
         Route("/gallery/{token}", gallery_token),
         Route("/api/results/{token}/page/{page}", api_page),
         Route("/api/results/{token}", api_results),
@@ -264,8 +210,7 @@ def _build_app(
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
         Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
-    app = Starlette(routes=routes)
-    return CORSMiddleware(app, allow_origins=["*"])
+    return Starlette(routes=routes)
 
 
 def _gallery_placeholder() -> str:

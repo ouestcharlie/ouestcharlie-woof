@@ -1,13 +1,10 @@
-"""WoofServer — FastMCP server exposing OuEstCharlie tools to Claude Desktop."""
+"""McpServer — FastMCP server exposing OuEstCharlie tools to Claude Desktop."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 from collections import Counter
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -17,7 +14,7 @@ from mcp.types import ToolAnnotations
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
 from .gallery_session_manager import GallerySessionManager
-from .http_server import get_gallery_html, serve_in_loop
+from .http_server import get_gallery_html
 from .indexing_session_manager import IndexingSessionManager
 
 _log = logging.getLogger(__name__)
@@ -25,7 +22,7 @@ _log = logging.getLogger(__name__)
 _GALLERY_URI = "ui://gallery/ouestcharlie"
 
 
-class WoofServer:
+class McpServer:
     """Woof MCP server.
 
     Exposes tools to Claude Desktop and registers the gallery
@@ -39,51 +36,34 @@ class WoofServer:
     def __init__(
         self,
         config: WoofConfig,
-        agent_client: AgentClient | None = None,
-        session_manager: GallerySessionManager | None = None,
+        server_urls: list[str],
+        agent_client: AgentClient,
+        session_manager: GallerySessionManager,
+        indexing_session_manager: IndexingSessionManager,
+        token: str | None = None,
     ) -> None:
+        """
+        Args:
+            server_urls: Candidate URLs (e.g. ``http://localhost:<port>``,
+                ``http://127.0.0.1:<port>``) this MCP server is reachable at
+                over HTTP — embedded in tool results and the gallery CSP.
+            token: Bearer token, embedded in the gallery HTML / tool results
+                so a frontend can authenticate against whatever serves
+                *server_urls*. ``None`` is only meaningful for tests that
+                construct a ``McpServer`` without ever serving it over HTTP.
+        """
         self.config = config
-        self._agent = agent_client or AgentClient()
-        self._sessions = session_manager if session_manager is not None else GallerySessionManager()
-        self._indexing_sessions = IndexingSessionManager()
+        self._agent = agent_client
+        self._sessions = session_manager
+        self._indexing_sessions = indexing_session_manager
         self._library_fields: dict[str, dict[str, Any]] = {}  # library name → full Wally response
+        self._token = token
+        self.server_urls = server_urls
+        self.server_url = server_urls[0]
 
-        # Bind port before MCP starts so server_url is known synchronously.
-        _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        _sock.bind(("127.0.0.1", 0))
-        self._http_sock = _sock
-        self.server_url = f"http://localhost:{_sock.getsockname()[1]}"
-
-        agent = self._agent
-
-        @asynccontextmanager
-        async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
-            # HTTP server shares this event loop — no cross-thread bridging needed.
-            # Any synchronous work in request handlers must use run_in_executor.
-
-            http_task = asyncio.create_task(
-                serve_in_loop(
-                    self._http_sock,
-                    self._sessions,
-                    self._wally_connection,
-                    self.server_url,
-                    indexing_session_manager=self._indexing_sessions,
-                )
-            )
-            try:
-                yield
-            finally:
-                http_task.cancel()
-                await asyncio.gather(http_task, return_exceptions=True)
-                await agent.shutdown()
-
-        self.mcp = FastMCP("ouestcharlie-woof", lifespan=_lifespan)
+        self.mcp = FastMCP("ouestcharlie-woof")
         self._register_tools()
         self._register_gallery_resource()
-
-    def _wally_connection(self, library_name: str) -> tuple[int | None, str | None]:
-        return self._agent.get_wally_connection(library_name)
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -233,6 +213,8 @@ class WoofServer:
                 "library_name": library_name,
                 "partition": partition,
                 "serverUrl": self.server_url,
+                "serverUrls": self.server_urls,
+                "serverToken": self._token,
             }
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -359,6 +341,8 @@ class WoofServer:
                 "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
+                "serverUrls": self.server_urls,
+                "serverToken": self._token,
                 "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
                 "totalCount": data.totalCount,
             }
@@ -368,20 +352,18 @@ class WoofServer:
     # ------------------------------------------------------------------
 
     def _register_gallery_resource(self) -> None:
-        origin = self.server_url
-
         @self.mcp.resource(
             _GALLERY_URI,
             mime_type="text/html;profile=mcp-app",
             app=AppConfig(
                 csp=ResourceCSP(
-                    resource_domains=[origin],
-                    connect_domains=[origin],
+                    resource_domains=self.server_urls,
+                    connect_domains=self.server_urls,
                 )
             ),
         )
         async def gallery_resource() -> str:
-            return get_gallery_html(self.server_url)
+            return get_gallery_html(self.server_url, self.server_urls, self._token)
 
     # ------------------------------------------------------------------
     # Helpers
