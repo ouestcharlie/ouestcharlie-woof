@@ -64,11 +64,15 @@ def spawn_fake_woof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Mock:
     monkeypatch.setattr(bridge, "_spawn_woof", spy)
     yield spy
 
-    # Surface anything fake_woof printed (e.g. a startup traceback) so a
-    # timeout failure shows *why* it never became ready, instead of just
-    # that it didn't.
-    if log_path.exists() and (contents := log_path.read_text(errors="replace")):
-        print(f"\n--- fake_woof.py output ({log_path}) ---\n{contents}")
+    # Surface anything fake_woof printed (e.g. a startup traceback) plus its
+    # exit status, so a timeout failure shows *why* it never became ready
+    # (still starting up vs. already dead) instead of just that it didn't.
+    contents = log_path.read_text(errors="replace") if log_path.exists() else ""
+    for proc in spawned:
+        print(
+            f"\n--- fake_woof.py (pid={proc.pid}, poll()={proc.poll()!r}) "
+            f"output ({log_path}) ---\n{contents or '(empty)'}"
+        )
 
     for proc in spawned:
         if proc.poll() is None:
