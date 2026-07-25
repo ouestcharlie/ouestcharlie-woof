@@ -168,7 +168,16 @@ if sys.platform == "win32":
 else:
 
     def is_pid_alive(pid: int) -> bool:
-        """Best-effort liveness check; a false positive is caught by the port probe."""
+        """Best-effort liveness check; a false positive is caught by the port probe.
+
+        If *pid* is our own child, ``os.kill(pid, 0)`` alone would report a
+        zombie (exited but not yet reaped) as alive, so a non-blocking reap
+        is attempted first.
+        """
+        with contextlib.suppress(ChildProcessError):
+            reaped_pid, _status = os.waitpid(pid, os.WNOHANG)
+            if reaped_pid == pid:
+                return False
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
