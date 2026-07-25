@@ -85,11 +85,35 @@ async def _wait_until(predicate: Callable[[], bool], *, timeout: float = 5.0) ->
     return False
 
 
+async def _ensure_woof_running_with_diagnostics() -> discovery.DiscoveryInfo:
+    """Wrap ``ensure_woof_running`` so a timeout reports *which* step of the
+    discover-then-probe sequence stalled, instead of just that it did —
+    ``ensure_woof_running`` itself only raises a bare ``TimeoutError``."""
+    try:
+        return await bridge.ensure_woof_running()
+    except TimeoutError:
+        info = discovery.read_discovery()
+        diagnostics = [f"read_discovery() -> {info!r}"]
+        if info is not None:
+            diagnostics.append(f"is_pid_alive(pid) -> {discovery.is_pid_alive(info.pid)}")
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    resp = await client.get(
+                        f"{info.server_url}/healthz",
+                        headers={"Authorization": f"Bearer {info.token}"},
+                    )
+                diagnostics.append(f"direct healthz probe -> HTTP {resp.status_code}")
+            except httpx.HTTPError as exc:
+                diagnostics.append(f"direct healthz probe -> {exc!r}")
+        print("\n--- ensure_woof_running() timed out; diagnostics ---\n" + "\n".join(diagnostics))
+        raise
+
+
 @pytest.mark.asyncio
 async def test_ensure_woof_running_spawns_and_discovers_real_process(
     spawn_fake_woof: Mock,
 ) -> None:
-    info = await bridge.ensure_woof_running()
+    info = await _ensure_woof_running_with_diagnostics()
 
     assert info.token == _TOKEN
     assert discovery.is_pid_alive(info.pid)
@@ -106,8 +130,8 @@ async def test_ensure_woof_running_spawns_and_discovers_real_process(
 async def test_ensure_woof_running_reuses_live_instance_without_respawning(
     spawn_fake_woof: Mock,
 ) -> None:
-    first = await bridge.ensure_woof_running()
-    second = await bridge.ensure_woof_running()
+    first = await _ensure_woof_running_with_diagnostics()
+    second = await _ensure_woof_running_with_diagnostics()
 
     assert second == first
     spawn_fake_woof.assert_called_once()
@@ -115,7 +139,7 @@ async def test_ensure_woof_running_reuses_live_instance_without_respawning(
 
 @pytest.mark.asyncio
 async def test_stop_running_instance_terminates_real_process(spawn_fake_woof: Mock) -> None:
-    info = await bridge.ensure_woof_running()
+    info = await _ensure_woof_running_with_diagnostics()
 
     result = await bridge.stop_running_instance()
 
