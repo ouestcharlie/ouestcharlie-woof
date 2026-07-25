@@ -10,7 +10,6 @@ tests_integration
 Makefile
 .git
 .github
-uv.lock
 .ruff_cache
 .vscode
 /gallery
