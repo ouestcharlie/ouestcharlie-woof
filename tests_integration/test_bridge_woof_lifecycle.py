@@ -40,7 +40,6 @@ def spawn_fake_woof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Mock:
     production's _spawn_woof. Force-kills anything it spawned once the test
     ends, even on failure, so a bug can't leak an orphaned process."""
     spawned: list[subprocess.Popen] = []
-    log_path = tmp_path / "fake_woof.log"
 
     def _spawn() -> None:
         kwargs: dict[str, object] = {}
@@ -50,29 +49,18 @@ def spawn_fake_woof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Mock:
             )
         else:
             kwargs["start_new_session"] = True
-        with open(log_path, "ab") as log_file:
-            proc = subprocess.Popen(
-                [sys.executable, str(_FAKE_WOOF_SCRIPT), str(tmp_path), _TOKEN],
-                stdin=subprocess.DEVNULL,
-                stdout=log_file,
-                stderr=log_file,
-                **kwargs,
-            )
+        proc = subprocess.Popen(
+            [sys.executable, str(_FAKE_WOOF_SCRIPT), str(tmp_path), _TOKEN],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **kwargs,
+        )
         spawned.append(proc)
 
     spy = Mock(side_effect=_spawn)
     monkeypatch.setattr(bridge, "_spawn_woof", spy)
     yield spy
-
-    # Surface anything fake_woof printed (e.g. a startup traceback) plus its
-    # exit status, so a timeout failure shows *why* it never became ready
-    # (still starting up vs. already dead) instead of just that it didn't.
-    contents = log_path.read_text(errors="replace") if log_path.exists() else ""
-    for proc in spawned:
-        print(
-            f"\n--- fake_woof.py (pid={proc.pid}, poll()={proc.poll()!r}) "
-            f"output ({log_path}) ---\n{contents or '(empty)'}"
-        )
 
     for proc in spawned:
         if proc.poll() is None:
@@ -89,35 +77,11 @@ async def _wait_until(predicate: Callable[[], bool], *, timeout: float = 5.0) ->
     return False
 
 
-async def _ensure_woof_running_with_diagnostics() -> discovery.DiscoveryInfo:
-    """Wrap ``ensure_woof_running`` so a timeout reports *which* step of the
-    discover-then-probe sequence stalled, instead of just that it did —
-    ``ensure_woof_running`` itself only raises a bare ``TimeoutError``."""
-    try:
-        return await bridge.ensure_woof_running()
-    except TimeoutError:
-        info = discovery.read_discovery()
-        diagnostics = [f"read_discovery() -> {info!r}"]
-        if info is not None:
-            diagnostics.append(f"is_pid_alive(pid) -> {discovery.is_pid_alive(info.pid)}")
-            try:
-                async with httpx.AsyncClient(timeout=2.0) as client:
-                    resp = await client.get(
-                        f"{info.server_url}/healthz",
-                        headers={"Authorization": f"Bearer {info.token}"},
-                    )
-                diagnostics.append(f"direct healthz probe -> HTTP {resp.status_code}")
-            except httpx.HTTPError as exc:
-                diagnostics.append(f"direct healthz probe -> {exc!r}")
-        print("\n--- ensure_woof_running() timed out; diagnostics ---\n" + "\n".join(diagnostics))
-        raise
-
-
 @pytest.mark.asyncio
 async def test_ensure_woof_running_spawns_and_discovers_real_process(
     spawn_fake_woof: Mock,
 ) -> None:
-    info = await _ensure_woof_running_with_diagnostics()
+    info = await bridge.ensure_woof_running()
 
     assert info.token == _TOKEN
     assert discovery.is_pid_alive(info.pid)
@@ -134,8 +98,8 @@ async def test_ensure_woof_running_spawns_and_discovers_real_process(
 async def test_ensure_woof_running_reuses_live_instance_without_respawning(
     spawn_fake_woof: Mock,
 ) -> None:
-    first = await _ensure_woof_running_with_diagnostics()
-    second = await _ensure_woof_running_with_diagnostics()
+    first = await bridge.ensure_woof_running()
+    second = await bridge.ensure_woof_running()
 
     assert second == first
     spawn_fake_woof.assert_called_once()
@@ -143,7 +107,7 @@ async def test_ensure_woof_running_reuses_live_instance_without_respawning(
 
 @pytest.mark.asyncio
 async def test_stop_running_instance_terminates_real_process(spawn_fake_woof: Mock) -> None:
-    info = await _ensure_woof_running_with_diagnostics()
+    info = await bridge.ensure_woof_running()
 
     result = await bridge.stop_running_instance()
 
