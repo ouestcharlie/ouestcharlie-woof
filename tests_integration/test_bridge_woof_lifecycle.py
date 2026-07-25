@@ -40,25 +40,35 @@ def spawn_fake_woof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Mock:
     production's _spawn_woof. Force-kills anything it spawned once the test
     ends, even on failure, so a bug can't leak an orphaned process."""
     spawned: list[subprocess.Popen] = []
+    log_path = tmp_path / "fake_woof.log"
 
     def _spawn() -> None:
         kwargs: dict[str, object] = {}
         if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs["creationflags"] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
         else:
             kwargs["start_new_session"] = True
-        proc = subprocess.Popen(
-            [sys.executable, str(_FAKE_WOOF_SCRIPT), str(tmp_path), _TOKEN],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            **kwargs,
-        )
+        with open(log_path, "ab") as log_file:
+            proc = subprocess.Popen(
+                [sys.executable, str(_FAKE_WOOF_SCRIPT), str(tmp_path), _TOKEN],
+                stdin=subprocess.DEVNULL,
+                stdout=log_file,
+                stderr=log_file,
+                **kwargs,
+            )
         spawned.append(proc)
 
     spy = Mock(side_effect=_spawn)
     monkeypatch.setattr(bridge, "_spawn_woof", spy)
     yield spy
+
+    # Surface anything fake_woof printed (e.g. a startup traceback) so a
+    # timeout failure shows *why* it never became ready, instead of just
+    # that it didn't.
+    if log_path.exists() and (contents := log_path.read_text(errors="replace")):
+        print(f"\n--- fake_woof.py output ({log_path}) ---\n{contents}")
 
     for proc in spawned:
         if proc.poll() is None:
