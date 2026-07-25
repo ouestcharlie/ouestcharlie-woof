@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -135,18 +136,58 @@ def remove_discovery() -> None:
         _DISCOVERY_FILE.unlink()
 
 
-def is_pid_alive(pid: int) -> bool:
-    """Best-effort liveness check; a false positive is caught by the port probe."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Process exists but is owned by another user — treat as alive.
+if sys.platform == "win32":
+    import ctypes
+
+    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    _STILL_ACTIVE = 259
+
+    def is_pid_alive(pid: int) -> bool:
+        """Best-effort liveness check; a false positive is caught by the port probe.
+
+        ``os.kill(pid, 0)`` is *not* a safe existence check on Windows: signal
+        ``0`` is ``CTRL_C_EVENT``, so it calls ``GenerateConsoleCtrlEvent``,
+        which fails with ``ERROR_INVALID_PARAMETER`` whenever the caller has
+        no console of its own — exactly how a bridge launched by a GUI MCP
+        host (Claude Desktop, VS Code, etc.) normally runs. That made this
+        always report "dead" for a perfectly live Woof, so bridges spun for
+        the full startup timeout instead of finding it. Query the process
+        handle directly instead.
+        """
+        handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            if not ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == _STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+
+else:
+
+    def is_pid_alive(pid: int) -> bool:
+        """Best-effort liveness check; a false positive is caught by the port probe.
+
+        If *pid* is our own child, ``os.kill(pid, 0)`` alone would report a
+        zombie (exited but not yet reaped) as alive, so a non-blocking reap
+        is attempted first.
+        """
+        with contextlib.suppress(ChildProcessError):
+            reaped_pid, _status = os.waitpid(pid, os.WNOHANG)
+            if reaped_pid == pid:
+                return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # Process exists but is owned by another user — treat as alive.
+            return True
+        except OSError:
+            return False
         return True
-    except OSError:
-        return False
-    return True
 
 
 async def probe_alive(info: DiscoveryInfo, *, timeout: float = _PROBE_TIMEOUT_SECONDS) -> bool:
