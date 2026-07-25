@@ -12,6 +12,7 @@ rather than an in-process mock.
 from __future__ import annotations
 
 import os
+import socketserver
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -53,7 +54,18 @@ def main() -> None:
                 self.send_response(404)
                 self.end_headers()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class FastBindHTTPServer(ThreadingHTTPServer):
+        def server_bind(self) -> None:
+            # HTTPServer.server_bind() normally calls socket.getfqdn(host) to
+            # set server_name, a reverse-DNS lookup that can hang for many
+            # seconds on some CI runners' DNS/mDNS setups (observed on macOS
+            # GitHub Actions runners) even though the result is never used
+            # here. Bind the socket without it.
+            socketserver.TCPServer.server_bind(self)
+            self.server_name = self.server_address[0]
+            self.server_port = self.server_address[1]
+
+    server = FastBindHTTPServer(("127.0.0.1", 0), Handler)
     print(f"fake_woof: bound port={server.server_address[1]}", flush=True)
     discovery.write_discovery(
         discovery.DiscoveryInfo(pid=os.getpid(), port=server.server_address[1], token=token)
