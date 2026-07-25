@@ -18,4 +18,6 @@ doc
 /assets
 .claude
 .pre-commit-config.yaml
+.mypy_cache
+glama.json
 pyproject.toml
