@@ -6,6 +6,7 @@
 
 [![MCP Server](https://badge.mcpx.dev?type=server)](https://modelcontextprotocol.io/) [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
+mcp-name: io.github.ouestcharlie/ouestcharlie-woof
 
 Woof is a media management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude Desktop, Goose...).
 
