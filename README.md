@@ -4,6 +4,8 @@
 
 [![Status: Early Preview](https://img.shields.io/badge/status-early%20preview-orange)](#status)
 
+[![macOS](https://img.shields.io/badge/macOS-supported-success?logo=apple&logoColor=white)](#status) [![Linux](https://img.shields.io/badge/Linux-supported-success?logo=linux&logoColor=white)](#status) [![Windows](https://img.shields.io/badge/Windows-supported-success?logo=windows&logoColor=white)](#status)
+
 [![MCP Server](https://badge.mcpx.dev?type=server)](https://modelcontextprotocol.io/) [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
 mcp-name: io.github.ouestcharlie/ouestcharlie-woof
