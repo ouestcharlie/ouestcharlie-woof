@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import Counter
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -142,21 +141,46 @@ class McpServer:
             return {"name": library.name, **raw}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def get_partition_summaries() -> list[Any]:
-            """Return the root summary of each registered library.
+        async def get_summary(
+            library_name: str = "",
+            filters: dict | str | None = None,
+        ) -> list[Any] | dict[str, Any]:
+            """Return aggregate photo statistics (count, date/rating/GPS ranges, tag facets)
+            for a library.
 
-            The summary contains a flat list of all indexed partitions with
-            photo counts and statistics (date ranges, GPS bounding boxes, etc.).
+            It can be scoped with the same ``filters`` syntax as ``search_photos``
+            (see that tool's docstring). Omitting ``filters`` summarizes the whole
+            library; use this before an unscoped search to gauge its size.
+            ``search_photos`` no longer returns a tag breakdown — this is the
+            only place to get one.
 
-            Returns ``None`` for the summary if the library is unindexed or unreachable.
+            Args:
+                library_name: Name of the library to query. When omitted,
+                    returns a summary for every registered library instead of one.
+                filters: Optional filter expression, same format as
+                    ``search_photos``'s ``filters`` argument.
+
+            Returns ``{"error": "..."}`` (in place of the summary) for a library
+            that is unindexed or unreachable.
             """
+            parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
+            args: dict[str, Any] = {"filters": parsed_filters} if parsed_filters is not None else {}
+
+            if library_name:
+                library = self._require_library(library_name)
+                try:
+                    return await self._agent.call_tool("wally", "get_summary", args, library)
+                except AgentError as exc:
+                    _log.error("get_summary(%r) failed: %s", library_name, exc)
+                    return {"error": str(exc)}
+
             result = []
             for b in self.config.libraries:
                 try:
-                    summary = await self._agent.call_tool("wally", "get_partition_summaries", {}, b)
+                    summary = await self._agent.call_tool("wally", "get_summary", args, b)
                 except AgentError as exc:
-                    _log.warning("get_partition_summaries: failed for %r: %s", b.name, exc)
-                    summary = None
+                    _log.error("get_summary(%r) failed: %s", b.name, exc)
+                    summary = {"error": str(exc)}
                 result.append({"name": b.name, "summary": summary})
             return result
 
@@ -300,8 +324,6 @@ class McpServer:
             if parsed_full_text_filter is not None:
                 args["full_text_filter"] = parsed_full_text_filter
 
-            fields = await self._get_fields(library)
-
             try:
                 result = await self._agent.call_tool(
                     "wally", "search_photos", args, library, progress_ctx=ctx
@@ -330,7 +352,6 @@ class McpServer:
                 "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
-                "pageStats": self._search_stats(matches, fields),
             }
 
         @mcp.tool(
@@ -398,38 +419,6 @@ class McpServer:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _search_stats(matches: list[Any], fields: list[Any] | None = None) -> dict[str, Any]:
-        """Compute summary statistics over a list of match dicts.
-
-        ``fields`` is the descriptor list returned by Wally's
-        ``list_search_fields``. For each DATE_RANGE or INT_RANGE field
-        a ``{name}: {min, max}`` entry is added. Field name and match dict
-        key are the same by convention.
-
-        New fields added to Wally are picked up automatically without
-        any changes here.
-        """
-        by_partition: Counter[str] = Counter(m["partition"] for m in matches)
-        stats: dict[str, Any] = {
-            "partitions": dict(sorted(by_partition.items())),
-        }
-        for fdef in fields or []:
-            field_type = fdef.get("type", "")
-            if field_type in ("DATE_RANGE", "INT_RANGE"):
-                name = fdef.get("name", "")
-                if not name:
-                    continue
-                values = [m[name] for m in matches if m.get(name) is not None]
-                if not values:
-                    stats[name] = None
-                else:
-                    stats[name] = {"min": min(values), "max": max(values)}
-        scores = [m["score"] for m in matches if m.get("score") is not None]
-        if scores:
-            stats["score"] = {"min": min(scores), "max": max(scores)}
-        return stats
-
     async def _get_fields_raw(self, library: LibraryConfig) -> dict[str, Any]:
         """Return the full Wally list_search_fields response, fetching on first call.
 
@@ -442,16 +431,12 @@ class McpServer:
                 self._library_fields[library.name] = result or {}  # type: ignore[assignment]
             except AgentError as exc:
                 _log.warning(
-                    "list_search_fields failed for %r, stats will be empty: %s",
+                    "list_search_fields failed for %r: %s",
                     library.name,
                     exc,
                 )
                 return {"fields": []}
         return self._library_fields[library.name]
-
-    async def _get_fields(self, library: LibraryConfig) -> list[Any]:
-        """Return only the SQL field list (for _search_stats)."""
-        return (await self._get_fields_raw(library)).get("fields", [])
 
     def _require_library(self, name: str) -> LibraryConfig:
         library = self.config.get_library(name)
