@@ -356,6 +356,72 @@ async def test_index_library_on_error_cancelled_calls_cancelled(server: McpServe
 
 
 # ---------------------------------------------------------------------------
+# get_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_summary_forwards_filters(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    filters = {"rating": {"min": 4}}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", filters=filters)
+        assert mock.call_args[0][0] == "wally"
+        assert mock.call_args[0][1] == "get_summary"
+        assert mock.call_args[0][2]["filters"] == filters
+
+
+@pytest.mark.asyncio
+async def test_get_summary_coerces_stringified_filters(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    filters = {"rating": {"min": 4}}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", filters=json.dumps(filters))
+        assert mock.call_args[0][2]["filters"] == filters
+
+
+@pytest.mark.asyncio
+async def test_get_summary_omits_filters_when_none(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib")
+        assert "filters" not in mock.call_args[0][2]
+
+
+@pytest.mark.asyncio
+async def test_get_summary_forwards_full_text_filter(server: McpServer) -> None:
+    """full_text_filter must be forwarded to Wally verbatim, same as search_photos."""
+    mock = AsyncMock(return_value={"photoCount": 0})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", full_text_filter=fts)
+        assert mock.call_args[0][2]["full_text_filter"] == fts
+
+
+@pytest.mark.asyncio
+async def test_get_summary_coerces_stringified_full_text_filter(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", full_text_filter=json.dumps(fts))
+        assert mock.call_args[0][2]["full_text_filter"] == fts
+
+
+@pytest.mark.asyncio
+async def test_get_summary_omits_full_text_filter_when_none(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib")
+        assert "full_text_filter" not in mock.call_args[0][2]
+
+
+# ---------------------------------------------------------------------------
 # search_photos
 # ---------------------------------------------------------------------------
 
