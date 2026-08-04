@@ -105,7 +105,6 @@ async def test_list_search_fields_returns_fields(server: McpServer) -> None:
             "name": "dateTaken",
             "type": "DATE_RANGE",
             "filterFormat": "...",
-            "pruneable": True,
         }
     ]
     mock = AsyncMock(return_value={"fields": mock_fields})
@@ -431,7 +430,6 @@ async def test_search_photos_calls_wally(server: McpServer) -> None:
     mock_result = {
         "matches": [],
         "partitionsScanned": 3,
-        "partitionsPruned": 1,
         "errors": 0,
     }
     mock = AsyncMock(return_value=mock_result)
