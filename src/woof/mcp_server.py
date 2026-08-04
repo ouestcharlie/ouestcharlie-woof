@@ -1,11 +1,10 @@
-"""McpServer — FastMCP server exposing OuEstCharlie tools to Claude Desktop."""
+"""MCP server exposing OuEstCharlie tools to the host."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from collections import Counter
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -21,6 +20,47 @@ from .indexing_session_manager import IndexingSessionManager
 _log = logging.getLogger(__name__)
 
 _GALLERY_URI = "ui://gallery/ouestcharlie"
+
+# Mirrors wally.agent.FILTER_SYNTAX_DOC (kept as a separate copy rather than imported
+_FILTER_SYNTAX_DOC = """\
+filters: Filter expression forwarded to Wally. Three forms are accepted:
+
+    **Single field** — one ``{"fieldName": value}`` dict::
+
+        # All photos under the 2024/ directory tree
+        {"directory": {"value": "2024", "mode": "startswith"}}
+
+    **``{"all": [...]}``** — AND group (all must match)::
+
+        # 4K Nikon shots in 2024
+        {"all": [
+            {"dateTaken": {"min": "2024", "max": "2024"}},
+            {"make": "nikon"},
+            {"width": {"min": 3840}}
+        ]}
+
+    **``{"any": [...]}``** — OR group (at least one must match)::
+
+        # Photos shot on Nikon OR Canon
+        {"any": [{"make": "nikon"}, {"make": "canon"}]}
+
+    Groups can be nested::
+
+        # 2024 photos on Nikon OR Canon
+        {"all": [
+            {"dateTaken": {"min": "2024", "max": "2024"}},
+            {"any": [{"make": "nikon"}, {"make": "canon"}]}
+        ]}
+full_text_filter: Full-text search over one or more TEXT-typed
+    fields. Schema::
+
+        {"query": "Canyon", "columns": ["description"]}
+
+    ``query`` is a single search string applied across all listed
+    columns. ``columns`` must be entry_attr names of TEXT-typed
+    fields (see ``list_search_fields`` → ``full_text_search.fields``).
+    Results are relevance-ranked and each match includes ``_score``.
+    Compatible with ``filters`` (SQL predicates applied on top of FTS)."""
 
 
 def _coerce_json_param(value: Any, expected_type: type, param_name: str) -> Any:
@@ -49,11 +89,11 @@ def _coerce_json_param(value: Any, expected_type: type, param_name: str) -> Any:
 class McpServer:
     """Woof MCP server.
 
-    Exposes tools to Claude Desktop and registers the gallery
+    Exposes tools to the host and registers the gallery
     as an MCP App resource.
 
     Roles:
-    - MCP server  → Claude Desktop (tool registration via FastMCP)
+    - MCP server  → host/harness (tool registration via FastMCP)
     - MCP client  → agents (Whitebeard, Wally) via AgentClient
     """
 
@@ -141,24 +181,59 @@ class McpServer:
             raw = await self._get_fields_raw(library)
             return {"name": library.name, **raw}
 
-        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def get_partition_summaries() -> list[Any]:
-            """Return the root summary of each registered library.
+        async def _get_summary_tool(
+            library_name: str = "",
+            filters: dict | str | None = None,
+            full_text_filter: dict | str | None = None,
+        ) -> list[Any] | dict[str, Any]:
+            parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
+            parsed_full_text_filter: dict | None = _coerce_json_param(
+                full_text_filter, dict, "full_text_filter"
+            )
+            args: dict[str, Any] = {}
+            if parsed_filters is not None:
+                args["filters"] = parsed_filters
+            if parsed_full_text_filter is not None:
+                args["full_text_filter"] = parsed_full_text_filter
 
-            The summary contains a flat list of all indexed partitions with
-            photo counts and statistics (date ranges, GPS bounding boxes, etc.).
+            if library_name:
+                library = self._require_library(library_name)
+                try:
+                    return await self._agent.call_tool("wally", "get_summary", args, library)
+                except AgentError as exc:
+                    _log.error("get_summary(%r) failed: %s", library_name, exc)
+                    return {"error": str(exc)}
 
-            Returns ``None`` for the summary if the library is unindexed or unreachable.
-            """
             result = []
             for b in self.config.libraries:
                 try:
-                    summary = await self._agent.call_tool("wally", "get_partition_summaries", {}, b)
+                    summary = await self._agent.call_tool("wally", "get_summary", args, b)
                 except AgentError as exc:
-                    _log.warning("get_partition_summaries: failed for %r: %s", b.name, exc)
-                    summary = None
+                    _log.error("get_summary(%r) failed: %s", b.name, exc)
+                    summary = {"error": str(exc)}
                 result.append({"name": b.name, "summary": summary})
             return result
+
+        # Docstring assigned before registration — the decorator below reads
+        # __doc__ immediately to build the tool description.
+        _get_summary_tool.__doc__ = f"""\
+            Return aggregate photo statistics (count, date/rating/GPS ranges, tag facets)
+            for a library or a filtered scope.
+
+            Use ``list_search_fields`` to discover available filter fields and
+            their expected formats before constructing a query.
+
+            Args:
+                library_name: Name of the library to query. When omitted,
+                    returns a summary for every registered library instead of one.
+                {_FILTER_SYNTAX_DOC}
+
+            Returns ``{{"error": "..."}}`` (in place of the summary) for a library
+            that is unindexed or unreachable.
+            """
+        mcp.tool(name="get_summary", annotations=ToolAnnotations(readOnlyHint=True))(
+            _get_summary_tool
+        )
 
         @mcp.tool(
             annotations=ToolAnnotations(destructiveHint=True),
@@ -171,7 +246,7 @@ class McpServer:
             generate_thumbnails: bool = True,
             force_full_index: bool = False,
         ) -> dict[str, Any]:
-            """Index photos in a library using Whitebeard.
+            """Index photos in a library
 
             Launches indexing as a background task and returns immediately.
             Progress is shown in the gallery app; the summary is sent back
@@ -241,8 +316,7 @@ class McpServer:
                 "serverToken": self._token,
             }
 
-        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def search_photos(
+        async def _search_photos_tool(
             ctx: Context,
             library_name: str,
             filters: dict | str | None = None,
@@ -250,39 +324,6 @@ class McpServer:
             sort_by: str = "date_taken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
-            """Search photos in a library using Wally.
-
-            Traverses the manifest tree with two-level pruning for efficiency.
-            Omitting ``filters`` (or passing None) returns all indexed photos.
-
-            Use ``list_search_fields`` to discover available filter fields and
-            their expected formats before constructing a query.
-
-            Args:
-                library_name: Name of the library to search.
-                filters: Filter expression forwarded to Wally. Three forms:
-
-                    Single field::
-
-                        {"make": "nikon"}
-
-                    ``{"all": [...]}`` — AND group (all must match)::
-
-                        {"all": [{"make": "nikon"}, {"width": {"min": 3840}}]}
-
-                    ``{"any": [...]}`` — OR group; groups can be nested::
-
-                        {"all": [
-                            {"dateTaken": {"min": "2024", "max": "2024"}},
-                            {"any": [{"make": "nikon"}, {"make": "canon"}]}
-                        ]}
-
-                full_text_filter: Full-text search over one or more text fields.
-                    Shape: ``{"query": "Canyon", "columns": ["description"]}``.
-                    Results are relevance-ranked; each match includes ``score``.
-                    See ``list_search_fields`` → ``full_text_search.fields`` for
-                    valid column names. Compatible with ``filters``.
-            """
             library = self._require_library(library_name)
             parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
             parsed_full_text_filter: dict | None = _coerce_json_param(
@@ -299,8 +340,6 @@ class McpServer:
                 args["filters"] = parsed_filters
             if parsed_full_text_filter is not None:
                 args["full_text_filter"] = parsed_full_text_filter
-
-            fields = await self._get_fields(library)
 
             try:
                 result = await self._agent.call_tool(
@@ -330,8 +369,23 @@ class McpServer:
                 "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
-                "pageStats": self._search_stats(matches, fields),
             }
+
+        # Docstring assigned before registration — the decorator below reads
+        # __doc__ immediately to build the tool description.
+        _search_photos_tool.__doc__ = f"""\
+            Search photos in a library
+
+            Use ``list_search_fields`` to discover available filter fields and
+            their expected formats before constructing a query.
+
+            Args:
+                library_name: Name of the library to search.
+                {_FILTER_SYNTAX_DOC}
+            """
+        mcp.tool(name="search_photos", annotations=ToolAnnotations(readOnlyHint=True))(
+            _search_photos_tool
+        )
 
         @mcp.tool(
             annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
@@ -398,38 +452,6 @@ class McpServer:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _search_stats(matches: list[Any], fields: list[Any] | None = None) -> dict[str, Any]:
-        """Compute summary statistics over a list of match dicts.
-
-        ``fields`` is the descriptor list returned by Wally's
-        ``list_search_fields``. For each DATE_RANGE or INT_RANGE field
-        a ``{name}: {min, max}`` entry is added. Field name and match dict
-        key are the same by convention.
-
-        New fields added to Wally are picked up automatically without
-        any changes here.
-        """
-        by_partition: Counter[str] = Counter(m["partition"] for m in matches)
-        stats: dict[str, Any] = {
-            "partitions": dict(sorted(by_partition.items())),
-        }
-        for fdef in fields or []:
-            field_type = fdef.get("type", "")
-            if field_type in ("DATE_RANGE", "INT_RANGE"):
-                name = fdef.get("name", "")
-                if not name:
-                    continue
-                values = [m[name] for m in matches if m.get(name) is not None]
-                if not values:
-                    stats[name] = None
-                else:
-                    stats[name] = {"min": min(values), "max": max(values)}
-        scores = [m["score"] for m in matches if m.get("score") is not None]
-        if scores:
-            stats["score"] = {"min": min(scores), "max": max(scores)}
-        return stats
-
     async def _get_fields_raw(self, library: LibraryConfig) -> dict[str, Any]:
         """Return the full Wally list_search_fields response, fetching on first call.
 
@@ -442,16 +464,12 @@ class McpServer:
                 self._library_fields[library.name] = result or {}  # type: ignore[assignment]
             except AgentError as exc:
                 _log.warning(
-                    "list_search_fields failed for %r, stats will be empty: %s",
+                    "list_search_fields failed for %r: %s",
                     library.name,
                     exc,
                 )
                 return {"fields": []}
         return self._library_fields[library.name]
-
-    async def _get_fields(self, library: LibraryConfig) -> list[Any]:
-        """Return only the SQL field list (for _search_stats)."""
-        return (await self._get_fields_raw(library)).get("fields", [])
 
     def _require_library(self, name: str) -> LibraryConfig:
         library = self.config.get_library(name)

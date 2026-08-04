@@ -105,7 +105,6 @@ async def test_list_search_fields_returns_fields(server: McpServer) -> None:
             "name": "dateTaken",
             "type": "DATE_RANGE",
             "filterFormat": "...",
-            "pruneable": True,
         }
     ]
     mock = AsyncMock(return_value={"fields": mock_fields})
@@ -173,52 +172,52 @@ async def test_list_search_fields_propagates_full_text_search(server: McpServer)
 
 
 # ---------------------------------------------------------------------------
-# _get_fields (lazy cache)
+# _get_fields_raw (lazy cache)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_fields_fetches_on_first_call(server: McpServer) -> None:
+async def test_get_fields_raw_fetches_on_first_call(server: McpServer) -> None:
     fields = [{"name": "rating", "type": "INT_RANGE"}]
     mock = AsyncMock(return_value={"fields": fields})
     with patch.object(server._agent, "call_tool", new=mock):
-        result = await server._get_fields(server.config.libraries[0])
-    assert result == fields
+        result = await server._get_fields_raw(server.config.libraries[0])
+    assert result == {"fields": fields}
     mock.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_fields_reuses_cache_on_second_call(server: McpServer) -> None:
+async def test_get_fields_raw_reuses_cache_on_second_call(server: McpServer) -> None:
     fields = [{"name": "rating", "type": "INT_RANGE"}]
     mock = AsyncMock(return_value={"fields": fields})
     with patch.object(server._agent, "call_tool", new=mock):
-        await server._get_fields(server.config.libraries[0])
-        result = await server._get_fields(server.config.libraries[0])
-    assert result == fields
+        await server._get_fields_raw(server.config.libraries[0])
+        result = await server._get_fields_raw(server.config.libraries[0])
+    assert result == {"fields": fields}
     assert mock.call_count == 1  # only fetched once
 
 
 @pytest.mark.asyncio
-async def test_get_fields_error_returns_empty_and_is_not_cached(
+async def test_get_fields_raw_error_returns_empty_and_is_not_cached(
     server: McpServer,
 ) -> None:
     mock = AsyncMock(side_effect=AgentError("wally down"))
     with patch.object(server._agent, "call_tool", new=mock):
-        result = await server._get_fields(server.config.libraries[0])
-    assert result == []
+        result = await server._get_fields_raw(server.config.libraries[0])
+    assert result == {"fields": []}
     assert "testlib" not in server._library_fields  # error must not be cached
 
 
 @pytest.mark.asyncio
-async def test_get_fields_retries_after_error(server: McpServer) -> None:
+async def test_get_fields_raw_retries_after_error(server: McpServer) -> None:
     library = server.config.libraries[0]
     fields = [{"name": "dateTaken", "type": "DATE_RANGE"}]
     mock = AsyncMock(side_effect=[AgentError("down"), {"fields": fields}])
     with patch.object(server._agent, "call_tool", new=mock):
-        first = await server._get_fields(library)
-        second = await server._get_fields(library)
-    assert first == []
-    assert second == fields
+        first = await server._get_fields_raw(library)
+        second = await server._get_fields_raw(library)
+    assert first == {"fields": []}
+    assert second == {"fields": fields}
     assert mock.call_count == 2
 
 
@@ -356,64 +355,69 @@ async def test_index_library_on_error_cancelled_calls_cancelled(server: McpServe
 
 
 # ---------------------------------------------------------------------------
-# _search_stats
+# get_summary
 # ---------------------------------------------------------------------------
 
-_DATE_FIELD = {"name": "dateTaken", "type": "DATE_RANGE"}
-_RATING_FIELD = {"name": "rating", "type": "INT_RANGE"}
-_ALL_FIELDS = [_DATE_FIELD, _RATING_FIELD]
+
+@pytest.mark.asyncio
+async def test_get_summary_forwards_filters(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    filters = {"rating": {"min": 4}}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", filters=filters)
+        assert mock.call_args[0][0] == "wally"
+        assert mock.call_args[0][1] == "get_summary"
+        assert mock.call_args[0][2]["filters"] == filters
 
 
-def test_search_stats_empty() -> None:
-    stats = McpServer._search_stats([], _ALL_FIELDS)
-    assert stats == {"partitions": {}, "dateTaken": None, "rating": None}
+@pytest.mark.asyncio
+async def test_get_summary_coerces_stringified_filters(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    filters = {"rating": {"min": 4}}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", filters=json.dumps(filters))
+        assert mock.call_args[0][2]["filters"] == filters
 
 
-def test_search_stats_no_fields() -> None:
-    stats = McpServer._search_stats([])
-    assert stats == {"partitions": {}}
+@pytest.mark.asyncio
+async def test_get_summary_omits_filters_when_none(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib")
+        assert "filters" not in mock.call_args[0][2]
 
 
-def test_search_stats_partition_counts_sorted() -> None:
-    matches = _make_matches(partitions=["2024/03", "2024/01", "2024/03", "2024/02"])
-    stats = McpServer._search_stats(matches)
-    assert stats["partitions"] == {"2024/01": 1, "2024/02": 1, "2024/03": 2}
-    assert list(stats["partitions"].keys()) == ["2024/01", "2024/02", "2024/03"]
+@pytest.mark.asyncio
+async def test_get_summary_forwards_full_text_filter(server: McpServer) -> None:
+    """full_text_filter must be forwarded to Wally verbatim, same as search_photos."""
+    mock = AsyncMock(return_value={"photoCount": 0})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", full_text_filter=fts)
+        assert mock.call_args[0][2]["full_text_filter"] == fts
 
 
-def test_search_stats_date_range() -> None:
-    dates = ["2024-01-10T12:00:00", "2024-03-05T08:30:00", "2024-02-20T00:00:00"]
-    matches = _make_matches(partitions=["p"] * 3, dates=dates)
-    stats = McpServer._search_stats(matches, [_DATE_FIELD])
-    assert stats["dateTaken"] == {
-        "min": "2024-01-10T12:00:00",
-        "max": "2024-03-05T08:30:00",
-    }
+@pytest.mark.asyncio
+async def test_get_summary_coerces_stringified_full_text_filter(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    fts = {"query": "Canyon", "columns": ["description"]}
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib", full_text_filter=json.dumps(fts))
+        assert mock.call_args[0][2]["full_text_filter"] == fts
 
 
-def test_search_stats_rating_range() -> None:
-    matches = _make_matches(partitions=["p"] * 6, ratings=[5, 3, 5, None, 3, 1])
-    stats = McpServer._search_stats(matches, [_RATING_FIELD])
-    assert stats["rating"] == {"min": 1, "max": 5}
-
-
-def test_search_stats_no_dates_gives_none() -> None:
-    matches = _make_matches()
-    assert McpServer._search_stats(matches, [_DATE_FIELD])["dateTaken"] is None
-
-
-def test_search_stats_includes_score_when_present() -> None:
-    matches = _make_matches(partitions=["p", "p", "p"])
-    for i, score in enumerate([0.5, 3.2, 8.7]):
-        matches[i]["score"] = score
-    stats = McpServer._search_stats(matches, [])
-    assert stats["score"] == {"min": 0.5, "max": 8.7}
-
-
-def test_search_stats_no_score_key_when_absent() -> None:
-    matches = _make_matches(partitions=["p", "p"])
-    stats = McpServer._search_stats(matches, [])
-    assert "score" not in stats
+@pytest.mark.asyncio
+async def test_get_summary_omits_full_text_filter_when_none(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"photoCount": 0})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "get_summary")
+        await tool_fn(library_name="testlib")
+        assert "full_text_filter" not in mock.call_args[0][2]
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +430,6 @@ async def test_search_photos_calls_wally(server: McpServer) -> None:
     mock_result = {
         "matches": [],
         "partitionsScanned": 3,
-        "partitionsPruned": 1,
         "errors": 0,
     }
     mock = AsyncMock(return_value=mock_result)
@@ -503,32 +506,18 @@ async def test_search_photos_omits_full_text_filter_when_none(server: McpServer)
 
 
 @pytest.mark.asyncio
-async def test_search_photos_returns_stats_and_token(server: McpServer) -> None:
+async def test_search_photos_returns_total_count_and_token(server: McpServer) -> None:
     matches = _make_matches(
         partitions=["2024/01", "2024/01", "2024/02"],
         dates=["2024-01-05T00:00:00", "2024-01-10T00:00:00", "2024-02-01T00:00:00"],
         ratings=[5, None, 3],
     )
-    fields = [
-        {"name": "dateTaken", "type": "DATE_RANGE"},
-        {"name": "rating", "type": "INT_RANGE"},
-    ]
-
-    async def _side_effect(agent, tool, args, library, **kwargs):
-        if tool == "list_search_fields":
-            return {"fields": fields}
-        return {"matches": matches}
-
-    with patch.object(server._agent, "call_tool", new=AsyncMock(side_effect=_side_effect)):
+    mock = AsyncMock(return_value={"matches": matches, "totalCount": 3})
+    with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
         result = await tool_fn(ctx=None, library_name="testlib")
     assert result["totalCount"] == 3
-    assert result["pageStats"]["partitions"] == {"2024/01": 2, "2024/02": 1}
-    assert result["pageStats"]["dateTaken"] == {
-        "min": "2024-01-05T00:00:00",
-        "max": "2024-02-01T00:00:00",
-    }
-    assert result["pageStats"]["rating"] == {"min": 3, "max": 5}
+    assert "pageStats" not in result
     assert "session_token" in result
 
 

@@ -11,7 +11,7 @@ Every `except` block must log the exception. Use `%s` against the `exc` variable
 
 Exceptions that are re-raised still need a log before the `raise`.
 
-**Do not wrap startup/subprocess exceptions as `AgentError`** — tools like `get_partition_summaries` catch `AgentError` and swallow it as a null result. Non-`AgentError` exceptions propagate to FastMCP and surface visibly in MCP inspector. Only raise `AgentError` for tool-level failures (bad result, protocol errors), not for sidecar startup failures.
+**Do not wrap startup/subprocess exceptions as `AgentError`** — tools like `get_summary` catch `AgentError` and swallow it as a null result. Non-`AgentError` exceptions propagate to FastMCP and surface visibly in MCP inspector. Only raise `AgentError` for tool-level failures (bad result, protocol errors), not for sidecar startup failures.
 
 Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 

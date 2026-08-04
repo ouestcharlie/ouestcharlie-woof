@@ -36,7 +36,7 @@ Claude Desktop (MCP client)
 Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude calls these tools in response to user requests. Currently registered tools:
 
 - **Library management**: `index_library` — non-blocking: launches Whitebeard as a background `asyncio.Task`, returns immediately with `{type:"indexing", session_id, serverUrl, ...}`, and opens the gallery MCP App in indexing mode (progress bar + final summary pushed back to model context). `force_full_index=True` re-processes the entire library.
-- **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_partition_summaries`
+- **Search and browse**: `search_photos`, `browse_gallery` (returns MCP App reference), `get_summary` (aggregate stats, optionally scoped by the same filter syntax as `search_photos`)
 - **Configuration**: `add_backend`, `list_backends`, `list_search_fields`
 
 ### Search → Gallery session flow

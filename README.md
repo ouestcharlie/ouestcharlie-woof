@@ -14,7 +14,7 @@ Woof is a media management system that keeps your photos exactly where they are 
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
-Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" in French), a full framework to manage you photos (later movies and other media).
+Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" in French), a full AI native framework to manage you photos (later movies and other media).
 
 ## What makes it different
 

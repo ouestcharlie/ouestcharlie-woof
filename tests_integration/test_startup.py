@@ -216,10 +216,8 @@ class TestFullStack:
             await agent.shutdown()
 
     @pytest.mark.asyncio
-    async def test_woof_server_triggers_wally_on_get_partition_summaries(
-        self, config: WoofConfig
-    ) -> None:
-        """get_partition_summaries called on WoofServer must start the Wally sidecar."""
+    async def test_woof_server_triggers_wally_on_get_summary(self, config: WoofConfig) -> None:
+        """get_summary called on WoofServer must start the Wally sidecar."""
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
@@ -231,14 +229,14 @@ class TestFullStack:
                 indexing_session_manager=IndexingSessionManager(),
             )
 
-            tool = await server.mcp.get_tool("get_partition_summaries")
+            tool = await server.mcp.get_tool("get_summary")
             result = await tool.fn()
 
             # Wally must have started
             wally_port, _token = agent.get_wally_connection("integration-test")
             assert isinstance(wally_port, int), (
                 "Wally did not start: get_wally_connection() returned (None, None) after "
-                "get_partition_summaries was called"
+                "get_summary was called"
             )
             # Result is a list of library summaries
             assert isinstance(result, list)
