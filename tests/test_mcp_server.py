@@ -241,7 +241,7 @@ async def test_index_library_launches_background_task(server: McpServer) -> None
 
     with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+        result = await tool_fn(library_name="testlib", force_extract_exif=False)
 
     assert result["type"] == "indexing"
     assert "session_id" in result
@@ -254,12 +254,14 @@ async def test_index_library_launches_background_task(server: McpServer) -> None
 
 
 @pytest.mark.asyncio
-async def test_index_library_with_partition(server: McpServer) -> None:
+async def test_index_library_with_partition_scope(server: McpServer) -> None:
+    """A non-empty partition_scope forwards the whole list to whitebeard in one call."""
     captured: dict[str, Any] = {}
 
     def mock_background(
         module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
     ):
+        captured["module"] = module
         captured["tool_name"] = tool_name
         captured["args"] = args
         return None
@@ -267,19 +269,23 @@ async def test_index_library_with_partition(server: McpServer) -> None:
     with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
         result = await tool_fn(
-            library_name="testlib", partition="2024/2024-07", force_extract_exif=False
+            library_name="testlib",
+            partition_scope=["2024/2024-07", "2024/2024-08"],
+            force_extract_exif=False,
         )
 
-    assert captured["tool_name"] == "index_partition"
-    assert captured["args"]["partition"] == "2024/2024-07"
-    assert result["partition"] == "2024/2024-07"
+    assert captured["module"] == "whitebeard"
+    assert captured["tool_name"] == "index_partition_scope"
+    assert captured["args"]["partition_scope"] == ["2024/2024-07", "2024/2024-08"]
+    assert captured["args"]["force_extract_exif"] is False
+    assert result["partition_scope"] == ["2024/2024-07", "2024/2024-08"]
 
 
 @pytest.mark.asyncio
 async def test_index_library_unknown_library(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "index_library")
     with pytest.raises(ValueError, match="not found"):
-        await tool_fn(library_name="unknown", partition="", force_extract_exif=False)
+        await tool_fn(library_name="unknown", force_extract_exif=False)
 
 
 @pytest.mark.asyncio
@@ -297,7 +303,7 @@ async def test_index_library_callbacks_update_session(server: McpServer) -> None
 
     with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+        result = await tool_fn(library_name="testlib", force_extract_exif=False)
 
     sid = result["session_id"]
     callbacks["on_progress"](42.0, 100.0, "msg")
@@ -325,7 +331,7 @@ async def test_index_library_registers_task(server: McpServer) -> None:
 
     with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+        result = await tool_fn(library_name="testlib", force_extract_exif=False)
 
     sid = result["session_id"]
     assert server._indexing_sessions._tasks[sid] is fake_task
@@ -346,7 +352,7 @@ async def test_index_library_on_error_cancelled_calls_cancelled(server: McpServe
 
     with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
         tool_fn = await _get_tool(server, "index_library")
-        result = await tool_fn(library_name="testlib", partition="", force_extract_exif=False)
+        result = await tool_fn(library_name="testlib", force_extract_exif=False)
 
     sid = result["session_id"]
     callbacks["on_error"](asyncio.CancelledError())

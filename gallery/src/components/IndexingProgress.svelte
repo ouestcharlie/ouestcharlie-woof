@@ -2,7 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { fetchIndexingStatus, cancelIndexing } from '../lib/api.svelte.js';
 
-  let { sessionId, library, partition, mcpApp, mcpReady = false } = $props();
+  let { sessionId, library, partitionScope = [], mcpApp, mcpReady = false } = $props();
+
+  let scopeLabel = $derived(
+    partitionScope.length
+      ? `${partitionScope.length} partition${partitionScope.length > 1 ? 's' : ''} in ${library}`
+      : library
+  );
 
   let status = $state('running');
   let progress = $state(0);
@@ -97,7 +103,7 @@
   }
 
   function formatSummaryMarkdown(s) {
-    const lines = [`Indexing complete for **${library}${partition ? ' / ' + partition : ''}**.`];
+    const lines = [`Indexing complete for **${scopeLabel}**.`];
     if (s?.totalPhotosProcessed !== undefined) lines.push(`- Photos processed: ${s.totalPhotosProcessed}`);
     if (s?.totalSidecarsCreated !== undefined) lines.push(`- Sidecars created: ${s.totalSidecarsCreated}`);
     if (s?.totalThumbnailsRebuilt !== undefined) lines.push(`- Thumbnail batches rebuilt: ${s.totalThumbnailsRebuilt}`);
@@ -134,7 +140,7 @@
 
 <div class="indexing" bind:this={rootEl}>
   <header class="indexing-header">
-    <h1>Indexing {library}{partition ? ' / ' + partition : ''}</h1>
+    <h1>Indexing {scopeLabel}</h1>
     <div class="header-right">
       <span class="indexing-status" class:running={status === 'running'} class:cancelling={status === 'cancelling'} class:cancelled={status === 'cancelled'} class:completed={status === 'completed'} class:failed={status === 'failed'}>
         {status}
