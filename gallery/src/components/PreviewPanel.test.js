@@ -83,63 +83,156 @@ describe('PreviewPanel — loading placeholder / swap', () => {
 
 describe('PreviewPanel — navigation buttons', () => {
   it('disables prev on first photo', () => {
-    const { getAllByRole } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));
-    const [prev] = getAllByRole('button');
-    expect(prev).toBeDisabled();
+    const { container } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));
+    expect(container.querySelector('.nav.prev')).toBeDisabled();
   });
 
   it('disables next on last photo', () => {
-    const { getAllByRole } = render(PreviewPanel, makeProps([MATCH, MATCH2], 1));
-    const buttons = getAllByRole('button');
-    const next = buttons[buttons.length - 1];
-    expect(next).toBeDisabled();
+    const { container } = render(PreviewPanel, makeProps([MATCH, MATCH2], 1));
+    expect(container.querySelector('.nav.next')).toBeDisabled();
   });
 
   it('calls onNavigate(-1) when prev is clicked', async () => {
     const onNavigate = vi.fn();
-    const { getAllByRole } = render(PreviewPanel, {
+    const { container } = render(PreviewPanel, {
       ...makeProps([MATCH, MATCH2], 1),
       onNavigate,
     });
-    const [prev] = getAllByRole('button');
-    await fireEvent.click(prev);
+    await fireEvent.click(container.querySelector('.nav.prev'));
     expect(onNavigate).toHaveBeenCalledWith(0);
   });
 
   it('calls onNavigate(+1) when next is clicked', async () => {
     const onNavigate = vi.fn();
-    const { getAllByRole } = render(PreviewPanel, {
+    const { container } = render(PreviewPanel, {
       ...makeProps([MATCH, MATCH2], 0),
       onNavigate,
     });
-    const buttons = getAllByRole('button');
-    const next = buttons[buttons.length - 1];
-    await fireEvent.click(next);
+    await fireEvent.click(container.querySelector('.nav.next'));
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 });
 
-describe('PreviewPanel — metadata', () => {
-  it('renders filename', () => {
+describe('PreviewPanel — caption bar', () => {
+  it('renders filename in the caption', () => {
     const { getByText } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));
     expect(getByText('IMG_001.jpg')).toBeTruthy();
   });
 
-  it('renders camera make/model when present', () => {
+  it('renders the first 5 tags as pills, truncating the rest', () => {
+    const match = { ...MATCH, tags: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    // Panel is closed, so pills only come from the caption bar.
+    const pills = container.querySelectorAll('.caption .pill');
+    expect(pills.length).toBe(5);
+    expect(pills[0].textContent).toBe('a');
+    expect(pills[4].textContent).toBe('e');
+  });
+
+  it('truncates the caption description to 100 characters', () => {
+    const long = 'x'.repeat(150);
+    const match = { ...MATCH, description: long };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    const desc = container.querySelector('.caption-desc');
+    expect(desc.textContent).toBe('x'.repeat(100) + '…');
+  });
+});
+
+describe('PreviewPanel — details side panel', () => {
+  function openPanel(container) {
+    const toggle = container.querySelector('.info-toggle');
+    return fireEvent.click(toggle);
+  }
+
+  it('is collapsed by default', () => {
+    const { container } = render(PreviewPanel, makeProps([MATCH]));
+    expect(container.querySelector('.details')).toBeNull();
+  });
+
+  it('shows the three subpanes when toggled open', async () => {
+    const { container } = render(PreviewPanel, makeProps([MATCH]));
+    await openPanel(container);
+    const headings = [...container.querySelectorAll('.subpane h3')].map((h) => h.textContent);
+    expect(headings).toEqual(['Overview', 'Camera', 'Location']);
+  });
+
+  it('renders camera make/model when present', async () => {
     const match = { ...MATCH, make: 'Canon', model: 'EOS R5' };
-    const { getByText } = render(PreviewPanel, makeProps([match]));
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
     expect(getByText('Canon EOS R5')).toBeTruthy();
   });
 
-  it('renders tags when present', () => {
-    const match = { ...MATCH, tags: ['holiday', 'sunset'] };
-    const { getByText } = render(PreviewPanel, makeProps([match]));
-    expect(getByText('Tags: holiday, sunset')).toBeTruthy();
+  it('rounds noisy EXIF aperture and focal length for display', async () => {
+    const match = {
+      ...MATCH,
+      aperture: 1.7999999523162842,
+      focalLength: 5.539999961853027,
+      focalLength35mm: 23,
+    };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('f/1.8')).toBeTruthy();
+    expect(getByText('5.5 mm (23 mm eq.)')).toBeTruthy();
   });
 
-  it('omits camera line when make/model absent', () => {
-    const { queryByText } = render(PreviewPanel, makeProps([MATCH]));
-    expect(queryByText(/Canon/)).toBeNull();
+  it('drops trailing zeros (f/8, not f/8.0)', async () => {
+    const match = { ...MATCH, aperture: 8 };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('f/8')).toBeTruthy();
+  });
+
+  it('formats sub-second exposure as a reciprocal (1/250 s)', async () => {
+    const match = { ...MATCH, exposureTime: 0.004 };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('1/250 s')).toBeTruthy();
+  });
+
+  it('formats exposures of one second or more in seconds (2 s)', async () => {
+    const match = { ...MATCH, exposureTime: 2 };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('2 s')).toBeTruthy();
+  });
+
+  it('omits the 35 mm equivalent when only focal length is present', async () => {
+    const match = { ...MATCH, focalLength: 50 };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('50 mm')).toBeTruthy();
+  });
+
+  it('renders a positive rating as stars', async () => {
+    const match = { ...MATCH, rating: 4 };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    const stars = container.querySelector('.stars');
+    expect(stars).not.toBeNull();
+    expect(stars.textContent).toBe('★★★★☆');
+    expect(stars.getAttribute('aria-label')).toBe('Rating: 4 of 5');
+  });
+
+  it('omits stars when rating is absent, zero, or rejected (-1)', async () => {
+    for (const rating of [undefined, 0, -1]) {
+      const { container } = render(PreviewPanel, makeProps([{ ...MATCH, rating }]));
+      await openPanel(container);
+      expect(container.querySelector('.stars')).toBeNull();
+    }
+  });
+
+  it('shows an empty state for the Location subpane when GPS is absent', async () => {
+    const { container, getByText } = render(PreviewPanel, makeProps([MATCH]));
+    await openPanel(container);
+    expect(getByText('No location data')).toBeTruthy();
+  });
+
+  it('renders GPS coordinates when present', async () => {
+    const match = { ...MATCH, gps: [48.8566, 2.3522] };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText(/48\.85660° N, 2\.35220° E/)).toBeTruthy();
   });
 });
 

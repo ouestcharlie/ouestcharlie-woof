@@ -25,7 +25,7 @@ function failedSession(error = 'disk full') {
   return { status: 'failed', progress: 0, total: 1, message: '', summary: null, error };
 }
 
-const baseProps = { sessionId: 'abc', library: 'MyLib', partition: '' };
+const baseProps = { sessionId: 'abc', library: 'MyLib', partitionScope: [] };
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -247,11 +247,19 @@ describe('IndexingProgress — header', () => {
     await waitFor(() => expect(getByRole('heading', { name: /MyLib/ })).toBeTruthy());
   });
 
-  it('shows partition in header when provided', async () => {
+  it('shows partition count in header when scoped', async () => {
     mockFetch(runningSession());
     const { getByRole } = render(IndexingProgress, {
-      props: { ...baseProps, partition: '2024/07' },
+      props: { ...baseProps, partitionScope: ['2024/07'] },
     });
-    await waitFor(() => expect(getByRole('heading', { name: /2024\/07/ })).toBeTruthy());
+    await waitFor(() => expect(getByRole('heading', { name: /1 partition in MyLib/ })).toBeTruthy());
+  });
+
+  it('shows plural partition count in header for multiple entries', async () => {
+    mockFetch(runningSession());
+    const { getByRole } = render(IndexingProgress, {
+      props: { ...baseProps, partitionScope: ['2024/07', '2024/08'] },
+    });
+    await waitFor(() => expect(getByRole('heading', { name: /2 partitions in MyLib/ })).toBeTruthy());
   });
 });

@@ -26,7 +26,7 @@ class IndexingSessionManager:
         self._tasks: dict[str, asyncio.Task] = {}
         self._max_sessions = max_sessions
 
-    def start(self, library_name: str, partition: str) -> str:
+    def start(self, library_name: str, partition_scope: list[str]) -> str:
         """Create a new running session and return its session_id."""
         while len(self._sessions) >= self._max_sessions:
             evicted = next(iter(self._sessions))
@@ -36,7 +36,7 @@ class IndexingSessionManager:
         self._sessions[session_id] = {
             "session_id": session_id,
             "library_name": library_name,
-            "partition": partition,
+            "partition_scope": partition_scope,
             "status": "running",
             "progress": 0.0,
             "total": 1.0,
