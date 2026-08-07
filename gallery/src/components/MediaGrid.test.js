@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import PhotoGrid from './PhotoGrid.svelte';
+import MediaGrid from './MediaGrid.svelte';
 
 // test-setup.js mocks clientWidth = 652, so:
 //   columns = max(1, floor((652 + 4) / (160 + 4))) = 4
@@ -35,31 +35,31 @@ function makeProps(overrides = {}) {
   };
 }
 
-describe('PhotoGrid — page size (4 cols × 3 rows)', () => {
+describe('MediaGrid — page size (4 cols × 3 rows)', () => {
   it('shows at most displayPageSize tiles on the first page', () => {
     // 20 matches: page 0 shows 12 (JSDOM_PAGE_SIZE), page 1 has the rest
-    const { container } = render(PhotoGrid, makeProps({ matches: makeMatches(20) }));
+    const { container } = render(MediaGrid, makeProps({ matches: makeMatches(20) }));
     expect(container.querySelectorAll('.tile')).toHaveLength(JSDOM_PAGE_SIZE);
   });
 
   it('shows fewer tiles on the last partial page', () => {
     // 13 matches: page 0 has 12, page 1 has 1
     const { container } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(13), selectedIndex: 12 }),
     );
     expect(container.querySelectorAll('.tile')).toHaveLength(1);
   });
 
   it('shows all tiles when total fits within one page', () => {
-    const { container } = render(PhotoGrid, makeProps({ matches: makeMatches(2) }));
+    const { container } = render(MediaGrid, makeProps({ matches: makeMatches(2) }));
     expect(container.querySelectorAll('.tile')).toHaveLength(2);
   });
 });
 
-describe('PhotoGrid — pagination controls', () => {
+describe('MediaGrid — pagination controls', () => {
   it('shows no nav when all photos fit on one page', () => {
-    const { container } = render(PhotoGrid, makeProps({ matches: makeMatches(12) }));
+    const { container } = render(MediaGrid, makeProps({ matches: makeMatches(12) }));
     expect(container.querySelectorAll('.nav')).toHaveLength(2);
     container.querySelectorAll('.nav').forEach((el) => {
       expect(el.classList.contains('nav-hidden')).toBe(true);
@@ -67,20 +67,20 @@ describe('PhotoGrid — pagination controls', () => {
   });
 
   it('shows nav when photos exceed one page', () => {
-    const { getAllByText } = render(PhotoGrid, makeProps({ matches: makeMatches(13) }));
+    const { getAllByText } = render(MediaGrid, makeProps({ matches: makeMatches(13) }));
     expect(getAllByText(/Next/).length).toBeGreaterThan(0);
     expect(getAllByText(/Previous/).length).toBeGreaterThan(0);
   });
 
   it('disables Previous on page 0', () => {
-    const { getAllByText } = render(PhotoGrid, makeProps({ matches: makeMatches(25) }));
+    const { getAllByText } = render(MediaGrid, makeProps({ matches: makeMatches(25) }));
     expect(getAllByText(/Previous/)[0].closest('button')).toBeDisabled();
   });
 
   it('disables Next on last page', () => {
     // 13 matches: selectedIndex=12 → page 1, which is the last page
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(13), selectedIndex: 12 }),
     );
     expect(getAllByText(/Next/)[0].closest('button')).toBeDisabled();
@@ -89,7 +89,7 @@ describe('PhotoGrid — pagination controls', () => {
   it('calls onPageSelect with first index of next page when Next clicked', async () => {
     const onPageSelect = vi.fn();
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(25), onPageSelect }),
     );
     await fireEvent.click(getAllByText(/Next/)[0].closest('button'));
@@ -99,7 +99,7 @@ describe('PhotoGrid — pagination controls', () => {
   it('calls onPageSelect with first index of previous page when Previous clicked', async () => {
     const onPageSelect = vi.fn();
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(25), selectedIndex: JSDOM_PAGE_SIZE, onPageSelect }),
     );
     await fireEvent.click(getAllByText(/Previous/)[0].closest('button'));
@@ -107,11 +107,11 @@ describe('PhotoGrid — pagination controls', () => {
   });
 });
 
-describe('PhotoGrid — tile selection', () => {
+describe('MediaGrid — tile selection', () => {
   it('calls onSelect with absolute index on tile click (page 0)', async () => {
     const onSelect = vi.fn();
     const { container } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(3), onSelect }),
     );
     const tiles = container.querySelectorAll('.tile');
@@ -122,7 +122,7 @@ describe('PhotoGrid — tile selection', () => {
   it('calls onSelect with correct absolute index on page 1', async () => {
     const onSelect = vi.fn();
     const { container } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(25), selectedIndex: JSDOM_PAGE_SIZE, onSelect }),
     );
     const tiles = container.querySelectorAll('.tile');
@@ -131,15 +131,15 @@ describe('PhotoGrid — tile selection', () => {
   });
 });
 
-describe('PhotoGrid — loading state', () => {
+describe('MediaGrid — loading state', () => {
   it('renders skeleton tiles when loading', () => {
-    const { container } = render(PhotoGrid, makeProps({ loading: true }));
+    const { container } = render(MediaGrid, makeProps({ loading: true }));
     expect(container.querySelectorAll('.skeleton')).toHaveLength(JSDOM_PAGE_SIZE);
   });
 
   it('renders no real tiles when loading', () => {
     const { container } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ loading: true, matches: makeMatches(5) }),
     );
     const nonSkeleton = Array.from(container.querySelectorAll('.tile')).filter(
@@ -150,11 +150,11 @@ describe('PhotoGrid — loading state', () => {
 });
 
 // displayPageSize=12
-describe('PhotoGrid — pageMap pagination', () => {
+describe('MediaGrid — pageMap pagination', () => {
   it('totalDisplayPages = ceil(totalCount/displayPageSize) for a single server page', () => {
     // totalCount=200, 1 server page of pageSize=500 → ceil(200/12) = 17 display pages
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         serverPage: 0,
@@ -170,7 +170,7 @@ describe('PhotoGrid — pageMap pagination', () => {
     //   page 1: 100 photos → ceil(100/12)=9 display pages
     //   total: 51
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         serverPage: 0,
@@ -185,7 +185,7 @@ describe('PhotoGrid — pageMap pagination', () => {
     const onPageSelect = vi.fn();
     // 12 matches = 1 display page on server page 0; pageMap has 2 server pages → hasMore
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         serverPage: 0,
@@ -203,7 +203,7 @@ describe('PhotoGrid — pageMap pagination', () => {
     const onFetchServerPage = vi.fn().mockResolvedValue(undefined);
     const onPageSelect = vi.fn();
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         serverPage: 1,
@@ -220,7 +220,7 @@ describe('PhotoGrid — pageMap pagination', () => {
   it('absolutePage reflects server page offset (serverPage=1, pageSize=500)', () => {
     // absolutePage = 1 × ceil(500/12) + 0 = 42 → +1 = 43
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         selectedIndex: 0,
@@ -234,7 +234,7 @@ describe('PhotoGrid — pageMap pagination', () => {
   it('absolutePage reflects server page offset (serverPage=2, pageSize=500)', () => {
     // absolutePage = 2 × ceil(500/12) + 0 = 84 → +1 = 85
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         selectedIndex: 0,
@@ -248,7 +248,7 @@ describe('PhotoGrid — pageMap pagination', () => {
   it('Next is disabled on the last display page of the last server page', () => {
     // 1 server page, totalCount=12 → 1 display page, Next disabled
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         serverPage: 0,
@@ -270,7 +270,7 @@ describe('PhotoGrid — pageMap pagination', () => {
 
   it('totalDisplayPages sums display pages across chained sessions', () => {
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(JSDOM_PAGE_SIZE), serverPage: 0, pageMap: chainedMap }),
     );
     expect(getAllByText(/\/ 4/)[0]).toBeTruthy(); // "1 / 4"
@@ -278,7 +278,7 @@ describe('PhotoGrid — pageMap pagination', () => {
 
   it('absolutePage is 1 for serverPage 0 of session 0', () => {
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(JSDOM_PAGE_SIZE), serverPage: 0, pageMap: chainedMap }),
     );
     expect(getAllByText(/^1 \//)[0]).toBeTruthy();
@@ -286,7 +286,7 @@ describe('PhotoGrid — pageMap pagination', () => {
 
   it('absolutePage is 2 for serverPage 1 of session 0', () => {
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(JSDOM_PAGE_SIZE), serverPage: 1, pageMap: chainedMap }),
     );
     expect(getAllByText(/^2 \//)[0]).toBeTruthy();
@@ -295,7 +295,7 @@ describe('PhotoGrid — pageMap pagination', () => {
   it('absolutePage is 3 for first local page of serverPage 2 (session 1, dpp=2)', () => {
     // session 0 exhausted: offset=2; session 1: 0×2+0=2 → +1=3
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         selectedIndex: 0,
@@ -309,7 +309,7 @@ describe('PhotoGrid — pageMap pagination', () => {
   it('absolutePage is 4 for second local page of serverPage 2 (session 1, dpp=2)', () => {
     // localPage=1 (selectedIndex=12 → floor(12/12)=1): offset=2+0×2+1=3 → +1=4
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE * 2),
         selectedIndex: JSDOM_PAGE_SIZE,
@@ -331,7 +331,7 @@ describe('PhotoGrid — pageMap pagination', () => {
       { pageSize: 12, pageCount: 1, totalCount: 12 },
     ];
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({ matches: makeMatches(JSDOM_PAGE_SIZE), serverPage: 0, pageMap: partialMap }),
     );
     expect(getAllByText(/\/ 4/)[0]).toBeTruthy(); // "1 / 4", not "1 / 5"
@@ -344,7 +344,7 @@ describe('PhotoGrid — pageMap pagination', () => {
       { pageSize: 12, pageCount: 1, totalCount: 12 },
     ];
     const { getAllByText } = render(
-      PhotoGrid,
+      MediaGrid,
       makeProps({
         matches: makeMatches(JSDOM_PAGE_SIZE),
         selectedIndex: 0,

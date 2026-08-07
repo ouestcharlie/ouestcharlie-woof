@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { App, applyHostStyleVariables, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
-  import PhotoGrid from './components/PhotoGrid.svelte';
+  import MediaGrid from './components/MediaGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
   import IndexingProgress from './components/IndexingProgress.svelte';
   import {
@@ -16,9 +16,9 @@
   import * as m from './paraglide/messages.js';
   import { applyLocale } from './lib/locale.js';
 
-  // Photo count as a string, pluralized in the active locale.
-  function photoCountLabel(n) {
-    return n === 1 ? m.status_photos_one({ count: n }) : m.status_photos_other({ count: n });
+  // Item count as a string (photos + videos), pluralized in the active locale.
+  function itemCountLabel(n) {
+    return n === 1 ? m.status_items_one({ count: n }) : m.status_items_other({ count: n });
   }
 
   function embeddedServerUrls() {
@@ -78,7 +78,7 @@
     pageMap = session.pageMap;
     serverPage = page;
     const total = (session.pageMap ?? []).reduce((s, e) => s + e.totalCount, 0);
-    status = photoCountLabel(total);
+    status = itemCountLabel(total);
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
@@ -268,7 +268,7 @@
     </header>
 
     <div class="view" class:hidden={view !== 'grid'}>
-      <PhotoGrid
+      <MediaGrid
         {matches}
         loading={loading || serverPageLoading}
         {selectedIndex}

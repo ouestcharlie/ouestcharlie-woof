@@ -55,7 +55,7 @@ describe('App — initial session load via URL token', () => {
   beforeEach(() => setUrlToken('tok1'));
   afterEach(() => vi.restoreAllMocks());
 
-  it('renders photo count from pageMap totalCount after session loads', async () => {
+  it('renders item count from pageMap totalCount after session loads', async () => {
     const session = makeSession({
       matches: makeMatches(3),
       pageMap: [{ pageSize: 500, pageCount: 2, totalCount: 600 }],
@@ -63,7 +63,7 @@ describe('App — initial session load via URL token', () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
 
     const { getByText } = render(App);
-    await waitFor(() => expect(getByText('600 photos')).toBeTruthy());
+    await waitFor(() => expect(getByText('600 items')).toBeTruthy());
     expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/tok1');
   });
 

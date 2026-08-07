@@ -42,7 +42,7 @@
     spinnerTimer = setTimeout(() => { if (!previewLoaded) showSpinner = true; }, 300);
   });
 
-  // aspect-ratio driven by the photo's natural dimensions.
+  // aspect-ratio driven by the item's natural dimensions.
   // CSS max-width/max-height on .preview-container handle clamping to the viewer bounds,
   // so no JS measurement is needed and the layout reflows automatically on any size change.
   let aspectRatio = $derived(

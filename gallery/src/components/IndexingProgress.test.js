@@ -145,7 +145,7 @@ describe('IndexingProgress — MCP callbacks on completion', () => {
 
     await waitFor(() => expect(updateModelContext).toHaveBeenCalledOnce());
     const [{ content }] = updateModelContext.mock.calls[0];
-    expect(content[0].text).toMatch(/Photos processed: 42/);
+    expect(content[0].text).toMatch(/Items processed: 42/);
     expect(sendMessage).toHaveBeenCalledWith({
       role: 'user',
       content: [{ type: 'text', text: 'Indexing complete.' }],

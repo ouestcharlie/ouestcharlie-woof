@@ -42,8 +42,8 @@
 
   /**
    * Display-page offset for `serverPage` within `pageMap`.
-   * Full server pages hold `pageSize` photos; the last page of each entry holds
-   * `entryTotal - (pageCount-1)*pageSize` photos (may be partial).
+   * Full server pages hold `pageSize` items; the last page of each entry holds
+   * `entryTotal - (pageCount-1)*pageSize` items (may be partial).
    */
   function absolutePageFromMap(sp, lp, dps) {
     let offset = 0, remaining = sp;
@@ -80,7 +80,7 @@
       onPageSelect((localPage - 1) * displayPageSize);
     } else if (serverPage > 0 && onFetchServerPage) {
       await onFetchServerPage(serverPage - 1);
-      // After fetch, select last photo of the newly loaded server page.
+      // After fetch, select last item of the newly loaded server page.
       onPageSelect(matches.length - 1);
     }
   }
