@@ -241,7 +241,7 @@ class McpServer:
         )
         async def index_library(
             library_name: str,
-            partition: str = "",
+            partition_scope: list[str] | None = None,
             force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
             force_full_index: bool = False,
@@ -262,8 +262,10 @@ class McpServer:
 
             Args:
                 library_name: Name of the library to index (from list_libraries).
-                partition: Sub-path to index (e.g. "2024/2024-07"). Defaults
-                    to "" which indexes the entire library.
+                partition_scope: Folders to index (e.g. ["2024/2024-07"]).
+                    Each entry indexes only its direct-child photos, not
+                    descendant subfolders. Defaults to None/empty, which
+                    indexes the entire library (walking every subfolder).
                 force_extract_exif: Re-extract EXIF and overwrite existing XMP
                     sidecars. Defaults to False.
                 generate_thumbnails: Generate thumbnails.avif AVIF grids.
@@ -272,16 +274,14 @@ class McpServer:
                     Defaults to False (incremental).
             """
             library = self._require_library(library_name)
-            tool = "index_partition" if partition else "index_library"
-            args: dict[str, Any] = {
+            partition_scope = partition_scope or []
+            base_args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
                 "force_full_index": force_full_index,
             }
-            if partition:
-                args["partition"] = partition
 
-            session_id = self._indexing_sessions.start(library_name, partition)
+            session_id = self._indexing_sessions.start(library_name, partition_scope)
 
             def _on_progress(progress: float, total: float, message: str) -> None:
                 self._indexing_sessions.update(session_id, progress, total, message)
@@ -295,9 +295,16 @@ class McpServer:
                 else:
                     self._indexing_sessions.fail(session_id, str(exc))
 
+            if partition_scope:
+                tool_name = "index_partition_scope"
+                args = {**base_args, "partition_scope": partition_scope}
+            else:
+                tool_name = "index_library"
+                args = base_args
+
             task = self._agent.call_tool_background(
                 "whitebeard",
-                tool,
+                tool_name,
                 args,
                 library,
                 on_progress=_on_progress,
@@ -310,7 +317,7 @@ class McpServer:
                 "type": "indexing",
                 "session_id": session_id,
                 "library_name": library_name,
-                "partition": partition,
+                "partition_scope": partition_scope,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,
                 "serverToken": self._token,

@@ -53,7 +53,7 @@
   let modeKnown = $state(false); // false until first ontoolresult or URL param processed
   let indexingSessionId = $state(null);
   let indexingLibrary = $state('');
-  let indexingPartition = $state('');
+  let indexingPartitionScope = $state([]);
 
   // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
   // from ever firing. Manually notify the host whenever the displayed content changes.
@@ -106,7 +106,8 @@
     if (urlSessionId) {
       indexingSessionId = urlSessionId;
       indexingLibrary = urlParams.get('library') ?? '';
-      indexingPartition = urlParams.get('partition') ?? '';
+      const urlPartitionScope = urlParams.get('partitionScope');
+      indexingPartitionScope = urlPartitionScope ? urlPartitionScope.split(',').filter(Boolean) : [];
       mode = 'indexing';
       modeKnown = true;
       loading = false;
@@ -135,7 +136,7 @@
         if (result.type === 'indexing') {
           indexingSessionId = result.session_id;
           indexingLibrary = result.library_name;
-          indexingPartition = result.partition ?? '';
+          indexingPartitionScope = result.partition_scope ?? [];
           mode = 'indexing';
           modeKnown = true;
           loading = false;
@@ -207,7 +208,7 @@
     <IndexingProgress
       sessionId={indexingSessionId}
       library={indexingLibrary}
-      partition={indexingPartition}
+      partitionScope={indexingPartitionScope}
       {mcpApp}
       {mcpReady}
     />
