@@ -12,6 +12,13 @@
     thumbnailUrl,
     previewUrl,
   } from './lib/api.svelte.js';
+  import * as m from './paraglide/messages.js';
+  import { applyLocale } from './lib/locale.js';
+
+  // Photo count as a string, pluralized in the active locale.
+  function photoCountLabel(n) {
+    return n === 1 ? m.status_photos_one({ count: n }) : m.status_photos_other({ count: n });
+  }
 
   function embeddedServerUrls() {
     const raw = document.documentElement.dataset.serverUrls;
@@ -70,7 +77,7 @@
     pageMap = session.pageMap;
     serverPage = page;
     const total = (session.pageMap ?? []).reduce((s, e) => s + e.totalCount, 0);
-    status = `${total} photo${total === 1 ? '' : 's'}`;
+    status = photoCountLabel(total);
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
@@ -84,7 +91,7 @@
       matches = data.matches ?? [];
       serverPage = page;
     } catch (err) {
-      status = `Error loading page: ${err.message}`;
+      status = m.status_error_loading_page({ message: err.message });
     } finally {
       serverPageLoading = false;
     }
@@ -94,6 +101,8 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown);
+    // Initial locale from the browser; refined from the MCP host context below.
+    applyLocale(navigator.language);
     initServerOrigins(embeddedServerUrls() ?? [location.origin]);
     initServerToken(embeddedServerToken());
 
@@ -115,7 +124,7 @@
       modeKnown = true;
       fetchResults(urlToken)
         .then(data => applySession(data, urlToken, 0))
-        .catch(err => { if (!matches.length) status = `Error: ${err.message}`; });
+        .catch(err => { if (!matches.length) status = m.status_error({ message: err.message }); });
     }
 
     // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.
@@ -151,7 +160,7 @@
           const data = await fetchResults(result.token);
           applySession(data, result.token, 0);
         } catch (err) {
-          if (!matches.length) status = `Error loading gallery: ${err.message}`;
+          if (!matches.length) status = m.status_error_loading_gallery({ message: err.message });
           loading = false;
         }
       };
@@ -162,6 +171,7 @@
         if (ctx?.displayMode !== undefined) {
           isFullscreen = ctx.displayMode === 'fullscreen';
         }
+        if (ctx?.locale) applyLocale(ctx.locale);
         if (ctx?.theme) applyDocumentTheme(ctx.theme);
         if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       };
@@ -170,6 +180,7 @@
         const ctx = app.getHostContext();
         canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
         isFullscreen = ctx?.displayMode === 'fullscreen';
+        applyLocale(ctx?.locale ?? navigator.language);
         if (ctx?.theme) applyDocumentTheme(ctx.theme);
         if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       }).catch(() => {});
@@ -220,7 +231,7 @@
           <button
             class="view-btn"
             onclick={() => { view = view === 'grid' ? 'preview' : 'grid'; }}
-            title={view === 'grid' ? 'Show preview' : 'Back to grid'}
+            title={view === 'grid' ? m.nav_show_preview() : m.nav_back_to_grid()}
           >
             {#if view === 'grid'}
               <!-- carousel icon -->
@@ -239,7 +250,7 @@
           <button
             class="view-btn"
             onclick={toggleFullscreen}
-            title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+            title={isFullscreen ? m.nav_exit_fullscreen() : m.nav_fullscreen()}
           >
             {#if isFullscreen}
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
