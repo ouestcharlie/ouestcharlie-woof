@@ -20,7 +20,7 @@
   let jpegUrl = $derived(previewUrl(match));
   let videoSrc = $derived(isVideo ? videoUrl(match) : null);
 
-  // Ref to the active <video>, so navigating away can pause it (OEC-39a §3).
+  // Ref to the active <video>, so navigating away can pause it.
   let videoEl = $state(null);
 
   // Details side panel — overlay on top of the image, collapsed by default.
@@ -53,7 +53,7 @@
   let hasNext = $derived(selectedIndex < matches.length - 1);
 
   // Pause any playing video before leaving it, otherwise audio keeps playing
-  // off-screen after navigation (OEC-39a §3).
+  // off-screen after navigation.
   function pauseVideo() { videoEl?.pause(); }
 
   function prev() { if (hasPrev) { pauseVideo(); onNavigate(selectedIndex - 1); } }
@@ -112,7 +112,7 @@
     return s;
   }
 
-  // Video duration in seconds → "mm:ss" (OEC-39a §3 / #39b).
+  // Video duration in seconds → "mm:ss".
   function formatDuration(sec) {
     if (sec == null) return null;
     const total = Math.round(sec);
@@ -121,7 +121,7 @@
     return `${mm}:${ss}`;
   }
 
-  // Raw ffmpeg codec name → human-friendly label (#39b).
+  // Raw ffmpeg codec name → human-friendly label.
   function codecLabel(codec) {
     if (!codec) return null;
     const c = codec.toLowerCase();
@@ -131,7 +131,7 @@
   }
 
   // True when the current browser can't decode the source codec, so a <video>
-  // would silently fail to play (#39b — the HEVC-in-a-non-Safari-browser case).
+  // would silently fail to play (the HEVC-in-a-non-Safari-browser case).
   function codecUnplayable(codec) {
     if (!codec) return false;
     const c = codec.toLowerCase();
@@ -178,7 +178,7 @@
       {#if isVideo}
         <!--
           Video: <video> with the cover-frame JPEG as poster so the panel shows
-          an image instantly while the stream buffers (OEC-39a §3). No autoplay —
+          an image instantly while the stream buffers. No autoplay —
           user-initiated playback only.
         -->
         <!-- svelte-ignore a11y_media_has_caption -->
@@ -250,6 +250,7 @@
         <div class="caption-foot">
           <span class="caption-filename">{match.filename}</span>
           {#if match.dateTaken}
+            <span class="caption-sep" aria-hidden="true">–</span>
             <span class="caption-date">{formatDate(match.dateTaken)}</span>
           {/if}
           {#if durationLine}
@@ -444,11 +445,14 @@
     to { transform: rotate(360deg); }
   }
 
-  /* Nav arrows overlay the image — keep semi-transparent black regardless of theme */
+  /* Nav arrows overlay the image — keep semi-transparent black regardless of theme.
+     Centered as a fixed-height band (not full height) so they clear the video
+     controls at the bottom and the caption at the top. */
   .nav {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 40%;
     width: 3rem;
     display: flex;
     align-items: center;
@@ -463,8 +467,8 @@
     z-index: 1;
   }
 
-  .nav.prev { left: 0; border-radius: var(--border-radius-xs, 4px) 0 0 var(--border-radius-xs, 4px); }
-  .nav.next { right: 0; border-radius: 0 var(--border-radius-xs, 4px) var(--border-radius-xs, 4px) 0; }
+  .nav.prev { left: 0; border-radius: 0 var(--border-radius-xs, 4px) var(--border-radius-xs, 4px) 0; }
+  .nav.next { right: 0; border-radius: var(--border-radius-xs, 4px) 0 0 var(--border-radius-xs, 4px); }
 
   .nav:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.45);
@@ -500,32 +504,34 @@
     background: rgba(0, 0, 0, 0.6);
   }
 
-  /* Caption bar — scrim + text overlaid at the image bottom. */
+  /* Caption bar — scrim + text overlaid at the image top, so it clears the
+     video controls at the bottom. Right padding leaves room for the info
+     toggle in the top-right corner. */
   .caption {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    padding: 0.6rem 0.8rem 0.7rem;
+    top: 0;
+    padding: 0.7rem 3rem 0.8rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     color: #fff;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
     z-index: 2;
     pointer-events: none;
   }
 
   .caption-desc {
-    font-size: 0.85rem;
-    line-height: 1.3;
+    font-size: 1rem;
+    line-height: 1.35;
   }
 
   .caption-foot {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem 0.75rem;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     opacity: 0.9;
   }
 
@@ -628,7 +634,7 @@
     font-style: italic;
   }
 
-  /* Inline playability warning next to the codec row (#39b). */
+  /* Inline playability warning next to the codec row. */
   .codec-warn {
     display: block;
     margin-top: 0.15rem;
