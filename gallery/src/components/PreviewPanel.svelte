@@ -158,15 +158,18 @@
       <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
       <button class="nav next" onclick={next} disabled={!hasNext}>›</button>
 
-      <!-- Info toggle for the details side panel -->
-      <button
-        class="info-toggle"
-        class:active={panelOpen}
-        onclick={togglePanel}
-        aria-label={panelOpen ? 'Hide details' : 'Show details'}
-        aria-expanded={panelOpen}
-        title="Details"
-      >ⓘ</button>
+      <!-- Info toggle for the details side panel. Hidden while the panel is
+           open (the panel has its own close button) so it doesn't overlap the
+           panel in narrow-screen bottom-sheet mode. -->
+      {#if !panelOpen}
+        <button
+          class="info-toggle"
+          onclick={togglePanel}
+          aria-label="Show details"
+          aria-expanded="false"
+          title="Details"
+        >ⓘ</button>
+      {/if}
 
       <!-- Caption bar overlaid at the bottom of the image. -->
       <div class="caption">
@@ -198,11 +201,16 @@
 
           <section class="subpane">
             <h3>Overview</h3>
+            {#if match.rating > 0}
+              <div class="stars" aria-label="Rating: {match.rating} of 5">
+                <span aria-hidden="true">{'★'.repeat(match.rating)}{'☆'.repeat(5 - match.rating)}</span>
+              </div>
+            {/if}
             {#if match.description}
               <div class="field"><span class="field-val desc">{match.description}</span></div>
             {/if}
             {#if match.tags?.length}
-              <div class="pills">
+              <div class="pills tags">
                 {#each match.tags as tag (tag)}
                   <span class="pill">{tag}</span>
                 {/each}
@@ -386,7 +394,7 @@
     z-index: 3;
   }
 
-  .info-toggle:hover, .info-toggle.active {
+  .info-toggle:hover {
     background: rgba(0, 0, 0, 0.6);
   }
 
@@ -516,6 +524,21 @@
   .field.empty {
     opacity: 0.5;
     font-style: italic;
+  }
+
+  .stars {
+    color: #f5c451;
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Breathing room around the tag pills — more above (after the description)
+     than below (before the following fields). */
+  .pills.tags {
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
   /* Narrow screens: side panel becomes a full-width bottom sheet. */

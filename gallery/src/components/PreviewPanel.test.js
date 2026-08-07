@@ -204,6 +204,24 @@ describe('PreviewPanel — details side panel', () => {
     expect(getByText('50 mm')).toBeTruthy();
   });
 
+  it('renders a positive rating as stars', async () => {
+    const match = { ...MATCH, rating: 4 };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    const stars = container.querySelector('.stars');
+    expect(stars).not.toBeNull();
+    expect(stars.textContent).toBe('★★★★☆');
+    expect(stars.getAttribute('aria-label')).toBe('Rating: 4 of 5');
+  });
+
+  it('omits stars when rating is absent, zero, or rejected (-1)', async () => {
+    for (const rating of [undefined, 0, -1]) {
+      const { container } = render(PreviewPanel, makeProps([{ ...MATCH, rating }]));
+      await openPanel(container);
+      expect(container.querySelector('.stars')).toBeNull();
+    }
+  });
+
   it('shows an empty state for the Location subpane when GPS is absent', async () => {
     const { container, getByText } = render(PreviewPanel, makeProps([MATCH]));
     await openPanel(container);
