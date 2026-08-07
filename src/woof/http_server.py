@@ -16,15 +16,19 @@ URL scheme:
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
   GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
   GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
+  GET /video/{library_name}/{partition}/{content_hash}.mp4    — proxied to Wally (Range)
 
 where {partition} may contain slashes (e.g. "2024/2024-07").
-All library media (thumbnails and previews) is served by Wally and proxied here.
+All library media (thumbnails, previews and video) is served by Wally and proxied
+here. The proxy streams bodies and forwards Range/Content-Range so <video> seeking
+works without buffering GB-scale files (OEC-39a §2).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -32,7 +36,7 @@ from urllib.parse import quote
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -154,16 +158,43 @@ def build_gallery_app(
         headers: dict[str, str] = {}
         if wally_token:
             headers["Authorization"] = f"Bearer {wally_token}"
-        async with httpx.AsyncClient() as client:
+        # Forward Range so <video> seeking works — Wally answers with 206 and a
+        # Content-Range slice, which must flow through unchanged (OEC-39a §2).
+        range_header = request.headers.get("range")
+        if range_header:
+            headers["Range"] = range_header
+
+        # Stream the body rather than buffering it: video responses can be
+        # GB-scale, and buffering would defeat Range support. read=None disables
+        # the read timeout so long streams are not truncated mid-body.
+        client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=None))
+        try:
+            req = client.build_request("GET", url, headers=headers)
+            upstream = await client.send(req, stream=True)
+        except Exception as exc:
+            await client.aclose()
+            _log.error("Proxy to Wally failed for %r/%r/%r: %s", kind, library, rest, exc)
+            return Response(status_code=503)
+
+        passthrough = {}
+        for name in ("content-length", "content-range", "accept-ranges"):
+            value = upstream.headers.get(name)
+            if value is not None:
+                passthrough[name] = value
+
+        async def body_iter() -> AsyncIterator[bytes]:
             try:
-                upstream = await client.get(url, headers=headers, timeout=120.0)
-            except Exception as exc:
-                _log.error("Proxy to Wally failed for %r/%r/%r: %s", kind, library, rest, exc)
-                return Response(status_code=503)
-        return Response(
-            content=upstream.content,
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            body_iter(),
             status_code=upstream.status_code,
             media_type=upstream.headers.get("content-type", "image/jpeg"),
+            headers=passthrough,
         )
 
     async def api_indexing(request: Request) -> Response:

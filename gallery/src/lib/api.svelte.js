@@ -104,3 +104,15 @@ export function previewUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.contentHash) return null;
   return `${resolvedOrigin}/previews/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.jpg${tokenQueryParam()}`;
 }
+
+/**
+ * URL for range-streaming a video match's original file, or null if
+ * unavailable. Structurally mirrors previewUrl(); the extension is cosmetic
+ * (browsers key off Wally's Content-Type, not the URL suffix — OEC-39a §3),
+ * so a `.mp4` default is fine even for MOV sources.
+ */
+export function videoUrl(match) {
+  if (!resolvedOrigin || !match?.library || !match?.contentHash) return null;
+  const ext = /\.mov$/i.test(match.filename ?? '') ? 'mov' : 'mp4';
+  return `${resolvedOrigin}/video/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.${ext}${tokenQueryParam()}`;
+}

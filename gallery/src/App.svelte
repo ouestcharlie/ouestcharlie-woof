@@ -11,6 +11,7 @@
     fetchResultsPage,
     thumbnailUrl,
     previewUrl,
+    videoUrl,
   } from './lib/api.svelte.js';
   import * as m from './paraglide/messages.js';
   import { applyLocale } from './lib/locale.js';
@@ -287,6 +288,7 @@
           {selectedIndex}
           onNavigate={(i) => (selectedIndex = i)}
           {previewUrl}
+          {videoUrl}
         />
       </div>
     {/if}
