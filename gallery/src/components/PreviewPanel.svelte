@@ -1,5 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import * as m from '../paraglide/messages.js';
+  import { getLocale } from '../paraglide/runtime.js';
 
   /**
    * @type {{
@@ -57,7 +59,7 @@
     if (!raw) return null;
     const d = new Date(raw);
     if (isNaN(d)) return raw;
-    return d.toLocaleString(undefined, {
+    return d.toLocaleString(getLocale(), {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
@@ -165,9 +167,9 @@
         <button
           class="info-toggle"
           onclick={togglePanel}
-          aria-label="Show details"
+          aria-label={m.preview_show_details()}
           aria-expanded="false"
-          title="Details"
+          title={m.preview_details()}
         >ⓘ</button>
       {/if}
 
@@ -195,14 +197,14 @@
       {#if panelOpen}
         <aside class="details">
           <header class="details-head">
-            <span>Details</span>
-            <button class="details-close" onclick={togglePanel} aria-label="Close details">×</button>
+            <span>{m.preview_details()}</span>
+            <button class="details-close" onclick={togglePanel} aria-label={m.preview_close_details()}>×</button>
           </header>
 
           <section class="subpane">
-            <h3>Overview</h3>
+            <h3>{m.preview_overview()}</h3>
             {#if match.rating > 0}
-              <div class="stars" aria-label="Rating: {match.rating} of 5">
+              <div class="stars" aria-label={m.preview_rating({ rating: match.rating })}>
                 <span aria-hidden="true">{'★'.repeat(match.rating)}{'☆'.repeat(5 - match.rating)}</span>
               </div>
             {/if}
@@ -217,48 +219,48 @@
               </div>
             {/if}
             {#if match.dateTaken}
-              <div class="field"><span class="field-key">Date</span><span class="field-val">{formatDate(match.dateTaken)}</span></div>
+              <div class="field"><span class="field-key">{m.field_date()}</span><span class="field-val">{formatDate(match.dateTaken)}</span></div>
             {/if}
-            <div class="field"><span class="field-key">File</span><span class="field-val">{match.filename}</span></div>
+            <div class="field"><span class="field-key">{m.field_file()}</span><span class="field-val">{match.filename}</span></div>
             {#if match.partition}
-              <div class="field"><span class="field-key">Partition</span><span class="field-val">{match.partition}</span></div>
+              <div class="field"><span class="field-key">{m.field_partition()}</span><span class="field-val">{match.partition}</span></div>
             {/if}
             {#if formatDimensions(match)}
-              <div class="field"><span class="field-key">Dimensions</span><span class="field-val">{formatDimensions(match)}</span></div>
+              <div class="field"><span class="field-key">{m.field_dimensions()}</span><span class="field-val">{formatDimensions(match)}</span></div>
             {/if}
           </section>
 
           <section class="subpane">
-            <h3>Camera</h3>
+            <h3>{m.preview_camera()}</h3>
             {#if cameraLine}
-              <div class="field"><span class="field-key">Camera</span><span class="field-val">{cameraLine}</span></div>
+              <div class="field"><span class="field-key">{m.field_camera()}</span><span class="field-val">{cameraLine}</span></div>
             {/if}
             {#if match.lensModel}
-              <div class="field"><span class="field-key">Lens</span><span class="field-val">{match.lensModel}</span></div>
+              <div class="field"><span class="field-key">{m.field_lens()}</span><span class="field-val">{match.lensModel}</span></div>
             {/if}
             {#if match.isoSpeed != null}
-              <div class="field"><span class="field-key">ISO</span><span class="field-val">{match.isoSpeed}</span></div>
+              <div class="field"><span class="field-key">{m.field_iso()}</span><span class="field-val">{match.isoSpeed}</span></div>
             {/if}
             {#if formatAperture(match.aperture)}
-              <div class="field"><span class="field-key">Aperture</span><span class="field-val">{formatAperture(match.aperture)}</span></div>
+              <div class="field"><span class="field-key">{m.field_aperture()}</span><span class="field-val">{formatAperture(match.aperture)}</span></div>
             {/if}
             {#if formatExposure(match.exposureTime)}
-              <div class="field"><span class="field-key">Exposure</span><span class="field-val">{formatExposure(match.exposureTime)}</span></div>
+              <div class="field"><span class="field-key">{m.field_exposure()}</span><span class="field-val">{formatExposure(match.exposureTime)}</span></div>
             {/if}
             {#if formatFocal(match)}
-              <div class="field"><span class="field-key">Focal length</span><span class="field-val">{formatFocal(match)}</span></div>
+              <div class="field"><span class="field-key">{m.field_focal_length()}</span><span class="field-val">{formatFocal(match)}</span></div>
             {/if}
             {#if !cameraLine && !match.lensModel && match.isoSpeed == null && match.aperture == null && match.exposureTime == null && match.focalLength == null}
-              <div class="field empty">No camera data</div>
+              <div class="field empty">{m.preview_no_camera()}</div>
             {/if}
           </section>
 
           <section class="subpane">
-            <h3>Location</h3>
+            <h3>{m.preview_location()}</h3>
             {#if gpsLine}
               <div class="field"><span class="field-val">{gpsLine}</span></div>
             {:else}
-              <div class="field empty">No location data</div>
+              <div class="field empty">{m.preview_no_location()}</div>
             {/if}
           </section>
         </aside>

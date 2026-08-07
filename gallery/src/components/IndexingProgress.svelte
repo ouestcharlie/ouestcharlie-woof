@@ -1,13 +1,16 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { fetchIndexingStatus, cancelIndexing } from '../lib/api.svelte.js';
+  import * as m from '../paraglide/messages.js';
 
   let { sessionId, library, partitionScope = [], mcpApp, mcpReady = false } = $props();
 
   let scopeLabel = $derived(
-    partitionScope.length
-      ? `${partitionScope.length} partition${partitionScope.length > 1 ? 's' : ''} in ${library}`
-      : library
+    partitionScope.length === 0
+      ? library
+      : partitionScope.length === 1
+        ? m.indexing_scope_partitions_one({ count: 1, library })
+        : m.indexing_scope_partitions_other({ count: partitionScope.length, library })
   );
 
   let status = $state('running');
@@ -18,6 +21,15 @@
   let error = $state(null);
   let contextSent = $state(false);
   let stopping = $state(false);
+
+  // Localized label for the raw status value (falls back to the raw value).
+  let statusLabel = $derived({
+    running: m.indexing_status_running(),
+    cancelling: m.indexing_status_cancelling(),
+    cancelled: m.indexing_status_cancelled(),
+    completed: m.indexing_status_completed(),
+    failed: m.indexing_status_failed(),
+  }[status] ?? status);
 
   let pollInterval = null;
   let rootEl = $state(null);
@@ -140,10 +152,10 @@
 
 <div class="indexing" bind:this={rootEl}>
   <header class="indexing-header">
-    <h1>Indexing {scopeLabel}</h1>
+    <h1>{m.indexing_title({ scope: scopeLabel })}</h1>
     <div class="header-right">
       <span class="indexing-status" class:running={status === 'running'} class:cancelling={status === 'cancelling'} class:cancelled={status === 'cancelled'} class:completed={status === 'completed'} class:failed={status === 'failed'}>
-        {status}
+        {statusLabel}
       </span>
     </div>
   </header>
@@ -151,38 +163,38 @@
   {#if status === 'running' || status === 'cancelling'}
     <div class="progress-section">
       <progress value={progress} max={total}></progress>
-      <div class="progress-label">{Math.round(progressPct)}% — {Math.round(progress)} / {Math.round(total)}</div>
+      <div class="progress-label">{m.indexing_progress_label({ pct: Math.round(progressPct), progress: Math.round(progress), total: Math.round(total) })}</div>
       {#if message}
         <div class="progress-message">{message}</div>
       {/if}
     </div>
     <div class="stop-row">
-      <button class="stop-btn" onclick={stopIndexing} disabled={stopping}>Stop</button>
+      <button class="stop-btn" onclick={stopIndexing} disabled={stopping}>{m.indexing_stop()}</button>
     </div>
   {/if}
 
   {#if status === 'completed'}
     <div class="summary-card">
-      <div class="summary-title">Indexing complete 
+      <div class="summary-title">{m.indexing_complete()}
         {#if summary.totalDurationMs !== undefined}
-            <span>in {(summary.totalDurationMs / 1000).toFixed(1)}s</span>
+            <span>{m.indexing_complete_in({ seconds: (summary.totalDurationMs / 1000).toFixed(1) })}</span>
         {/if}
       </div>
       {#if summary}
-        <ul class="summary-list">          
+        <ul class="summary-list">
           {#if summary.totalPhotosProcessed !== undefined}
-            <li>Photos processed: <strong>{summary.totalPhotosProcessed}</strong></li>
+            <li>{m.indexing_photos_processed()} <strong>{summary.totalPhotosProcessed}</strong></li>
           {/if}
           {#if summary.totalSidecarsCreated !== undefined}
-            <li>Sidecars created: <strong>{summary.totalSidecarsCreated}</strong></li>
+            <li>{m.indexing_sidecars_created()} <strong>{summary.totalSidecarsCreated}</strong></li>
           {/if}
           {#if summary.totalThumbnailsRebuilt !== undefined}
-            <li>Thumbnail batches rebuilt: <strong>{summary.totalThumbnailsRebuilt}</strong></li>
+            <li>{m.indexing_thumbnails_rebuilt()} <strong>{summary.totalThumbnailsRebuilt}</strong></li>
           {/if}
           {#if summary.totalErrors !== undefined && summary.totalErrors > 0}
             <li class="error-count">
               <details ontoggle={() => { if (mcpApp && rootEl) mcpApp.sendSizeChanged({ height: rootEl.scrollHeight }).catch(() => {}); }}>
-                <summary>Errors: <strong>{summary.totalErrors}</strong></summary>
+                <summary>{m.indexing_errors()} <strong>{summary.totalErrors}</strong></summary>
                 {#if summary.topErrorDetails?.length}
                   <ul class="error-details">
                     {#each summary.topErrorDetails as detail, i (i)}
@@ -195,21 +207,21 @@
           {/if}         
         </ul>
       {:else}
-        <p class="summary-empty">No summary available.</p>
+        <p class="summary-empty">{m.indexing_no_summary()}</p>
       {/if}
     </div>
   {/if}
 
   {#if status === 'cancelled'}
     <div class="cancelled-card">
-      <div class="cancelled-title">Indexing stopped</div>
+      <div class="cancelled-title">{m.indexing_stopped()}</div>
     </div>
   {/if}
 
   {#if status === 'failed'}
     <div class="error-card">
-      <div class="error-title">Indexing failed</div>
-      <p class="error-message">{error ?? 'Unknown error'}</p>
+      <div class="error-title">{m.indexing_failed_title()}</div>
+      <p class="error-message">{error ?? m.error_unknown()}</p>
     </div>
   {/if}
 </div>

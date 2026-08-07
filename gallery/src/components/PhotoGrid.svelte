@@ -1,4 +1,6 @@
 <script>
+  import * as m from '../paraglide/messages.js';
+
   /**
    * @type {{
    *   matches: any[],
@@ -103,9 +105,9 @@
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
 <div class="nav nav-top" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
-  <button disabled={absolutePage === 0} onclick={prevPage}>↑ Previous</button>
+  <button disabled={absolutePage === 0} onclick={prevPage}>{m.grid_previous()}</button>
   <span>{absolutePage + 1} / {totalDisplayPages}</span>
-  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>Next ↓</button>
+  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>{m.grid_next()}</button>
 </div>
 
 <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
@@ -144,9 +146,9 @@
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
 <div class="nav nav-bottom" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
-  <button disabled={absolutePage === 0} onclick={prevPage}>↑ Previous</button>
+  <button disabled={absolutePage === 0} onclick={prevPage}>{m.grid_previous()}</button>
   <span>{absolutePage + 1} / {totalDisplayPages}</span>
-  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>Next ↓</button>
+  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>{m.grid_next()}</button>
 </div>
 
 {/if}

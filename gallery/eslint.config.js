@@ -20,6 +20,7 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    // src/paraglide/** is Paraglide compiler output (gitignored, regenerated on build).
+    ignores: ['dist/**', 'node_modules/**', 'src/paraglide/**'],
   },
 ];
