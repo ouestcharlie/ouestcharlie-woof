@@ -29,6 +29,9 @@ filters: Filter expression forwarded to Wally. Three forms are accepted:
 
     **Single field** — one ``{"fieldName": value}`` dict::
 
+        # media captured during an activity — full timestamps on both bounds
+        {"dateTaken": {"min": "2026-07-15T07:46:41", "max": "2026-07-15T09:37:05"}}
+
         # All photos under the 2024/ directory tree
         {"directory": {"value": "2024", "mode": "startswith"}}
 
@@ -53,6 +56,10 @@ filters: Filter expression forwarded to Wally. Three forms are accepted:
             {"dateTaken": {"min": "2024", "max": "2024"}},
             {"any": [{"make": "nikon"}, {"make": "canon"}]}
         ]}
+
+    Tags are cumulative (and relationship):
+        # everything tagged Famille AND Vacances  (AND semantics)
+        {"tags": ["Famille", "Vacances"]}
 full_text_filter: Full-text search over one or more TEXT-typed
     fields. Schema::
 
@@ -236,8 +243,40 @@ class McpServer:
                     returns a summary for every registered library instead of one.
                 {_FILTER_SYNTAX_DOC}
 
+             Returns  ``{"result": {...}}`` where the inner dict always carries
+                ``mediaCount`` and then one entry per field that has data in the scope.
+
+                **A field is omitted entirely when nothing in the scope has a value for
+                it**, so absence means "no data", not "no such field" — an untagged
+                folder simply has no ``tags`` key. When ``mediaCount`` is 0 no other
+                keys are present at all.
+
+                Range entries carry ``missing``, the number of items in scope with no
+                value for that field.
+
+            Example::
+            {"result": {"mediaCount": 15,
+                "dateTaken": {"type": "date_range",
+                              "min": "2026-01-11T11:51:50.027000",
+                              "max": "2026-01-11T13:25:52.373000"},
+                "width":  {"type": "int_range", "min": 1080, "max": 4000},
+                "height": {"type": "int_range", "min": 1844, "max": 1920},
+                "durationSeconds": {"type": "float_range", "min": 1.4,
+                                    "max": 12.77, "missing": 10},
+                "tags": {"type": "tag_facets",
+                         "counts": {"Romane": 15, "Luge": 15}},
+                "mediaType": {"type": "string_facets",
+                              "counts": {"photo": 10, "video": 5}},
+                "videoCodec": {"type": "string_facets", "counts": {"h264": 5}},
+                "hasAudio": {"type": "bool_counts", "true": 5, "false": 0}
+            }}
+
             Returns ``{{"error": "..."}}`` (in place of the summary) for a library
             that is unindexed or unreachable.
+
+            Note:
+                Results reflect the *index*, not the files on disk. Editing an XMP
+                sidecar does not reflect in the index until next re-index.
             """
         mcp.tool(name="get_summary", annotations=ToolAnnotations(readOnlyHint=True))(
             _get_summary_tool
@@ -261,8 +300,9 @@ class McpServer:
             to the model context when indexing completes.
 
             By default runs in incremental mode: only new photos are indexed,
-            deleted photos are removed from the manifest.  Use
-            ``force_full_index=True`` to re-process all photos.
+            deleted photos are removed from the index. Sidecar edits on
+            unchanged media are not picked up.
+            Use ``force_full_index=True`` to re-process all photos.
 
             Scans the library for photos, writes XMP sidecars with metadata
             and content hashes, builds leaf manifests, and generates
@@ -271,11 +311,17 @@ class McpServer:
             Args:
                 library_name: Name of the library to index (from list_libraries).
                 partition_scope: Folders to index (e.g. ["2024/2024-07"]).
+                    Partitions are relative to the library root.
                     Each entry indexes only its direct-child photos, not
-                    descendant subfolders. Defaults to None/empty, which
-                    indexes the entire library (walking every subfolder).
-                force_extract_exif: Re-extract EXIF and overwrite existing XMP
-                    sidecars. Defaults to False.
+                    descendant subfolders.
+                    Defaults to None/empty, which indexes the entire library
+                    (walking every subfolder).
+                force_extract_exif: Re-read EXIF from every media file and regenerate its
+                    XMP sidecar.
+                    DESTRUCTIVE: regenerated sidecars lose any enrichment like
+                    dc:description and dc:subject written by other tools.
+                    Not needed for a normal refresh — use force_full_index.
+                    Defaults to False.
                 generate_thumbnails: Generate thumbnails.avif AVIF grids.
                     Defaults to True.
                 force_full_index: Re-process all photos even if already indexed.
@@ -388,6 +434,9 @@ class McpServer:
 
             Use ``list_search_fields`` to discover available filter fields and
             their expected formats before constructing a query.
+
+            Returns a session token only — nothing is displayed.
+            Pass the token to browse_gallery to show results.
 
             Args:
                 library_name: Name of the library to search.
