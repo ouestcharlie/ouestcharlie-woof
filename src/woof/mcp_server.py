@@ -69,7 +69,11 @@ full_text_filter: Full-text search over one or more TEXT-typed
     columns. ``columns`` must be entry_attr names of TEXT-typed
     fields (see ``list_search_fields`` → ``full_text_search.fields``).
     Results are relevance-ranked and each match includes ``_score``.
-    Compatible with ``filters`` (SQL predicates applied on top of FTS)."""
+    Compatible with ``filters`` (SQL predicates applied on top of FTS).
+sort_by: Field name to sort by — one of the ``list_search_fields`` names
+    marked ``sortable`` (e.g. ``dateTaken``, ``rating``). Defaults to
+    ``dateTaken``. Unknown or non-sortable names are rejected.
+sort_order: ``asc`` or ``desc`` (default ``desc``)."""
 
 
 def _json_coercer(expected_type: type, param_name: str) -> Callable[[Any], Any]:
@@ -243,7 +247,7 @@ class McpServer:
                     returns a summary for every registered library instead of one.
                 {_FILTER_SYNTAX_DOC}
 
-             Returns  ``{"result": {...}}`` where the inner dict always carries
+             Returns  ``{{"result": {{...}}}}`` where the inner dict always carries
                 ``mediaCount`` and then one entry per field that has data in the scope.
 
                 **A field is omitted entirely when nothing in the scope has a value for
@@ -255,21 +259,21 @@ class McpServer:
                 value for that field.
 
             Example::
-            {"result": {"mediaCount": 15,
-                "dateTaken": {"type": "date_range",
+            {{"result": {{"mediaCount": 15,
+                "dateTaken": {{"type": "date_range",
                               "min": "2026-01-11T11:51:50.027000",
-                              "max": "2026-01-11T13:25:52.373000"},
-                "width":  {"type": "int_range", "min": 1080, "max": 4000},
-                "height": {"type": "int_range", "min": 1844, "max": 1920},
-                "durationSeconds": {"type": "float_range", "min": 1.4,
-                                    "max": 12.77, "missing": 10},
-                "tags": {"type": "tag_facets",
-                         "counts": {"Romane": 15, "Luge": 15}},
-                "mediaType": {"type": "string_facets",
-                              "counts": {"photo": 10, "video": 5}},
-                "videoCodec": {"type": "string_facets", "counts": {"h264": 5}},
-                "hasAudio": {"type": "bool_counts", "true": 5, "false": 0}
-            }}
+                              "max": "2026-01-11T13:25:52.373000"}},
+                "width":  {{"type": "int_range", "min": 1080, "max": 4000}},
+                "height": {{"type": "int_range", "min": 1844, "max": 1920}},
+                "durationSeconds": {{"type": "float_range", "min": 1.4,
+                                    "max": 12.77, "missing": 10}},
+                "tags": {{"type": "tag_facets",
+                         "counts": {{"Romane": 15, "Luge": 15}}}},
+                "mediaType": {{"type": "string_facets",
+                              "counts": {{"photo": 10, "video": 5}}}},
+                "videoCodec": {{"type": "string_facets", "counts": {{"h264": 5}}}},
+                "hasAudio": {{"type": "bool_counts", "true": 5, "false": 0}}
+            }}}}
 
             Returns ``{{"error": "..."}}`` (in place of the summary) for a library
             that is unindexed or unreachable.
@@ -381,7 +385,7 @@ class McpServer:
             library_name: str,
             filters: JsonDict = {},  # noqa: B006 — read-only, tolerant of stringified objects
             full_text_filter: JsonDict = {},  # noqa: B006
-            sort_by: str = "date_taken",
+            sort_by: str = "dateTaken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
             library = self._require_library(library_name)
