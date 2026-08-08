@@ -24,13 +24,18 @@ _log = logging.getLogger(__name__)
 _GALLERY_URI = "ui://gallery/ouestcharlie"
 
 # Mirrors wally.agent.FILTER_SYNTAX_DOC (kept as a separate copy rather than imported
+# Shared filter-syntax documentation, embedded in both search_photos and
+# get_summary's docstrings. Kept textually identical to Wally's copy of the same
+# constant so the two MCP layers present the same filter/full-text vocabulary.
+# Sort documentation lives in _SORT_SYNTAX_DOC (search_photos only) — get_summary
+# has no sort argument.
 _FILTER_SYNTAX_DOC = """\
-filters: Filter expression forwarded to Wally. Three forms are accepted:
+filters: Filter expression. Three forms are accepted:
 
     **Single field** — one ``{"fieldName": value}`` dict::
 
-        # All photos under the 2024/ directory tree
-        {"directory": {"value": "2024", "mode": "startswith"}}
+        # media captured during an activity — full timestamps on both bounds
+        {"dateTaken": {"min": "2026-07-15T07:46:41", "max": "2026-07-15T09:37:05"}}
 
     **``{"all": [...]}``** — AND group (all must match)::
 
@@ -53,6 +58,10 @@ filters: Filter expression forwarded to Wally. Three forms are accepted:
             {"dateTaken": {"min": "2024", "max": "2024"}},
             {"any": [{"make": "nikon"}, {"make": "canon"}]}
         ]}
+
+    Tags are cumulative (AND relationship):
+        # everything tagged Famille AND Vacances
+        {"tags": ["Famille", "Vacances"]}
 full_text_filter: Full-text search over one or more TEXT-typed
     fields. Schema::
 
@@ -63,6 +72,15 @@ full_text_filter: Full-text search over one or more TEXT-typed
     fields (see ``list_search_fields`` → ``full_text_search.fields``).
     Results are relevance-ranked and each match includes ``_score``.
     Compatible with ``filters`` (SQL predicates applied on top of FTS)."""
+
+# Sort documentation for search_photos only. Kept textually identical to Wally's
+# copy. Not part of _FILTER_SYNTAX_DOC because get_summary shares that block and
+# accepts no sort argument.
+_SORT_SYNTAX_DOC = """\
+sort_by: Field name to sort results by — one of the ``list_search_fields``
+    names marked ``sortable`` (e.g. ``dateTaken``, ``rating``). Defaults to
+    ``dateTaken``. Unknown or non-sortable names are rejected.
+sort_order: ``asc`` or ``desc`` (default ``desc``)."""
 
 
 def _json_coercer(expected_type: type, param_name: str) -> Callable[[Any], Any]:
@@ -176,13 +194,26 @@ class McpServer:
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_search_fields(library_name: str = "") -> dict:
-            """Get the searchable field definitions for a library.
+            """List all searchable photo fields with their types and filter formats.
 
-            Returns the field definitions available for filtering in search_photos.
+            Returns a ``fields`` list of descriptors. Use the field names and formats
+            described here when constructing the ``filters`` argument for
+            ``search_photos`` and ``get_summary``.
+            The same ``name`` values are used as ``sort_by`` keys —
+            only fields marked ``sortable`` may be passed to ``sort_by``.
 
             Args:
                 library_name: Name of the library to query. Defaults to the
                     first registered library when omitted.
+
+            Returns:
+                ``name`` — the library these fields belong to.
+                ``fields`` — list of field descriptors, each with:
+                    ``name`` — field name to use as key in ``filters`` and as ``sort_by``.
+                    ``type`` — semantic type (DATE_RANGE, INT_RANGE, STRING_COLLECTION,
+                        STRING_MATCH, GPS_BOX, DESCRIPTIVE).
+                    ``filterFormat`` — description of the expected value format.
+                    ``sortable`` — True if this field can be used as a ``sort_by`` key.
             """
             if not self.config.libraries:
                 return {}
@@ -224,20 +255,45 @@ class McpServer:
 
         # Docstring assigned before registration — the decorator below reads
         # __doc__ immediately to build the tool description.
-        _get_summary_tool.__doc__ = f"""\
-            Return aggregate photo statistics (count, date/rating/GPS ranges, tag facets)
-            for a library or a filtered scope.
+        _get_summary_tool.__doc__ = f"""Compute aggregate statistics for photos matching a filter.
 
-            Use ``list_search_fields`` to discover available filter fields and
-            their expected formats before constructing a query.
+            Returns count, per-field ranges (date, rating, width/height,
+            duration, GPS bounding box), categorical facets (media type, video
+            codec, tags), and boolean counts (has-audio). An empty ``filters``
+            summarizes the whole library. Scope it to a query using the filter,
+            optionally combined with ``full_text_filter`` — same semantics as
+            ``search_photos``.
+
+            Use ``list_search_fields`` to discover all available fields and
+            their expected filter formats.
 
             Args:
                 library_name: Name of the library to query. When omitted,
                     returns a summary for every registered library instead of one.
                 {_FILTER_SYNTAX_DOC}
 
-            Returns ``{{"error": "..."}}`` (in place of the summary) for a library
-            that is unindexed or unreachable.
+            Returns:
+                For a single library (``library_name`` given), the summary dict:
+                ``mediaCount`` — number of matching items.
+                Per-field range stats (``dateTaken``, ``rating``, ``width``,
+                ``height``, ``durationSeconds``, ``gps``), each present only if at
+                least one matching item has a value for that field. Ranges carry
+                ``{{"type": "date_range"|"int_range"|"float_range", "min", "max"}}``.
+                Categorical facets (``mediaType``, ``videoCodec``, ``tags``) —
+                ``{{"type": "string_facets"|"tag_facets", "counts": {{value: count}}}}``.
+                Boolean counts (``hasAudio``) —
+                ``{{"type": "bool_counts", "true": N, "false": M}}``.
+                Each stat is present only when the matching set has values for it —
+                e.g. a photo-only result carries no ``videoCodec``/``durationSeconds``.
+
+                When ``library_name`` is omitted, a list of
+                ``{{"name": <library>, "summary": <summary dict above>}}`` — one per
+                registered library. A library that is unindexed or unreachable yields
+                ``{{"error": "..."}}`` in place of its summary.
+
+            Note:
+                Results reflect the *index*, not the files on disk. Editing an XMP
+                sidecar does not reflect in the index until next re-index.
             """
         mcp.tool(name="get_summary", annotations=ToolAnnotations(readOnlyHint=True))(
             _get_summary_tool
@@ -250,9 +306,9 @@ class McpServer:
         async def index_library(
             library_name: str,
             partition_scope: JsonStrList = [],  # noqa: B006 — read-only, tolerant of stringified arrays
+            force_full_index: bool = False,
             force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
-            force_full_index: bool = False,
         ) -> dict[str, Any]:
             """Index photos in a library
 
@@ -261,8 +317,9 @@ class McpServer:
             to the model context when indexing completes.
 
             By default runs in incremental mode: only new photos are indexed,
-            deleted photos are removed from the manifest.  Use
-            ``force_full_index=True`` to re-process all photos.
+            deleted photos are removed from the index. Sidecar edits on
+            unchanged media are not picked up.
+            Use ``force_full_index=True`` to re-process all photos.
 
             Scans the library for photos, writes XMP sidecars with metadata
             and content hashes, builds leaf manifests, and generates
@@ -270,16 +327,22 @@ class McpServer:
 
             Args:
                 library_name: Name of the library to index (from list_libraries).
-                partition_scope: Folders to index (e.g. ["2024/2024-07"]).
+                partition_scope: Partitions to index (e.g. ["2024/2024-07"]).
+                    Partitions are relative to the library root.
                     Each entry indexes only its direct-child photos, not
-                    descendant subfolders. Defaults to None/empty, which
-                    indexes the entire library (walking every subfolder).
-                force_extract_exif: Re-extract EXIF and overwrite existing XMP
-                    sidecars. Defaults to False.
-                generate_thumbnails: Generate thumbnails.avif AVIF grids.
-                    Defaults to True.
+                    descendant subfolders.
+                    Defaults to None/empty, which indexes the entire library
+                    (walking every subfolder).
                 force_full_index: Re-process all photos even if already indexed.
                     Defaults to False (incremental).
+                force_extract_exif: Re-read EXIF from every media file and regenerate its
+                    XMP sidecar.
+                    DESTRUCTIVE: regenerated sidecars lose any enrichment like
+                    dc:description and dc:subject written by other tools.
+                    Not needed for a normal refresh — use force_full_index.
+                    Defaults to False.
+                generate_thumbnails: Generate thumbnails.avif AVIF grids.
+                    Defaults to True.
             """
             library = self._require_library(library_name)
             base_args: dict[str, Any] = {
@@ -335,16 +398,18 @@ class McpServer:
             library_name: str,
             filters: JsonDict = {},  # noqa: B006 — read-only, tolerant of stringified objects
             full_text_filter: JsonDict = {},  # noqa: B006
-            sort_by: str = "date_taken",
+            sort_by: str = "dateTaken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
             library = self._require_library(library_name)
-            # Woof's MCP search always starts a 0, further pages managed by the Gallery
-            page = 0
+            # The MCP client never paginates — it only hands the session_token to
+            # browse_gallery. Page navigation happens entirely in the gallery's HTTP
+            # backend (GallerySession.fetch_page), which re-issues the query per page.
+            # So query_args carry no "page" key; fetch_page supplies it, and this
+            # initial call requests page 0 explicitly.
             args: dict[str, Any] = {
                 "sort_by": sort_by,
                 "sort_order": sort_order,
-                "page": page,
             }
             if filters:
                 args["filters"] = filters
@@ -353,7 +418,7 @@ class McpServer:
 
             try:
                 result = await self._agent.call_tool(
-                    "wally", "search_photos", args, library, progress_ctx=ctx
+                    "wally", "search_photos", {**args, "page": 0}, library, progress_ctx=ctx
                 )
             except AgentError as exc:
                 _log.error("search_photos(%r) failed: %s", library_name, exc)
@@ -361,22 +426,18 @@ class McpServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
                 library=library,
                 agent=self._agent,
                 query_args=args,
                 total_count=result.get("totalCount"),
-                page=page,
-                page_size=page_size,
+                page=0,
+                page_size=result.get("pageSize", 500),
                 matches=matches,
             )
             return {
                 "session_token": token,
                 "totalCount": result.get("totalCount", len(matches)),
-                "page": result.get("page", 0),
-                "pageSize": page_size,
-                "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
             }
@@ -384,14 +445,27 @@ class McpServer:
         # Docstring assigned before registration — the decorator below reads
         # __doc__ immediately to build the tool description.
         _search_photos_tool.__doc__ = f"""\
-            Search photos in a library
+            Search photos index in a library matching structured predicates.
 
             Use ``list_search_fields`` to discover available filter fields and
             their expected formats before constructing a query.
 
+            Returns a session token only — nothing is displayed.
+            Pass the token to ``browse_gallery`` to show results.
+
             Args:
                 library_name: Name of the library to search.
                 {_FILTER_SYNTAX_DOC}
+                {_SORT_SYNTAX_DOC}
+
+            Returns:
+                ``session_token`` — opaque handle to the stored results; pass it
+                to ``browse_gallery``. The matches themselves are held server-side and
+                are not returned here. Pagination is handled by the gallery, not the
+                caller.
+                ``totalCount`` — total matches for the query.
+                ``errors`` — count of read failures.
+                ``errorDetails`` — per-failure error messages.
             """
         mcp.tool(name="search_photos", annotations=ToolAnnotations(readOnlyHint=True))(
             _search_photos_tool
@@ -484,5 +558,7 @@ class McpServer:
     def _require_library(self, name: str) -> LibraryConfig:
         library = self.config.get_library(name)
         if library is None:
-            raise ValueError(f"Library {name!r} not found. Use add_library to register it first.")
+            raise ValueError(f"""\
+                Library {name!r} not found. Use list_libraries to get existing libraries
+                or add_library to register a new one.""")
         return library

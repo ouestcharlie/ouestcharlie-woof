@@ -472,6 +472,8 @@ async def test_search_photos_calls_wally(server: McpServer) -> None:
         assert mock.call_args[0][0] == "wally"
         assert mock.call_args[0][1] == "search_photos"
         assert mock.call_args[0][2]["filters"] == filters
+        # This entry point always requests Wally's first page.
+        assert mock.call_args[0][2]["page"] == 0
 
 
 @pytest.mark.asyncio
@@ -558,6 +560,13 @@ async def test_search_photos_returns_total_count_and_token(server: McpServer) ->
     assert result["totalCount"] == 3
     assert "pageStats" not in result
     assert "session_token" in result
+    # Pagination is a gallery/HTTP concern — the MCP tool must not surface it.
+    assert "page" not in result
+    assert "pageSize" not in result
+    assert "hasMore" not in result
+    # query_args stored for the session carry no "page" key; fetch_page supplies it.
+    session = server._sessions.sessions[result["session_token"]]
+    assert "page" not in session.queryArgs
 
 
 @pytest.mark.asyncio

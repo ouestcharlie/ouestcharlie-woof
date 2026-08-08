@@ -43,21 +43,16 @@ Woof exposes OuEstCharlie capabilities as MCP tools to Claude Desktop. Claude ca
 
 The gallery display uses a two-step flow to avoid passing large match payloads back through Claude as tool arguments (which would produce excessive `tool-input-partial` MCP notifications):
 
-1. **`search_photos`** calls Wally (with optional `sort_by`, `sort_order`, `page` parameters — `page` is 0-indexed), stores one page of matches (≤ 500) in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
+1. **`search_photos`** calls Wally (with optional `sort_by`, `sort_order` parameters), stores the first Wally page of matches (≤ 500) in an in-memory session keyed by a random `session_token`, and returns only lightweight statistics to Claude:
    ```json
    {
      "session_token": "<22-char opaque token>",
      "totalCount": 5432,
-     "page": 0,
-     "pageSize": 500,
-     "hasMore": true,
-     "pageStats": {
-       "partitions": { "2024/01": 12, "2024/07": 488 },
-       "date_range": { "earliest": "2024-01-03T...", "latest": "2024-07-28T..." },
-     }
+     "errors": 0,
+     "errorDetails": []
    }
    ```
-   The session also stores a `queryContext` (library, Wally args, current page, pageSize) that enables the gallery to load additional server pages on demand.
+   The MCP client never paginates — it only hands the `session_token` to `browse_gallery`. Page navigation is entirely a gallery/HTTP-backend concern, so `search_photos` neither takes a `page` argument nor returns `page`/`pageSize`/`hasMore`. The stored `queryContext` (library, Wally args, current page, pageSize) is what lets the gallery load additional server pages on demand; its `args` carry no `page` key, because `GallerySession.fetch_page` supplies the target page per request.
 
 2. **`browse_gallery`** receives one or more `session_token` values, looks up the sessions, merges them (deduplicating by `contentHash`), and returns the combined match list to the gallery iframe via the MCP App tool result mechanism. When merging a single token whose session has a `queryContext`, the merged session inherits that context so the gallery can still paginate Wally pages; multi-session merges drop `queryContext`.
 
@@ -71,7 +66,7 @@ The session data schema:
   "totalCount":   5432,
   "queryContext": {
     "library_name": "kDrive Photos",
-    "args":         { "root": "", "sort_by": "date_taken", "sort_order": "desc", "page": 0 },
+    "args":         { "root": "", "sort_by": "date_taken", "sort_order": "desc" },
     "page":         0,
     "pageSize":     500
   }
