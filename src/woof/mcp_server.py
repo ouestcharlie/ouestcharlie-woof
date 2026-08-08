@@ -402,12 +402,14 @@ class McpServer:
             sort_order: str = "desc",
         ) -> dict[str, Any]:
             library = self._require_library(library_name)
-            # Woof's MCP search always starts a 0, further pages managed by the Gallery
-            page = 0
+            # The MCP client never paginates — it only hands the session_token to
+            # browse_gallery. Page navigation happens entirely in the gallery's HTTP
+            # backend (GallerySession.fetch_page), which re-issues the query per page.
+            # So query_args carry no "page" key; fetch_page supplies it, and this
+            # initial call requests page 0 explicitly.
             args: dict[str, Any] = {
                 "sort_by": sort_by,
                 "sort_order": sort_order,
-                "page": page,
             }
             if filters:
                 args["filters"] = filters
@@ -416,7 +418,7 @@ class McpServer:
 
             try:
                 result = await self._agent.call_tool(
-                    "wally", "search_photos", args, library, progress_ctx=ctx
+                    "wally", "search_photos", {**args, "page": 0}, library, progress_ctx=ctx
                 )
             except AgentError as exc:
                 _log.error("search_photos(%r) failed: %s", library_name, exc)
@@ -424,22 +426,18 @@ class McpServer:
             # Store matches server-side; return only a token so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            page_size: int = result.get("pageSize", 500)
             token = self._sessions.create(
                 library=library,
                 agent=self._agent,
                 query_args=args,
                 total_count=result.get("totalCount"),
-                page=page,
-                page_size=page_size,
+                page=0,
+                page_size=result.get("pageSize", 500),
                 matches=matches,
             )
             return {
                 "session_token": token,
                 "totalCount": result.get("totalCount", len(matches)),
-                "page": result.get("page", 0),
-                "pageSize": page_size,
-                "hasMore": result.get("hasMore", False),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
             }
@@ -461,13 +459,11 @@ class McpServer:
                 {_SORT_SYNTAX_DOC}
 
             Returns:
-                ``session_token`` — opaque handle to the stored result page; pass it
+                ``session_token`` — opaque handle to the stored results; pass it
                 to ``browse_gallery``. The matches themselves are held server-side and
-                are not returned here.
-                ``totalCount`` — total matches across all pages.
-                ``page`` — 0-indexed page returned (always 0 from this entry point).
-                ``pageSize`` — number of records per page.
-                ``hasMore`` — True if further pages remain.
+                are not returned here. Pagination is handled by the gallery, not the
+                caller.
+                ``totalCount`` — total matches for the query.
                 ``errors`` — count of read failures.
                 ``errorDetails`` — per-failure error messages.
             """
