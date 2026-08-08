@@ -116,7 +116,7 @@
 
   function formatSummaryMarkdown(s) {
     const lines = [`Indexing complete for **${scopeLabel}**.`];
-    if (s?.totalPhotosProcessed !== undefined) lines.push(`- Photos processed: ${s.totalPhotosProcessed}`);
+    if (s?.totalPhotosProcessed !== undefined) lines.push(`- Items processed: ${s.totalPhotosProcessed}`);
     if (s?.totalSidecarsCreated !== undefined) lines.push(`- Sidecars created: ${s.totalSidecarsCreated}`);
     if (s?.totalThumbnailsRebuilt !== undefined) lines.push(`- Thumbnail batches rebuilt: ${s.totalThumbnailsRebuilt}`);
     if (s?.totalErrors !== undefined && s.totalErrors > 0) lines.push(`- Errors: ${s.totalErrors}`);
@@ -183,7 +183,7 @@
       {#if summary}
         <ul class="summary-list">
           {#if summary.totalPhotosProcessed !== undefined}
-            <li>{m.indexing_photos_processed()} <strong>{summary.totalPhotosProcessed}</strong></li>
+            <li>{m.indexing_items_processed()} <strong>{summary.totalPhotosProcessed}</strong></li>
           {/if}
           {#if summary.totalSidecarsCreated !== undefined}
             <li>{m.indexing_sidecars_created()} <strong>{summary.totalSidecarsCreated}</strong></li>

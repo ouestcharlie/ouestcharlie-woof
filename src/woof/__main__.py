@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import os
 
-from ouestcharlie_toolkit import setup_logging
+from woof.logging_setup import setup_logging
 
 _log_file = setup_logging("woof", log_file_env_var="WOOF_LOG_FILE", level=logging.DEBUG)
 _log = logging.getLogger(__name__)

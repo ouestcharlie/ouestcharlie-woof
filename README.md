@@ -156,36 +156,45 @@ The gallery panel will appear inline in your conversation with matching results.
 
 ## Storage
 
-V1 supports **local filesystem** and **cloud_mount** libraries on macOS, Linux, and Windows:
+Woof supports **local filesystem** and **cloud_mount** libraries on macOS, Linux, and Windows:
 - **filsystem** for a standard local hard drive or SSD, including local network drive (e.g. NAS)
 - **clound_mount** for a folder synced from iCloud Drive, OneDrive, Google Drive, or Infomaniak kDrive — as long as files are downloaded and locally accessible
 
-Native cloud storage (S3, Azure, GCS, OneDrive API) is planned for V2.
+Native cloud storage (S3, Azure, GCS, OneDrive API) is planned.
 
 ---
 
 ## Status
 
-Woof is an **early preview** targeting a focused V1 scope:
+Woof is an **early preview**. It works well today for browsing and searching a local photo library.
 
-| Feature | Status |
+### Current features
+
+| Feature | Notes |
 |---|---|
-| Local filesystem indexing (macOS, Linux, Windows) | Working |
-| Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Working — files must be locally synced |
-| JPEG, PNG, TIFF, HEIC, RAW support | Working (HEIC and RAW dependant on the build options) |
-| Date, dimensions, GPS bounding box, camera make and model, camera settings, tags search | Working |
-| Full-text search on photo description | Working |
-| Sort ascending or descending on any field | Working |
-| Gallery view (Claude Desktop or Goose) as grid or preview  | Working |
-| Video support | Planned for V2 |
-| Albums and smart filters | Planned for V2 |
-| Share pictures with host (Claude Desktop, ChatGPT, Goose...) | Planned for V2 |
-| Enrichment agents (faces, scene recognition) | Planned for V2 |
-| Change detection / automatic re-indexing | Partial (added and removed pictures) |
-| Mobile companion app | Planned for V3 |
-| Native cloud libraries (S3, OneDrive, GCS…) | Planned for V3 |
+| Local filesystem indexing (macOS, Linux, Windows) |  |
+| Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Files must be locally synced |
+| Photos (JPEG, PNG, TIFF, HEIC, RAW) | HEIC and RAW depend on the build options |
+| Video support (MOV, MP4) ||
+| Search description, tags, rating, date, partition | full text search on description |
+| Search photo features (date, dimensions, GPS bounding box) |  |
+| Search video features (duration, dimensions, GPS bounding box) |  |
+| Search camera features (make, model, aperture, lens) | | 
+| Sort ascending or descending on any field |  |
+| Gallery view (Claude Desktop or Goose) as grid or preview | Photo details on preview |
+| Change detection / automatic re-indexing | Partial — added and removed pictures |
 
-**What this means for you**: V1 works well for browsing and searching a local photo library. If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+### Planned features
+
+| Feature |
+|---|
+| Albums and smart filters |
+| Share pictures with host (Claude Desktop, ChatGPT, Goose…) |
+| Enrichment agents (faces, scene recognition) |
+| Mobile companion app |
+| Native cloud libraries (S3, OneDrive, GCS…) |
+
+**What this means for you**: if you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 
 ---
 

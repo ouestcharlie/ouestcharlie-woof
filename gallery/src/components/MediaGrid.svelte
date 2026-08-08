@@ -42,8 +42,8 @@
 
   /**
    * Display-page offset for `serverPage` within `pageMap`.
-   * Full server pages hold `pageSize` photos; the last page of each entry holds
-   * `entryTotal - (pageCount-1)*pageSize` photos (may be partial).
+   * Full server pages hold `pageSize` items; the last page of each entry holds
+   * `entryTotal - (pageCount-1)*pageSize` items (may be partial).
    */
   function absolutePageFromMap(sp, lp, dps) {
     let offset = 0, remaining = sp;
@@ -80,7 +80,7 @@
       onPageSelect((localPage - 1) * displayPageSize);
     } else if (serverPage > 0 && onFetchServerPage) {
       await onFetchServerPage(serverPage - 1);
-      // After fetch, select last photo of the newly loaded server page.
+      // After fetch, select last item of the newly loaded server page.
       onPageSelect(matches.length - 1);
     }
   }
@@ -139,6 +139,14 @@
         />
       {:else}
         <span class="label">{match.filename}</span>
+      {/if}
+      {#if match.mediaType === 'video'}
+        <!-- Play-icon overlay marks video cover frames (OEC-39 §4). -->
+        <span class="play-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </span>
       {/if}
     </div>
   {/each}
@@ -221,6 +229,23 @@
     background-size: 320px 100%;
     animation: shimmer 1.4s infinite;
     cursor: default;
+  }
+
+  /* Play badge — centered over a video's cover-frame tile. */
+  .play-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    pointer-events: none;
   }
 
   .label {

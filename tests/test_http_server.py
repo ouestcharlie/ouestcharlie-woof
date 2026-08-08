@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -406,3 +408,77 @@ def test_page_endpoint_returns_502_on_fetch_failure() -> None:
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(f"{server_url}/api/results/{tok}/page/1")
     assert exc_info.value.code == 502
+
+
+# ---------------------------------------------------------------------------
+# proxy_media — video Range forwarding + streaming passthrough (OEC-39a §2)
+# ---------------------------------------------------------------------------
+
+_UPSTREAM_BODY = bytes(range(256)) * 40  # 10240 deterministic bytes
+
+
+class _FakeWallyHandler(BaseHTTPRequestHandler):
+    """Stand-in for Wally: honours single-range requests and records headers."""
+
+    received_headers: dict = {}
+
+    def log_message(self, *args):  # silence test noise
+        pass
+
+    def do_GET(self):  # noqa: N802 (BaseHTTPRequestHandler API)
+        type(self).received_headers = dict(self.headers)
+        rng = self.headers.get("Range")
+        if rng and rng.startswith("bytes="):
+            start_s, _, end_s = rng[len("bytes=") :].partition("-")
+            start = int(start_s)
+            end = int(end_s) if end_s else len(_UPSTREAM_BODY) - 1
+            slice_ = _UPSTREAM_BODY[start : end + 1]
+            self.send_response(206)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(slice_)))
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(_UPSTREAM_BODY)}")
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            self.wfile.write(slice_)
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(_UPSTREAM_BODY)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            self.wfile.write(_UPSTREAM_BODY)
+
+
+def _start_fake_wally() -> tuple[int, str]:
+    """Start the fake upstream on 127.0.0.1 and return (port, token)."""
+    _FakeWallyHandler.received_headers = {}
+    server = HTTPServer(("127.0.0.1", 0), _FakeWallyHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server.server_address[1], "sekret"
+
+
+def test_proxy_video_range_passthrough() -> None:
+    """A Range request is forwarded to Wally and its 206 flows back unchanged."""
+    port, token = _start_fake_wally()
+    server_url = start_http_server(wally_connection_fn=lambda lib: (port, token))
+    url = f"{server_url}/video/testlib/2024/2024-07/abc123.mp4"
+    req = urllib.request.Request(url, headers={"Range": "bytes=100-199"})
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 206
+        assert resp.headers["Content-Range"] == f"bytes 100-199/{len(_UPSTREAM_BODY)}"
+        assert resp.headers["Accept-Ranges"] == "bytes"
+        assert resp.read() == _UPSTREAM_BODY[100:200]
+    # The proxy forwarded the Range header and the bearer token upstream.
+    assert _FakeWallyHandler.received_headers.get("Range") == "bytes=100-199"
+    assert _FakeWallyHandler.received_headers.get("Authorization") == f"Bearer {token}"
+
+
+def test_proxy_video_full_body_when_no_range() -> None:
+    port, token = _start_fake_wally()
+    server_url = start_http_server(wally_connection_fn=lambda lib: (port, token))
+    url = f"{server_url}/video/testlib/2024/2024-07/abc123.mp4"
+    with urllib.request.urlopen(url) as resp:
+        assert resp.status == 200
+        assert resp.headers["Content-Type"] == "video/mp4"
+        assert resp.read() == _UPSTREAM_BODY
+    assert "Range" not in _FakeWallyHandler.received_headers

@@ -21,7 +21,6 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-py-toolkit>=0.13.0",
     "ouestcharlie-whitebeard>=0.13.0",
     "ouestcharlie-wally>=0.13.0",
 ]

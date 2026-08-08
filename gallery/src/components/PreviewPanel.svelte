@@ -9,12 +9,19 @@
    *   selectedIndex: number,
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
+   *   videoUrl?: (match: any) => string | null,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, videoUrl = () => null } = $props();
 
   let match = $derived(matches[selectedIndex]);
+  let isVideo = $derived(match?.mediaType === 'video');
+  // Cover-frame JPEG — the crossfade image for photos, the <video> poster for videos.
   let jpegUrl = $derived(previewUrl(match));
+  let videoSrc = $derived(isVideo ? videoUrl(match) : null);
+
+  // Ref to the active <video>, so navigating away can pause it.
+  let videoEl = $state(null);
 
   // Details side panel — overlay on top of the image, collapsed by default.
   let panelOpen = $state(false);
@@ -35,7 +42,7 @@
     spinnerTimer = setTimeout(() => { if (!previewLoaded) showSpinner = true; }, 300);
   });
 
-  // aspect-ratio driven by the photo's natural dimensions.
+  // aspect-ratio driven by the item's natural dimensions.
   // CSS max-width/max-height on .preview-container handle clamping to the viewer bounds,
   // so no JS measurement is needed and the layout reflows automatically on any size change.
   let aspectRatio = $derived(
@@ -45,8 +52,12 @@
   let hasPrev = $derived(selectedIndex > 0);
   let hasNext = $derived(selectedIndex < matches.length - 1);
 
-  function prev() { if (hasPrev) onNavigate(selectedIndex - 1); }
-  function next() { if (hasNext) onNavigate(selectedIndex + 1); }
+  // Pause any playing video before leaving it, otherwise audio keeps playing
+  // off-screen after navigation.
+  function pauseVideo() { videoEl?.pause(); }
+
+  function prev() { if (hasPrev) { pauseVideo(); onNavigate(selectedIndex - 1); } }
+  function next() { if (hasNext) { pauseVideo(); onNavigate(selectedIndex + 1); } }
 
   function onKeydown(e) {
     if (e.key === 'ArrowLeft')  { e.preventDefault(); prev(); }
@@ -101,6 +112,37 @@
     return s;
   }
 
+  // Video duration in seconds → "mm:ss".
+  function formatDuration(sec) {
+    if (sec == null) return null;
+    const total = Math.round(sec);
+    const mm = Math.floor(total / 60);
+    const ss = String(total % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  // Raw ffmpeg codec name → human-friendly label.
+  function codecLabel(codec) {
+    if (!codec) return null;
+    const c = codec.toLowerCase();
+    if (c === 'h264' || c === 'avc' || c === 'avc1') return 'H.264';
+    if (c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1') return 'H.265 / HEVC';
+    return codec;
+  }
+
+  // True when the current browser can't decode the source codec, so a <video>
+  // would silently fail to play (the HEVC-in-a-non-Safari-browser case).
+  function codecUnplayable(codec) {
+    if (!codec) return false;
+    const c = codec.toLowerCase();
+    if (c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1') {
+      const v = document.createElement('video');
+      return v.canPlayType('video/mp4; codecs="hvc1"') === ''
+        && v.canPlayType('video/mp4; codecs="hev1"') === '';
+    }
+    return false;
+  }
+
   // GPS arrives as [lat, lon]; render with a fixed precision and hemisphere.
   function formatGps(gps) {
     if (!Array.isArray(gps) || gps.length !== 2) return null;
@@ -122,39 +164,59 @@
   let captionTags = $derived(match?.tags?.slice(0, 5) ?? []);
   let cameraLine = $derived(formatCamera(match));
   let gpsLine = $derived(formatGps(match?.gps));
+  let durationLine = $derived(isVideo ? formatDuration(match?.durationSeconds) : null);
+  let codecName = $derived(isVideo ? codecLabel(match?.videoCodec) : null);
+  let codecWarn = $derived(isVideo && codecUnplayable(match?.videoCodec));
 
   onMount(() => { window.addEventListener('keydown', onKeydown); });
-  onDestroy(() => { window.removeEventListener('keydown', onKeydown); });
+  onDestroy(() => { window.removeEventListener('keydown', onKeydown); pauseVideo(); });
 </script>
 
 <div class="panel">
   <div class="viewer">
     <div class="preview-container" style="aspect-ratio: {aspectRatio};">
-      <!-- Previous image stays visible underneath while the next one loads. -->
-      {#if shownUrl}
-        <img src={shownUrl} class="preview-img" alt="" aria-hidden="true" />
-      {/if}
+      {#if isVideo}
+        <!--
+          Video: <video> with the cover-frame JPEG as poster so the panel shows
+          an image instantly while the stream buffers. No autoplay —
+          user-initiated playback only.
+        -->
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video
+          bind:this={videoEl}
+          class="preview-video"
+          src={videoSrc}
+          poster={jpegUrl}
+          controls
+          preload="metadata"
+        ></video>
+      {:else}
+        <!-- Previous image stays visible underneath while the next one loads. -->
+        {#if shownUrl}
+          <img src={shownUrl} class="preview-img" alt="" aria-hidden="true" />
+        {/if}
 
-      <!--
-        Incoming image. Always in DOM (when jpegUrl is available) so the browser
-        fetches it and fires onload reliably — display:none suppresses onload
-        in some sandboxed environments (e.g. Claude Desktop iframe).
-        Fades in once loaded, then becomes the new shownUrl.
-      -->
-      {#if jpegUrl}
-        <img
-          src={jpegUrl}
-          class="preview-img incoming"
-          class:loaded={previewLoaded}
-          onload={() => { previewLoaded = true; showSpinner = false; shownUrl = jpegUrl; }}
-          alt={match.filename}
-        />
-      {/if}
+        <!--
+          Incoming image. Always in DOM (when jpegUrl is available) so the browser
+          fetches it and fires onload reliably — display:none suppresses onload
+          in some sandboxed environments (e.g. Claude Desktop iframe).
+          Fades in once loaded, then becomes the new shownUrl.
+        -->
+        {#if jpegUrl}
+          <img
+            src={jpegUrl}
+            class="preview-img incoming"
+            class:loaded={previewLoaded}
+            onload={() => { previewLoaded = true; showSpinner = false; shownUrl = jpegUrl; }}
+            alt={match.filename}
+          />
+        {/if}
 
-      {#if showSpinner}
-        <div class="loading-overlay" class:dim={!!shownUrl}>
-          <div class="spinner"></div>
-        </div>
+        {#if showSpinner}
+          <div class="loading-overlay" class:dim={!!shownUrl}>
+            <div class="spinner"></div>
+          </div>
+        {/if}
       {/if}
 
       <button class="nav prev" onclick={prev} disabled={!hasPrev}>‹</button>
@@ -188,7 +250,11 @@
         <div class="caption-foot">
           <span class="caption-filename">{match.filename}</span>
           {#if match.dateTaken}
+            <span class="caption-sep" aria-hidden="true">–</span>
             <span class="caption-date">{formatDate(match.dateTaken)}</span>
+          {/if}
+          {#if durationLine}
+            <span class="caption-duration">{durationLine}</span>
           {/if}
         </div>
       </div>
@@ -228,8 +294,33 @@
             {#if formatDimensions(match)}
               <div class="field"><span class="field-key">{m.field_dimensions()}</span><span class="field-val">{formatDimensions(match)}</span></div>
             {/if}
+            {#if durationLine}
+              <div class="field"><span class="field-key">{m.field_duration()}</span><span class="field-val">{durationLine}</span></div>
+            {/if}
           </section>
 
+          {#if isVideo}
+            <section class="subpane">
+              <h3>{m.preview_video()}</h3>
+              {#if codecName}
+                <div class="field">
+                  <span class="field-key">{m.field_codec()}</span>
+                  <span class="field-val">
+                    {codecName}
+                    {#if codecWarn}
+                      <span class="codec-warn">{m.preview_codec_warning({ codec: codecName })}</span>
+                    {/if}
+                  </span>
+                </div>
+              {/if}
+              {#if match.hasAudio != null}
+                <div class="field"><span class="field-key">{m.field_audio()}</span><span class="field-val">{match.hasAudio ? m.preview_audio_yes() : m.preview_audio_no()}</span></div>
+              {/if}
+              {#if cameraLine}
+                <div class="field"><span class="field-key">{m.field_camera()}</span><span class="field-val">{cameraLine}</span></div>
+              {/if}
+            </section>
+          {:else}
           <section class="subpane">
             <h3>{m.preview_camera()}</h3>
             {#if cameraLine}
@@ -254,6 +345,7 @@
               <div class="field empty">{m.preview_no_camera()}</div>
             {/if}
           </section>
+          {/if}
 
           <section class="subpane">
             <h3>{m.preview_location()}</h3>
@@ -308,6 +400,15 @@
     object-fit: contain;
   }
 
+  .preview-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+
   .preview-img.incoming {
     opacity: 0;
   }
@@ -344,11 +445,14 @@
     to { transform: rotate(360deg); }
   }
 
-  /* Nav arrows overlay the image — keep semi-transparent black regardless of theme */
+  /* Nav arrows overlay the image — keep semi-transparent black regardless of theme.
+     Centered as a fixed-height band (not full height) so they clear the video
+     controls at the bottom and the caption at the top. */
   .nav {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 40%;
     width: 3rem;
     display: flex;
     align-items: center;
@@ -363,8 +467,8 @@
     z-index: 1;
   }
 
-  .nav.prev { left: 0; border-radius: var(--border-radius-xs, 4px) 0 0 var(--border-radius-xs, 4px); }
-  .nav.next { right: 0; border-radius: 0 var(--border-radius-xs, 4px) var(--border-radius-xs, 4px) 0; }
+  .nav.prev { left: 0; border-radius: 0 var(--border-radius-xs, 4px) var(--border-radius-xs, 4px) 0; }
+  .nav.next { right: 0; border-radius: var(--border-radius-xs, 4px) 0 0 var(--border-radius-xs, 4px); }
 
   .nav:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.45);
@@ -400,32 +504,34 @@
     background: rgba(0, 0, 0, 0.6);
   }
 
-  /* Caption bar — scrim + text overlaid at the image bottom. */
+  /* Caption bar — scrim + text overlaid at the image top, so it clears the
+     video controls at the bottom. Right padding leaves room for the info
+     toggle in the top-right corner. */
   .caption {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    padding: 0.6rem 0.8rem 0.7rem;
+    top: 0;
+    padding: 0.7rem 3rem 0.8rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     color: #fff;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
     z-index: 2;
     pointer-events: none;
   }
 
   .caption-desc {
-    font-size: 0.85rem;
-    line-height: 1.3;
+    font-size: 1rem;
+    line-height: 1.35;
   }
 
   .caption-foot {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem 0.75rem;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     opacity: 0.9;
   }
 
@@ -526,6 +632,15 @@
   .field.empty {
     opacity: 0.5;
     font-style: italic;
+  }
+
+  /* Inline playability warning next to the codec row. */
+  .codec-warn {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    color: #f5a623;
+    opacity: 0.9;
   }
 
   .stars {

@@ -25,7 +25,6 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-py-toolkit>=0.13.0",
     "ouestcharlie-whitebeard>=0.13.0",
     "ouestcharlie-wally>=0.13.0",
 ]
@@ -39,7 +38,6 @@ woof = "woof.__main__:main"
 woof-bridge = "woof.bridge:main"
 
 [tool.uv.sources]
-ouestcharlie-py-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
 ouestcharlie-whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
 ouestcharlie-wally = { path = "../ouestcharlie-wally", editable = true }
 

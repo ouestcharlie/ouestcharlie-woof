@@ -18,9 +18,26 @@ const MATCH2 = {
   height: 2000,
 };
 
+const VIDEO_MATCH = {
+  contentHash: 'vid456',
+  partition: '2024/2024-07',
+  filename: 'MOV_001.mov',
+  width: 1920,
+  height: 1080,
+  mediaType: 'video',
+  durationSeconds: 95,
+  videoCodec: 'h264',
+  hasAudio: true,
+};
+
 const previewUrl = (m) =>
   m?.contentHash
     ? `http://127.0.0.1:8080/previews/test/${m.partition}/${m.contentHash}.jpg`
+    : null;
+
+const videoUrl = (m) =>
+  m?.contentHash
+    ? `http://127.0.0.1:8080/video/test/${m.partition}/${m.contentHash}.mp4`
     : null;
 
 function makeProps(matches, selectedIndex = 0) {
@@ -29,6 +46,7 @@ function makeProps(matches, selectedIndex = 0) {
     selectedIndex,
     onNavigate: vi.fn(),
     previewUrl,
+    videoUrl,
   };
 }
 
@@ -230,6 +248,81 @@ describe('PreviewPanel — details side panel', () => {
 
   it('renders GPS coordinates when present', async () => {
     const match = { ...MATCH, gps: [48.8566, 2.3522] };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText(/48\.85660° N, 2\.35220° E/)).toBeTruthy();
+  });
+});
+
+describe('PreviewPanel — video rendering', () => {
+  function openPanel(container) {
+    return fireEvent.click(container.querySelector('.info-toggle'));
+  }
+
+  it('renders a <video> with poster and src for a video match', () => {
+    const { container } = render(PreviewPanel, makeProps([VIDEO_MATCH]));
+    const video = container.querySelector('video.preview-video');
+    expect(video).not.toBeNull();
+    expect(video.getAttribute('src')).toContain('/video/test/');
+    expect(video.getAttribute('poster')).toContain('/previews/test/');
+    expect(container.querySelector('img.preview-img')).toBeNull();
+  });
+
+  it('renders a photo with <img>, not <video>', () => {
+    const { container } = render(PreviewPanel, makeProps([MATCH]));
+    expect(container.querySelector('video')).toBeNull();
+    expect(container.querySelector('img.preview-img')).not.toBeNull();
+  });
+
+  it('shows the Video subpane (not Camera) for a video match', async () => {
+    const { container, getByText } = render(PreviewPanel, makeProps([VIDEO_MATCH]));
+    await openPanel(container);
+    const headings = [...container.querySelectorAll('.subpane h3')].map((h) => h.textContent);
+    expect(headings).toEqual(['Overview', 'Video', 'Location']);
+    expect(getByText('H.264')).toBeTruthy();
+  });
+
+  it('renders the duration in the Overview subpane (mm:ss)', async () => {
+    const { container } = render(PreviewPanel, makeProps([VIDEO_MATCH]));
+    await openPanel(container);
+    // Duration appears in both the Overview subpane and the caption bar.
+    const overviewDuration = [...container.querySelectorAll('.subpane .field-val')]
+      .some((el) => el.textContent === '1:35');
+    expect(overviewDuration).toBe(true);
+  });
+
+  it('renders "No" for hasAudio: false (presence check, not truthiness)', async () => {
+    const match = { ...VIDEO_MATCH, hasAudio: false };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('No')).toBeTruthy();
+  });
+
+  it('hides the audio row when hasAudio is absent', async () => {
+    const match = { ...VIDEO_MATCH };
+    delete match.hasAudio;
+    const { container, queryByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(queryByText('Audio')).toBeNull();
+  });
+
+  it('shows container make/model only when present', async () => {
+    const match = { ...VIDEO_MATCH, make: 'Apple', model: 'iPhone 15' };
+    const { container, getByText } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    expect(getByText('Apple iPhone 15')).toBeTruthy();
+  });
+
+  it('does not render photo-only Camera rows for a video', async () => {
+    const { container, queryByText } = render(PreviewPanel, makeProps([VIDEO_MATCH]));
+    await openPanel(container);
+    expect(queryByText('Lens')).toBeNull();
+    expect(queryByText('ISO')).toBeNull();
+    expect(queryByText('Aperture')).toBeNull();
+  });
+
+  it('populates the Location subpane for a video with GPS', async () => {
+    const match = { ...VIDEO_MATCH, gps: [48.8566, 2.3522] };
     const { container, getByText } = render(PreviewPanel, makeProps([match]));
     await openPanel(container);
     expect(getByText(/48\.85660° N, 2\.35220° E/)).toBeTruthy();

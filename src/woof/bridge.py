@@ -43,6 +43,7 @@ from .discovery import (
     spawn_log_path,
     startup_lock,
 )
+from .logging_setup import setup_logging
 
 _log = logging.getLogger(__name__)
 
@@ -188,8 +189,6 @@ async def stop_running_instance() -> bool:
 
 
 def main() -> None:
-    from ouestcharlie_toolkit import setup_logging
-
     setup_logging("woof-bridge", log_file_env_var="WOOF_BRIDGE_LOG_FILE", level=logging.DEBUG)
 
     if "--stop" in sys.argv[1:]:
