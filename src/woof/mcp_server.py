@@ -558,5 +558,7 @@ class McpServer:
     def _require_library(self, name: str) -> LibraryConfig:
         library = self.config.get_library(name)
         if library is None:
-            raise ValueError(f"Library {name!r} not found. Use add_library to register it first.")
+            raise ValueError(f"""\
+                Library {name!r} not found. Use list_libraries to get existing libraries
+                or add_library to register a new one.""")
         return library
