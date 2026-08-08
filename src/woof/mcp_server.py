@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 from mcp.types import ToolAnnotations
+from pydantic import BeforeValidator
 
 from .agent_client import AgentClient, AgentError
 from .config import LibraryConfig, WoofConfig
@@ -63,27 +65,37 @@ full_text_filter: Full-text search over one or more TEXT-typed
     Compatible with ``filters`` (SQL predicates applied on top of FTS)."""
 
 
-def _coerce_json_param(value: Any, expected_type: type, param_name: str) -> Any:
-    """Coerce a dict/list-typed MCP tool argument that arrived as a JSON string.
+def _json_coercer(expected_type: type, param_name: str) -> Callable[[Any], Any]:
+    """Build a pydantic ``BeforeValidator`` that tolerates JSON-stringified arguments.
 
     Some MCP clients (observed with Claude Desktop's CoWork mode) serialize
     object/array-typed tool arguments to JSON strings instead of sending them
-    as native objects/arrays. Accept both shapes here so a client-side
-    serialization bug doesn't surface as an opaque downstream failure.
+    as native objects/arrays. Running as a ``BeforeValidator`` (i.e. before
+    pydantic's own type check) lets the argument keep a clean ``array``/``object``
+    JSON schema — so well-behaved clients render the correct input widget — while
+    a stringified value is still parsed rather than rejected.
     """
-    if value is None or isinstance(value, expected_type):
-        return value
-    if isinstance(value, str):
+
+    def _coerce(value: Any) -> Any:
+        if not isinstance(value, str):
+            # Native value or None: let pydantic validate against expected_type.
+            return value
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"{param_name} must be a {expected_type.__name__} or JSON string"
             ) from exc
-        if not isinstance(parsed, expected_type):
-            raise ValueError(f"{param_name} must decode to a {expected_type.__name__}")
         return parsed
-    raise ValueError(f"{param_name} must be a {expected_type.__name__} or JSON string")
+
+    return _coerce
+
+
+# Reusable argument annotations: clean array/object schema + JSON-string tolerance.
+# Callers supply a matching literal default (``= []`` / ``= {}``); a mutable default is
+# safe here because the tool bodies only read these arguments, never mutate them.
+JsonStrList = Annotated[list[str], BeforeValidator(_json_coercer(list, "argument"))]
+JsonDict = Annotated[dict, BeforeValidator(_json_coercer(dict, "argument"))]
 
 
 class McpServer:
@@ -183,18 +195,14 @@ class McpServer:
 
         async def _get_summary_tool(
             library_name: str = "",
-            filters: dict | str | None = None,
-            full_text_filter: dict | str | None = None,
+            filters: JsonDict = {},  # noqa: B006 — pydantic Field(default_factory) supplies the real default
+            full_text_filter: JsonDict = {},  # noqa: B006
         ) -> list[Any] | dict[str, Any]:
-            parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
-            parsed_full_text_filter: dict | None = _coerce_json_param(
-                full_text_filter, dict, "full_text_filter"
-            )
             args: dict[str, Any] = {}
-            if parsed_filters is not None:
-                args["filters"] = parsed_filters
-            if parsed_full_text_filter is not None:
-                args["full_text_filter"] = parsed_full_text_filter
+            if filters:
+                args["filters"] = filters
+            if full_text_filter:
+                args["full_text_filter"] = full_text_filter
 
             if library_name:
                 library = self._require_library(library_name)
@@ -241,7 +249,7 @@ class McpServer:
         )
         async def index_library(
             library_name: str,
-            partition_scope: list[str] | None = None,
+            partition_scope: JsonStrList = [],  # noqa: B006 — read-only, tolerant of stringified arrays
             force_extract_exif: bool = False,
             generate_thumbnails: bool = True,
             force_full_index: bool = False,
@@ -274,7 +282,6 @@ class McpServer:
                     Defaults to False (incremental).
             """
             library = self._require_library(library_name)
-            partition_scope = partition_scope or []
             base_args: dict[str, Any] = {
                 "force_extract_exif": force_extract_exif,
                 "generate_thumbnails": generate_thumbnails,
@@ -326,16 +333,12 @@ class McpServer:
         async def _search_photos_tool(
             ctx: Context,
             library_name: str,
-            filters: dict | str | None = None,
-            full_text_filter: dict | str | None = None,
+            filters: JsonDict = {},  # noqa: B006 — read-only, tolerant of stringified objects
+            full_text_filter: JsonDict = {},  # noqa: B006
             sort_by: str = "date_taken",
             sort_order: str = "desc",
         ) -> dict[str, Any]:
             library = self._require_library(library_name)
-            parsed_filters: dict | None = _coerce_json_param(filters, dict, "filters")
-            parsed_full_text_filter: dict | None = _coerce_json_param(
-                full_text_filter, dict, "full_text_filter"
-            )
             # Woof's MCP search always starts a 0, further pages managed by the Gallery
             page = 0
             args: dict[str, Any] = {
@@ -343,10 +346,10 @@ class McpServer:
                 "sort_order": sort_order,
                 "page": page,
             }
-            if parsed_filters is not None:
-                args["filters"] = parsed_filters
-            if parsed_full_text_filter is not None:
-                args["full_text_filter"] = parsed_full_text_filter
+            if filters:
+                args["filters"] = filters
+            if full_text_filter:
+                args["full_text_filter"] = full_text_filter
 
             try:
                 result = await self._agent.call_tool(
@@ -398,7 +401,7 @@ class McpServer:
             annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
         )
         async def browse_gallery(
-            session_tokens: list[str] | str,
+            session_tokens: JsonStrList,
             query_summary: str = "",
         ) -> dict[str, Any]:
             """Display photos from one or more search results in the gallery viewer.
@@ -416,7 +419,7 @@ class McpServer:
                     gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            tokens: list[str] = _coerce_json_param(session_tokens, list, "session_tokens")
+            tokens = session_tokens
             unknown = self._sessions.unknown_tokens(tokens)
             if unknown:
                 return {

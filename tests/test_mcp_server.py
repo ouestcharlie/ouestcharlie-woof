@@ -9,6 +9,8 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastmcp import Context
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 
 from woof.agent_client import AgentClient, AgentError
 from woof.config import LibraryConfig, WoofConfig
@@ -282,6 +284,30 @@ async def test_index_library_with_partition_scope(server: McpServer) -> None:
 
 
 @pytest.mark.asyncio
+async def test_index_library_coerces_stringified_partition_scope(server: McpServer) -> None:
+    """CoWork's MCP client serializes array-typed args as JSON strings; accept both."""
+    captured: dict[str, Any] = {}
+
+    def mock_background(
+        module, tool_name, args, library, *, on_progress=None, on_complete=None, on_error=None
+    ):
+        captured["tool_name"] = tool_name
+        captured["args"] = args
+        return None
+
+    with patch.object(server._agent, "call_tool_background", side_effect=mock_background):
+        await _run_tool(
+            server,
+            "index_library",
+            library_name="testlib",
+            partition_scope=json.dumps(["2024/2024-07"]),
+        )
+
+    assert captured["tool_name"] == "index_partition_scope"
+    assert captured["args"]["partition_scope"] == ["2024/2024-07"]
+
+
+@pytest.mark.asyncio
 async def test_index_library_unknown_library(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "index_library")
     with pytest.raises(ValueError, match="not found"):
@@ -382,8 +408,7 @@ async def test_get_summary_coerces_stringified_filters(server: McpServer) -> Non
     mock = AsyncMock(return_value={"photoCount": 0})
     filters = {"rating": {"min": 4}}
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "get_summary")
-        await tool_fn(library_name="testlib", filters=json.dumps(filters))
+        await _run_tool(server, "get_summary", library_name="testlib", filters=json.dumps(filters))
         assert mock.call_args[0][2]["filters"] == filters
 
 
@@ -412,8 +437,9 @@ async def test_get_summary_coerces_stringified_full_text_filter(server: McpServe
     mock = AsyncMock(return_value={"photoCount": 0})
     fts = {"query": "Canyon", "columns": ["description"]}
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "get_summary")
-        await tool_fn(library_name="testlib", full_text_filter=json.dumps(fts))
+        await _run_tool(
+            server, "get_summary", library_name="testlib", full_text_filter=json.dumps(fts)
+        )
         assert mock.call_args[0][2]["full_text_filter"] == fts
 
 
@@ -454,18 +480,23 @@ async def test_search_photos_coerces_stringified_filters(server: McpServer) -> N
     mock = AsyncMock(return_value={"matches": []})
     filters = {"date": {"min": "2024"}, "rating": {"min": 4}}
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "search_photos")
-        await tool_fn(ctx=None, library_name="testlib", filters=json.dumps(filters))
+        async with Context(server.mcp):
+            await _run_tool(
+                server, "search_photos", library_name="testlib", filters=json.dumps(filters)
+            )
         assert mock.call_args[0][2]["filters"] == filters
 
 
 @pytest.mark.asyncio
 async def test_search_photos_stringified_filters_malformed_raises(server: McpServer) -> None:
     mock = AsyncMock(return_value={"matches": []})
-    with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "search_photos")
-        with pytest.raises(ValueError, match="filters"):
-            await tool_fn(ctx=None, library_name="testlib", filters="not json")
+    # A non-JSON string fails BeforeValidator coercion; FastMCP surfaces it as a
+    # validation error whose message names the offending "filters" field.
+    with (
+        patch.object(server._agent, "call_tool", new=mock),
+        pytest.raises(FastMCPValidationError, match="filters"),
+    ):
+        await _run_tool(server, "search_photos", library_name="testlib", filters="not json")
 
 
 @pytest.mark.asyncio
@@ -496,8 +527,10 @@ async def test_search_photos_coerces_stringified_full_text_filter(server: McpSer
     mock = AsyncMock(return_value={"matches": []})
     fts = {"query": "Canyon", "columns": ["description"]}
     with patch.object(server._agent, "call_tool", new=mock):
-        tool_fn = await _get_tool(server, "search_photos")
-        await tool_fn(ctx=None, library_name="testlib", full_text_filter=json.dumps(fts))
+        async with Context(server.mcp):
+            await _run_tool(
+                server, "search_photos", library_name="testlib", full_text_filter=json.dumps(fts)
+            )
         assert mock.call_args[0][2]["full_text_filter"] == fts
 
 
@@ -579,8 +612,8 @@ async def test_browse_gallery_coerces_stringified_session_tokens(server: McpServ
         totalCount=1,
         matches=matches,
     )
-    tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=json.dumps([token]))
+    tool_result = await _run_tool(server, "browse_gallery", session_tokens=json.dumps([token]))
+    result = tool_result.structured_content
     assert "error" not in result
     assert result["totalCount"] == len(matches)
 
@@ -688,3 +721,14 @@ async def _get_tool(server: McpServer, name: str) -> Any:
     """Extract a tool function from the FastMCP registry by name."""
     tool = await server.mcp.get_tool(name)
     return tool.fn
+
+
+async def _run_tool(server: McpServer, name: str, **arguments: Any) -> Any:
+    """Invoke a tool through FastMCP's validation layer.
+
+    Unlike calling ``tool.fn`` directly, this runs pydantic argument validation
+    — including the ``BeforeValidator`` that coerces JSON-stringified array/object
+    arguments — exactly as a real MCP client request would.
+    """
+    tool = await server.mcp.get_tool(name)
+    return await tool.run(arguments)
