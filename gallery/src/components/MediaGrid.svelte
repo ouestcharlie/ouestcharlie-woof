@@ -1,5 +1,6 @@
 <script>
   import * as m from '../paraglide/messages.js';
+  import { absolutePageFromMap, totalDisplayPages } from '../lib/pagination.js';
 
   /**
    * @type {{
@@ -40,33 +41,9 @@
   // Local page within the current server page (derived from selectedIndex).
   let localPage = $derived(selectedIndex != null ? Math.floor(selectedIndex / displayPageSize) : 0);
 
-  /**
-   * Display-page offset for `serverPage` within `pageMap`.
-   * Full server pages hold `pageSize` items; the last page of each entry holds
-   * `entryTotal - (pageCount-1)*pageSize` items (may be partial).
-   */
-  function absolutePageFromMap(sp, lp, dps) {
-    let offset = 0, remaining = sp;
-    for (const { pageSize, pageCount, totalCount: entryTotal } of pageMap) {
-      const dpp = Math.ceil(pageSize / dps);
-      if (remaining < pageCount) return offset + remaining * dpp + lp;
-      const fullPages = pageCount - 1;
-      const lastSize = entryTotal - fullPages * pageSize;
-      offset += fullPages * dpp + Math.ceil(lastSize / dps);
-      remaining -= pageCount;
-    }
-    return offset + lp;
-  }
+  let absolutePage = $derived(absolutePageFromMap(pageMap, serverPage, localPage, displayPageSize));
 
-  let absolutePage = $derived(absolutePageFromMap(serverPage, localPage, displayPageSize));
-
-  let totalDisplayPages = $derived(
-    Math.max(1, pageMap.reduce((s, { pageSize, pageCount, totalCount: t }) => {
-      const dpp = Math.ceil(pageSize / displayPageSize);
-      const fullPages = pageCount - 1;
-      return s + fullPages * dpp + Math.ceil((t - fullPages * pageSize) / displayPageSize);
-    }, 0))
-  );
+  let displayPageTotal = $derived(totalDisplayPages(pageMap, displayPageSize));
 
   // Number of local display pages within the current server page's loaded matches.
   let localPageCount = $derived(Math.max(1, Math.ceil(matches.length / displayPageSize)));
@@ -104,10 +81,10 @@
 {:else}
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
-<div class="nav nav-top" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
+<div class="nav nav-top" aria-hidden={displayPageTotal <= 1} class:nav-hidden={displayPageTotal <= 1}>
   <button disabled={absolutePage === 0} onclick={prevPage}>{m.grid_previous()}</button>
-  <span>{absolutePage + 1} / {totalDisplayPages}</span>
-  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>{m.grid_next()}</button>
+  <span>{absolutePage + 1} / {displayPageTotal}</span>
+  <button disabled={absolutePage === displayPageTotal - 1} onclick={nextPage}>{m.grid_next()}</button>
 </div>
 
 <div class="grid" bind:clientWidth={gridWidth} style="min-height: {GRID_MIN_HEIGHT}px">
@@ -153,10 +130,10 @@
 </div>
 
 <!-- Always rendered so height stays constant; invisible when single-page -->
-<div class="nav nav-bottom" aria-hidden={totalDisplayPages <= 1} class:nav-hidden={totalDisplayPages <= 1}>
+<div class="nav nav-bottom" aria-hidden={displayPageTotal <= 1} class:nav-hidden={displayPageTotal <= 1}>
   <button disabled={absolutePage === 0} onclick={prevPage}>{m.grid_previous()}</button>
-  <span>{absolutePage + 1} / {totalDisplayPages}</span>
-  <button disabled={absolutePage === totalDisplayPages - 1} onclick={nextPage}>{m.grid_next()}</button>
+  <span>{absolutePage + 1} / {displayPageTotal}</span>
+  <button disabled={absolutePage === displayPageTotal - 1} onclick={nextPage}>{m.grid_next()}</button>
 </div>
 
 {/if}

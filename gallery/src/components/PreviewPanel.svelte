@@ -1,7 +1,19 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import * as m from '../paraglide/messages.js';
-  import { getLocale } from '../paraglide/runtime.js';
+  import {
+    formatDate,
+    formatDimensions,
+    formatCamera,
+    formatAperture,
+    formatExposure,
+    formatFocal,
+    formatDuration,
+    codecLabel,
+    codecUnplayable,
+    formatGps,
+    truncate,
+  } from '../lib/format.js';
 
   /**
    * @type {{
@@ -10,9 +22,10 @@
    *   onNavigate: (index: number) => void,
    *   previewUrl: (match: any) => string | null,
    *   videoUrl?: (match: any) => string | null,
+   *   active?: boolean,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, videoUrl = () => null } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, videoUrl = () => null, active = true } = $props();
 
   let match = $derived(matches[selectedIndex]);
   let isVideo = $derived(match?.mediaType === 'video');
@@ -59,106 +72,17 @@
   function prev() { if (hasPrev) { pauseVideo(); onNavigate(selectedIndex - 1); } }
   function next() { if (hasNext) { pauseVideo(); onNavigate(selectedIndex + 1); } }
 
+  // The panel is kept mounted while hidden (to preserve image load state), so
+  // ignore arrow keys unless the preview is the active view — otherwise grid
+  // browsing would silently advance the selection in the background.
   function onKeydown(e) {
+    if (!active) return;
     if (e.key === 'ArrowLeft')  { e.preventDefault(); prev(); }
     if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
   }
 
-  // Format ISO datetime string to a locale-aware human-readable form.
-  // e.g. "2024-07-15T14:32:00" → "July 15, 2024 at 2:32 PM"
-  function formatDate(raw) {
-    if (!raw) return null;
-    const d = new Date(raw);
-    if (isNaN(d)) return raw;
-    return d.toLocaleString(getLocale(), {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  }
-
-  // --- Field formatting helpers (all return null when the value is absent) ---
-
-  function formatDimensions(m) {
-    return m?.width && m?.height ? `${m.width} × ${m.height}` : null;
-  }
-
-  function formatCamera(m) {
-    const parts = [m?.make, m?.model].filter(Boolean);
-    return parts.length ? parts.join(' ') : null;
-  }
-
-  // EXIF values arrive as rationals decoded to floats, so they carry noise
-  // (e.g. 1.7999999523 or 5.5399999). Round to `decimals` and drop any
-  // trailing zeros so "8.0" → "8" and "5.50" → "5.5".
-  function roundTrim(v, decimals = 1) {
-    return parseFloat(v.toFixed(decimals)).toString();
-  }
-
-  function formatAperture(v) {
-    return v != null ? `f/${roundTrim(v)}` : null;
-  }
-
-  // Exposure time in seconds → "1/250 s" for sub-second, "2 s" otherwise.
-  function formatExposure(v) {
-    if (v == null) return null;
-    if (v >= 1) return `${roundTrim(v)} s`;
-    return `1/${Math.round(1 / v)} s`;
-  }
-
-  function formatFocal(m) {
-    if (m?.focalLength == null) return null;
-    let s = `${roundTrim(m.focalLength)} mm`;
-    if (m.focalLength35mm != null) s += ` (${Math.round(m.focalLength35mm)} mm eq.)`;
-    return s;
-  }
-
-  // Video duration in seconds → "mm:ss".
-  function formatDuration(sec) {
-    if (sec == null) return null;
-    const total = Math.round(sec);
-    const mm = Math.floor(total / 60);
-    const ss = String(total % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
-  }
-
-  // Raw ffmpeg codec name → human-friendly label.
-  function codecLabel(codec) {
-    if (!codec) return null;
-    const c = codec.toLowerCase();
-    if (c === 'h264' || c === 'avc' || c === 'avc1') return 'H.264';
-    if (c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1') return 'H.265 / HEVC';
-    return codec;
-  }
-
-  // True when the current browser can't decode the source codec, so a <video>
-  // would silently fail to play (the HEVC-in-a-non-Safari-browser case).
-  function codecUnplayable(codec) {
-    if (!codec) return false;
-    const c = codec.toLowerCase();
-    if (c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1') {
-      const v = document.createElement('video');
-      return v.canPlayType('video/mp4; codecs="hvc1"') === ''
-        && v.canPlayType('video/mp4; codecs="hev1"') === '';
-    }
-    return false;
-  }
-
-  // GPS arrives as [lat, lon]; render with a fixed precision and hemisphere.
-  function formatGps(gps) {
-    if (!Array.isArray(gps) || gps.length !== 2) return null;
-    const [lat, lon] = gps;
-    if (lat == null || lon == null) return null;
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    return `${Math.abs(lat).toFixed(5)}° ${ns}, ${Math.abs(lon).toFixed(5)}° ${ew}`;
-  }
-
   // Caption bar: truncate the description to keep the overlay compact.
   const CAPTION_MAX = 100;
-  function truncate(text, max) {
-    if (!text) return null;
-    return text.length > max ? `${text.slice(0, max)}…` : text;
-  }
 
   let captionDescription = $derived(truncate(match?.description, CAPTION_MAX));
   let captionTags = $derived(match?.tags?.slice(0, 5) ?? []);

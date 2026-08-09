@@ -1,6 +1,5 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { App, applyHostStyleVariables, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
   import MediaGrid from './components/MediaGrid.svelte';
   import PreviewPanel from './components/PreviewPanel.svelte';
   import IndexingProgress from './components/IndexingProgress.svelte';
@@ -15,6 +14,8 @@
   } from './lib/api.svelte.js';
   import * as m from './paraglide/messages.js';
   import { applyLocale } from './lib/locale.js';
+  import { notifyHostHeight } from './lib/hostSize.js';
+  import { initMcpSession } from './lib/mcpSession.svelte.js';
 
   // Item count as a string (photos + videos), pluralized in the active locale.
   function itemCountLabel(n) {
@@ -68,8 +69,7 @@
   const INLINE_HEIGHTS = { gallery: 600, indexing: 280 };
   $effect(() => {
     if (!modeKnown || !mcpApp || !mcpReady || isFullscreen) return;
-    const h = INLINE_HEIGHTS[mode] ?? 400;
-    mcpApp.sendSizeChanged({ height: h }).catch(() => {});
+    notifyHostHeight(mcpApp, INLINE_HEIGHTS[mode] ?? 400);
   });
 
   function applySession(session, tok, page) {
@@ -82,6 +82,20 @@
     loading = false;
     view = 'grid';
     selectedIndex = matches.length > 0 ? 0 : null;
+  }
+
+  // Load a gallery session by token and apply it, mapping failures to the
+  // status bar. Shared by the URL-token path and the MCP tool-result path.
+  // On failure the grid stays in its loading (skeleton) state — pageMap is
+  // still null, so rendering the populated grid would crash — while the error
+  // surfaces in the status bar.
+  async function loadGallery(tok, onError) {
+    try {
+      const data = await fetchResults(tok);
+      applySession(data, tok, 0);
+    } catch (err) {
+      if (!matches.length) status = onError(err);
+    }
   }
 
   async function fetchServerPage(page) {
@@ -123,69 +137,35 @@
       loading = false;
     } else if (urlToken) {
       modeKnown = true;
-      fetchResults(urlToken)
-        .then(data => applySession(data, urlToken, 0))
-        .catch(err => { if (!matches.length) status = m.status_error({ message: err.message }); });
+      loadGallery(urlToken, err => m.status_error({ message: err.message }));
     }
 
     // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.
-    // Not awaited: connect() may never resolve outside the host environment.
-    try {
-      const app = new App({ name: 'OuEstCharlie', version: '1.0.0' });
-      mcpApp = app;
-      app.ontoolresult = async ({ content }) => {
-        const text = (content ?? []).find(b => b.type === 'text')?.text;
-        if (!text) return;
-        const result = JSON.parse(text);
-        // Refresh candidate origins from the tool result — in the MCP iframe
-        // context location.origin is ui://… not the Woof HTTP server URL, and
-        // the server may have restarted on a new port since the page loaded.
-        initServerOrigins(result.serverUrls ?? [result.serverUrl]);
-        initServerToken(result.serverToken);
-
-        if (result.type === 'indexing') {
-          indexingSessionId = result.session_id;
-          indexingLibrary = result.library_name;
-          indexingPartitionScope = result.partition_scope ?? [];
-          mode = 'indexing';
-          modeKnown = true;
-          loading = false;
-          return;
-        }
-
-        // Gallery mode (result.type === 'gallery' or legacy without type field)
+    // Session bootstrap (App construction, tool-result parsing, host context,
+    // connect handshake) lives in lib/mcpSession; here we only route its
+    // callbacks into local view state.
+    initMcpSession({
+      onApp: (app) => { mcpApp = app; },
+      onReady: () => { mcpReady = true; },
+      onDisplayMode: ({ canFullscreen: cf, isFullscreen: fs }) => {
+        if (cf !== undefined) canFullscreen = cf;
+        if (fs !== undefined) isFullscreen = fs;
+      },
+      onIndexing: ({ sessionId, library, partitionScope }) => {
+        indexingSessionId = sessionId;
+        indexingLibrary = library;
+        indexingPartitionScope = partitionScope;
+        mode = 'indexing';
+        modeKnown = true;
+        loading = false;
+      },
+      onGallery: ({ querySummary: qs, token: tok }) => {
         mode = 'gallery';
         modeKnown = true;
-        querySummary = result.querySummary;
-        try {
-          const data = await fetchResults(result.token);
-          applySession(data, result.token, 0);
-        } catch (err) {
-          if (!matches.length) status = m.status_error_loading_gallery({ message: err.message });
-          loading = false;
-        }
-      };
-      app.onhostcontextchanged = (ctx) => {
-        if (ctx?.availableDisplayModes !== undefined) {
-          canFullscreen = ctx.availableDisplayModes.includes('fullscreen');
-        }
-        if (ctx?.displayMode !== undefined) {
-          isFullscreen = ctx.displayMode === 'fullscreen';
-        }
-        if (ctx?.locale) applyLocale(ctx.locale);
-        if (ctx?.theme) applyDocumentTheme(ctx.theme);
-        if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
-      };
-      app.connect().then(() => {
-        mcpReady = true;
-        const ctx = app.getHostContext();
-        canFullscreen = ctx?.availableDisplayModes?.includes('fullscreen') ?? false;
-        isFullscreen = ctx?.displayMode === 'fullscreen';
-        applyLocale(ctx?.locale ?? navigator.language);
-        if (ctx?.theme) applyDocumentTheme(ctx.theme);
-        if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
-      }).catch(() => {});
-    } catch { /* not running inside MCP host */ }
+        querySummary = qs;
+        loadGallery(tok, err => m.status_error_loading_gallery({ message: err.message }));
+      },
+    });
   });
 
   const AVIF_GRID_COLS = 8;
@@ -286,6 +266,7 @@
         <PreviewPanel
           {matches}
           {selectedIndex}
+          active={view === 'preview'}
           onNavigate={(i) => (selectedIndex = i)}
           {previewUrl}
           {videoUrl}

@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { fetchIndexingStatus, cancelIndexing } from '../lib/api.svelte.js';
+  import { notifyHostMeasured } from '../lib/hostSize.js';
   import * as m from '../paraglide/messages.js';
 
   let { sessionId, library, partitionScope = [], mcpApp, mcpReady = false } = $props();
@@ -140,13 +141,7 @@
   // via ResizeObserver never fires for content-driven changes).
   $effect(() => {
     void status; // depend on status so this re-runs on every transition
-    if (!mcpApp || !rootEl) return;
-    // Use rAF to let Svelte flush DOM updates before measuring.
-    requestAnimationFrame(() => {
-      if (!rootEl) return;
-      const h = rootEl.scrollHeight;
-      if (h > 0) mcpApp.sendSizeChanged({ height: h }).catch(() => {});
-    });
+    notifyHostMeasured(mcpApp, rootEl);
   });
 </script>
 
@@ -193,7 +188,7 @@
           {/if}
           {#if summary.totalErrors !== undefined && summary.totalErrors > 0}
             <li class="error-count">
-              <details ontoggle={() => { if (mcpApp && rootEl) mcpApp.sendSizeChanged({ height: rootEl.scrollHeight }).catch(() => {}); }}>
+              <details ontoggle={() => notifyHostMeasured(mcpApp, rootEl)}>
                 <summary>{m.indexing_errors()} <strong>{summary.totalErrors}</strong></summary>
                 {#if summary.topErrorDetails?.length}
                   <ul class="error-details">

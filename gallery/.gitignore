@@ -1,2 +1,5 @@
 # Paraglide compiler output — regenerated from messages/ on every build (see vite.config.js).
 src/paraglide/
+
+# Test coverage output
+coverage/
