@@ -38,6 +38,8 @@ cd gallery && npm test
 
 Test files live next to the component they test: `src/components/Foo.svelte` → `src/components/Foo.test.js`.
 
+**Layering** (keep pure/cross-cutting logic in `lib/`, not in components): test each concern once at its own altitude. `lib/` modules own the exhaustive cases (pure, no DOM); component tests prove only wiring — that the module's output reaches the DOM and callbacks fire — not the arithmetic the lib test already covers. Duplicating exhaustive cases in a component test makes it break in two places per change. See `gallery/README.md` (Architecture, Testing) for the full rationale. Run `npm run test:coverage` for a V8 report to spot untested branches (no enforced threshold).
+
 **Patterns to follow** (see `IndexingProgress.test.js` as reference):
 - Mock `fetch` per test with `vi.fn()` — return `{ ok: true, json: () => Promise.resolve(data) }`
 - Use `waitFor` for all async assertions (component polls on mount)
