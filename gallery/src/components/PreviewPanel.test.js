@@ -131,6 +131,30 @@ describe('PreviewPanel — navigation buttons', () => {
   });
 });
 
+describe('PreviewPanel — keyboard navigation', () => {
+  it('advances selection on ArrowRight when active', async () => {
+    const onNavigate = vi.fn();
+    render(PreviewPanel, { ...makeProps([MATCH, MATCH2], 0), onNavigate, active: true });
+    await fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onNavigate).toHaveBeenCalledWith(1);
+  });
+
+  it('moves back on ArrowLeft when active', async () => {
+    const onNavigate = vi.fn();
+    render(PreviewPanel, { ...makeProps([MATCH, MATCH2], 1), onNavigate, active: true });
+    await fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(onNavigate).toHaveBeenCalledWith(0);
+  });
+
+  it('ignores arrow keys while hidden (active: false) so grid browsing does not jump the selection', async () => {
+    const onNavigate = vi.fn();
+    render(PreviewPanel, { ...makeProps([MATCH, MATCH2], 0), onNavigate, active: false });
+    await fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+});
+
 describe('PreviewPanel — caption bar', () => {
   it('renders filename in the caption', () => {
     const { getByText } = render(PreviewPanel, makeProps([MATCH, MATCH2], 0));

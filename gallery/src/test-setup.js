@@ -14,3 +14,10 @@ Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
   configurable: true,
   get: () => 652,
 });
+
+// jsdom does not implement HTMLMediaElement playback methods; PreviewPanel
+// calls pause() when navigating away from a video. Stub them to silence the
+// "Not implemented" noise in test output.
+HTMLMediaElement.prototype.play = () => Promise.resolve();
+HTMLMediaElement.prototype.pause = () => {};
+HTMLMediaElement.prototype.load = () => {};
