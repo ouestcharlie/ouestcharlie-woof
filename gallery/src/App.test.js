@@ -2,17 +2,37 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import App from './App.svelte';
 
-// Stub the MCP Apps SDK — not available in jsdom.
+// Stub the MCP Apps SDK — not available in jsdom. Instances are captured and
+// connect() resolves so tests can drive the tool-result / host-context paths
+// (which flow through the real lib/mcpSession into App's callbacks).
+const { mcpInstances, mcpState } = vi.hoisted(() => ({
+  mcpInstances: [],
+  mcpState: { hostContext: {} },
+}));
+
 vi.mock('@modelcontextprotocol/ext-apps', () => ({
   App: class {
-    ontoolresult = null;
-    onhostcontextchanged = null;
-    connect() { return new Promise(() => {}); } // never resolves outside host
-    getHostContext() { return {}; }
+    constructor() {
+      this.ontoolresult = null;
+      this.onhostcontextchanged = null;
+      this.sendSizeChanged = vi.fn().mockResolvedValue(undefined);
+      this.requestDisplayMode = vi.fn().mockResolvedValue(undefined);
+      mcpInstances.push(this);
+    }
+    connect() { return Promise.resolve(); }
+    getHostContext() { return mcpState.hostContext; }
   },
   applyHostStyleVariables: () => {},
   applyDocumentTheme: () => {},
 }));
+
+/** The App instance constructed by the most recent render. */
+function lastMcp() { return mcpInstances[mcpInstances.length - 1]; }
+
+/** Deliver a tool result the way the MCP host would. */
+function toolResult(payload) {
+  lastMcp().ontoolresult({ content: [{ type: 'text', text: JSON.stringify(payload) }] });
+}
 
 // Helpers ---------------------------------------------------------------
 
@@ -42,6 +62,14 @@ function setUrlToken(token) {
       origin: 'http://localhost',
       search: `?token=${token}`,
     },
+  });
+}
+
+// No URL params → App relies on the MCP postMessage path.
+function setUrlNoParams() {
+  Object.defineProperty(window, 'location', {
+    writable: true,
+    value: { origin: 'http://localhost', search: '' },
   });
 }
 
@@ -166,5 +194,91 @@ describe('App — server page navigation', () => {
 
     await fireEvent.click(getAllByText(/Next/)[0].closest('button'));
     await waitFor(() => expect(getByText(/Error loading page/)).toBeTruthy());
+  });
+});
+
+// -----------------------------------------------------------------------
+
+describe('App — MCP tool-result path', () => {
+  beforeEach(() => {
+    setUrlNoParams();
+    mcpInstances.length = 0;
+    mcpState.hostContext = {};
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('renders the indexing view when an indexing tool result arrives', async () => {
+    // IndexingProgress polls status on mount.
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({ status: 'running', progress: 0, total: 1 }),
+    });
+
+    const { getByText } = render(App);
+    toolResult({
+      type: 'indexing', session_id: 's1', library_name: 'Vacations',
+      serverUrls: ['http://localhost'], serverToken: null,
+    });
+
+    await waitFor(() => expect(getByText(/Vacations/)).toBeTruthy());
+  });
+
+  it('loads and renders a gallery when a gallery tool result arrives', async () => {
+    const session = makeSession({ matches: makeMatches(3), querySummary: 'sunsets' });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
+
+    const { getByText } = render(App);
+    toolResult({
+      type: 'gallery', token: 'gtok', querySummary: 'sunsets',
+      serverUrls: ['http://localhost'], serverToken: null,
+    });
+
+    await waitFor(() => expect(getByText('sunsets')).toBeTruthy());
+    await waitFor(() => expect(getByText('3 items')).toBeTruthy());
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/gtok');
+  });
+
+  it('surfaces a gallery load failure in the status bar', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, statusText: 'Forbidden' });
+
+    const { getByText } = render(App);
+    toolResult({ type: 'gallery', token: 'gtok', querySummary: 'x', serverUrls: ['http://localhost'] });
+
+    await waitFor(() => expect(getByText(/Error loading gallery/)).toBeTruthy());
+  });
+});
+
+// -----------------------------------------------------------------------
+
+describe('App — fullscreen control', () => {
+  beforeEach(() => {
+    setUrlToken('fstok');
+    mcpInstances.length = 0;
+    mcpState.hostContext = {};
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows a fullscreen button and requests fullscreen when the host allows it', async () => {
+    // connect() reads this on resolve → canFullscreen true, isFullscreen false.
+    mcpState.hostContext = { availableDisplayModes: ['inline', 'fullscreen'], displayMode: 'inline' };
+    const session = makeSession({ matches: makeMatches(1) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
+
+    const { getByTitle } = render(App);
+    const btn = await waitFor(() => getByTitle('Full screen'));
+    await fireEvent.click(btn);
+
+    expect(lastMcp().requestDisplayMode).toHaveBeenCalledWith({ mode: 'fullscreen' });
+  });
+
+  it('exits fullscreen on Escape when already fullscreen', async () => {
+    mcpState.hostContext = { availableDisplayModes: ['inline', 'fullscreen'], displayMode: 'fullscreen' };
+    const session = makeSession({ matches: makeMatches(1) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(session) });
+
+    const { getByText } = render(App);
+    await waitFor(() => expect(getByText('1 item')).toBeTruthy());
+
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(lastMcp().requestDisplayMode).toHaveBeenCalledWith({ mode: 'inline' });
   });
 });

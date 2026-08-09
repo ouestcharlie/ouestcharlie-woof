@@ -205,7 +205,10 @@ describe('PreviewPanel — details side panel', () => {
     expect(getByText('Canon EOS R5')).toBeTruthy();
   });
 
-  it('rounds noisy EXIF aperture and focal length for display', async () => {
+  // Wiring smoke: formatted EXIF values reach the Camera subpane. Exhaustive
+  // formatting arithmetic (trailing zeros, sub-second exposure, 35mm-eq
+  // omission, GPS hemispheres) lives in lib/format.test.js.
+  it('renders formatted aperture and focal length in the Camera subpane', async () => {
     const match = {
       ...MATCH,
       aperture: 1.7999999523162842,
@@ -216,34 +219,6 @@ describe('PreviewPanel — details side panel', () => {
     await openPanel(container);
     expect(getByText('f/1.8')).toBeTruthy();
     expect(getByText('5.5 mm (23 mm eq.)')).toBeTruthy();
-  });
-
-  it('drops trailing zeros (f/8, not f/8.0)', async () => {
-    const match = { ...MATCH, aperture: 8 };
-    const { container, getByText } = render(PreviewPanel, makeProps([match]));
-    await openPanel(container);
-    expect(getByText('f/8')).toBeTruthy();
-  });
-
-  it('formats sub-second exposure as a reciprocal (1/250 s)', async () => {
-    const match = { ...MATCH, exposureTime: 0.004 };
-    const { container, getByText } = render(PreviewPanel, makeProps([match]));
-    await openPanel(container);
-    expect(getByText('1/250 s')).toBeTruthy();
-  });
-
-  it('formats exposures of one second or more in seconds (2 s)', async () => {
-    const match = { ...MATCH, exposureTime: 2 };
-    const { container, getByText } = render(PreviewPanel, makeProps([match]));
-    await openPanel(container);
-    expect(getByText('2 s')).toBeTruthy();
-  });
-
-  it('omits the 35 mm equivalent when only focal length is present', async () => {
-    const match = { ...MATCH, focalLength: 50 };
-    const { container, getByText } = render(PreviewPanel, makeProps([match]));
-    await openPanel(container);
-    expect(getByText('50 mm')).toBeTruthy();
   });
 
   it('renders a positive rating as stars', async () => {

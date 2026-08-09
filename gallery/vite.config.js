@@ -28,5 +28,13 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.js'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      // Report on hand-written source only: exclude generated i18n catalogs,
+      // test files, and the app entry point (no logic to cover).
+      include: ['src/**/*.{js,svelte}'],
+      exclude: ['src/paraglide/**', 'src/main.js', 'src/**/*.test.js', 'src/test-setup.js'],
+    },
   },
 });
