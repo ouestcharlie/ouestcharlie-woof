@@ -167,7 +167,7 @@ class McpServer:
         mcp = self.mcp
 
         @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
-        async def add_library(
+        async def register_library(
             name: str,
             path: str,
             library_type: str = "filesystem",
@@ -186,6 +186,41 @@ class McpServer:
             self.config.add_library(library)
             _log.info("Library %r added at %s (type=%s)", name, path, library_type)
             return {**library.to_dict(), "status": "added"}
+
+        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
+        async def unregister_library(
+            library_name: str,
+            purge_metadata: bool = False,
+        ) -> dict[str, Any]:
+            """Unregister a photo library.
+
+            By default this only removes the library from Woof's configuration —
+            nothing on disk is touched, and the library can be re-registered
+            later at the same path. Photos and XMP sidecars are always left
+            intact.
+
+            Args:
+                library_name: Name of the library to unregister (from
+                    list_libraries).
+                purge_metadata: When True, also delete the library's
+                    ``.ouestcharlie/`` metadata directory (manifests, index,
+                    thumbnails, previews) at the library root. XMP sidecars are
+                    never deleted. Defaults to False.
+
+            Returns:
+                ``name`` — the library that was unregistered.
+                ``status`` — ``"removed"``.
+                ``metadataPurged`` — True if ``.ouestcharlie/`` was deleted.
+            """
+            library = self._require_library(library_name)
+            if purge_metadata:
+                # Delegate the destructive delete to Whitebeard (the write
+                # agent that owns .ouestcharlie/); only forget on success so a
+                # failed purge leaves the library registered for a retry.
+                await self._agent.call_tool("whitebeard", "purge_metadata", {}, library)
+            self.config.remove_library(library_name)
+            _log.info("Library %r removed (purge_metadata=%s)", library_name, purge_metadata)
+            return {"name": library_name, "status": "removed", "metadataPurged": purge_metadata}
 
         @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
         async def list_libraries() -> dict[str, Any]:
@@ -560,5 +595,5 @@ class McpServer:
         if library is None:
             raise ValueError(f"""\
                 Library {name!r} not found. Use list_libraries to get existing libraries
-                or add_library to register a new one.""")
+                or register_library to register a new one.""")
         return library

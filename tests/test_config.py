@@ -133,6 +133,26 @@ def test_add_library_replaces_existing(config_dir: Path) -> None:
 
 
 # ------------------------------------------------------------------
+# remove_library()
+# ------------------------------------------------------------------
+
+
+def test_remove_library_persists(config_dir: Path) -> None:
+    config = WoofConfig.load(config_dir=config_dir)
+    config.add_library(LibraryConfig(name="mylib", type="local", path="/pics"))
+    config.remove_library("mylib")
+
+    reloaded = WoofConfig.load(config_dir=config_dir)
+    assert reloaded.get_library("mylib") is None
+
+
+def test_remove_library_absent_raises(config_dir: Path) -> None:
+    config = WoofConfig.load(config_dir=config_dir)
+    with pytest.raises(KeyError):
+        config.remove_library("nope")
+
+
+# ------------------------------------------------------------------
 # get_library()
 # ------------------------------------------------------------------
 

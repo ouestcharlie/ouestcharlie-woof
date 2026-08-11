@@ -4,7 +4,7 @@ Woof is the central controller for OuEstCharlie. It bridges Claude Desktop with 
 
 ## Roles
 
-1. **MCP server** → Claude Desktop: exposes `add_library`, `list_libraries`, `get_status`, `index_library`, `search_photos`, `browse_gallery`
+1. **MCP server** → Claude Desktop: exposes `register_library`, `unregister_library`, `list_libraries`, `get_status`, `index_library`, `search_photos`, `browse_gallery`
 2. **MCP client** → agents: launches Whitebeard and Wally as stdio child processes and calls their tools
 3. **HTTP server**: serves thumbnail/preview AVIF containers on `127.0.0.1:<random port>` for the gallery iframe
 

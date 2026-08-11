@@ -75,17 +75,58 @@ def _make_matches(
 
 
 # ---------------------------------------------------------------------------
-# add_library / list_libraries
+# register_library / unregister_library / list_libraries
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_add_library(server: McpServer, tmp_path: Path) -> None:
+async def test_register_library(server: McpServer, tmp_path: Path) -> None:
     new_path = str(tmp_path / "new")
-    tool_fn = await _get_tool(server, "add_library")
+    tool_fn = await _get_tool(server, "register_library")
     result = await tool_fn(name="newlib", path=new_path)
     assert result["name"] == "newlib"
     assert server.config.get_library("newlib") is not None
+
+
+@pytest.mark.asyncio
+async def test_unregister_library_forgets_only(server: McpServer) -> None:
+    mock = AsyncMock()
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "unregister_library")
+        result = await tool_fn(library_name="testlib")
+    assert result == {"name": "testlib", "status": "removed", "metadataPurged": False}
+    assert server.config.get_library("testlib") is None
+    mock.assert_not_awaited()  # Whitebeard never called without purge
+
+
+@pytest.mark.asyncio
+async def test_unregister_library_purges_metadata(server: McpServer) -> None:
+    mock = AsyncMock(return_value={"metadataDir": ".ouestcharlie", "existed": True})
+    with patch.object(server._agent, "call_tool", new=mock):
+        tool_fn = await _get_tool(server, "unregister_library")
+        result = await tool_fn(library_name="testlib", purge_metadata=True)
+    assert result["metadataPurged"] is True
+    assert server.config.get_library("testlib") is None
+    mock.assert_awaited_once()
+    assert mock.await_args.args[:3] == ("whitebeard", "purge_metadata", {})
+
+
+@pytest.mark.asyncio
+async def test_unregister_library_purge_failure_keeps_library(server: McpServer) -> None:
+    mock = AsyncMock(side_effect=AgentError("purge blew up"))
+    with patch.object(server._agent, "call_tool", new=mock):  # noqa: SIM117
+        tool_fn = await _get_tool(server, "unregister_library")
+        with pytest.raises(AgentError):
+            await tool_fn(library_name="testlib", purge_metadata=True)
+    # Failed purge must leave the library registered for a retry.
+    assert server.config.get_library("testlib") is not None
+
+
+@pytest.mark.asyncio
+async def test_unregister_library_unknown_name(server: McpServer) -> None:
+    tool_fn = await _get_tool(server, "unregister_library")
+    with pytest.raises(ValueError, match="not found"):
+        await tool_fn(library_name="nope")
 
 
 @pytest.mark.asyncio
