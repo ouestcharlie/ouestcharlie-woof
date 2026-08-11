@@ -186,3 +186,10 @@ class WoofConfig:
         self.libraries = [b for b in self.libraries if b.name != library.name]
         self.libraries.append(library)
         self.save()
+
+    def remove_library(self, name: str) -> None:
+        """Remove a library by name, then persist. Raise KeyError if absent."""
+        if not any(b.name == name for b in self.libraries):
+            raise KeyError(name)
+        self.libraries = [b for b in self.libraries if b.name != name]
+        self.save()
