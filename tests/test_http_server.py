@@ -28,10 +28,33 @@ def _mock_agent(matches: list | None = None) -> MagicMock:
     return agent
 
 
+def _session_with_match(match: dict, **manager_kwargs) -> tuple[GallerySessionManager, str]:
+    """A GallerySessionManager holding one session whose single match is *match*."""
+    mgr = GallerySessionManager()
+    tok = mgr.create(
+        LibraryConfig(name=match["library"], type="filesystem", path="/tmp"),
+        None,
+        {},
+        500,
+        matches=[match],
+    )
+    return mgr, tok
+
+
+_MEDIA_MATCH = {
+    "library": "testlib",
+    "partition": "2024/2024-07",
+    "avifHash": "grid1",
+    "contentHash": "abc123",
+    "tileIndex": 0,
+}
+
+
 def test_thumbnail_without_wally_returns_503() -> None:
     """Thumbnail requests are proxied to Wally; without a Wally port → 503."""
-    server_url = start_http_server()
-    url = f"{server_url}/thumbnails/testlib/2024/2024-07/thumbnails.avif"
+    mgr, tok = _session_with_match(_MEDIA_MATCH)
+    server_url = start_http_server(session_manager=mgr)
+    url = f"{server_url}/media/{tok}/thumbnail/testlib/2024/2024-07/grid1"
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(url)
     assert exc_info.value.code == 503
@@ -39,11 +62,31 @@ def test_thumbnail_without_wally_returns_503() -> None:
 
 def test_preview_without_wally_returns_503() -> None:
     """Preview requests are proxied to Wally; without a Wally port configured → 503."""
-    server_url = start_http_server()
-    url = f"{server_url}/previews/testlib/2024/2024-07/abc123.jpg"
+    mgr, tok = _session_with_match(_MEDIA_MATCH)
+    server_url = start_http_server(session_manager=mgr)
+    url = f"{server_url}/media/{tok}/previews/testlib/2024/2024-07/abc123.jpg"
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(url)
     assert exc_info.value.code == 503
+
+
+def test_media_unknown_session_returns_404() -> None:
+    """A /media request whose token names no live session is rejected (OEC-50b)."""
+    server_url = start_http_server()
+    url = f"{server_url}/media/nosuchtoken/previews/testlib/2024/2024-07/abc123.jpg"
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(url)
+    assert exc_info.value.code == 404
+
+
+def test_media_file_not_in_session_returns_403() -> None:
+    """A valid session token cannot fetch a file outside its match set (OEC-50b)."""
+    mgr, tok = _session_with_match(_MEDIA_MATCH)
+    server_url = start_http_server(session_manager=mgr)
+    url = f"{server_url}/media/{tok}/previews/testlib/2024/2024-07/otherhash.jpg"
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(url)
+    assert exc_info.value.code == 403
 
 
 def test_gallery_token_route_serves_html() -> None:
@@ -460,8 +503,11 @@ def _start_fake_wally() -> tuple[int, str]:
 def test_proxy_video_range_passthrough() -> None:
     """A Range request is forwarded to Wally and its 206 flows back unchanged."""
     port, token = _start_fake_wally()
-    server_url = start_http_server(wally_connection_fn=lambda lib: (port, token))
-    url = f"{server_url}/video/testlib/2024/2024-07/abc123.mp4"
+    mgr, tok = _session_with_match(_MEDIA_MATCH)
+    server_url = start_http_server(
+        session_manager=mgr, wally_connection_fn=lambda lib: (port, token)
+    )
+    url = f"{server_url}/media/{tok}/video/testlib/2024/2024-07/abc123.mp4"
     req = urllib.request.Request(url, headers={"Range": "bytes=100-199"})
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 206
@@ -475,8 +521,11 @@ def test_proxy_video_range_passthrough() -> None:
 
 def test_proxy_video_full_body_when_no_range() -> None:
     port, token = _start_fake_wally()
-    server_url = start_http_server(wally_connection_fn=lambda lib: (port, token))
-    url = f"{server_url}/video/testlib/2024/2024-07/abc123.mp4"
+    mgr, tok = _session_with_match(_MEDIA_MATCH)
+    server_url = start_http_server(
+        session_manager=mgr, wally_connection_fn=lambda lib: (port, token)
+    )
+    url = f"{server_url}/media/{tok}/video/testlib/2024/2024-07/abc123.mp4"
     with urllib.request.urlopen(url) as resp:
         assert resp.status == 200
         assert resp.headers["Content-Type"] == "video/mp4"

@@ -67,6 +67,78 @@ def test_bearer_guard_still_requires_auth_outside_exempt_prefix() -> None:
     assert resp.status_code == 401
 
 
+class _FakeManager:
+    """Minimal stand-in for a session manager: `.get(token)` → truthy if known."""
+
+    def __init__(self, tokens: tuple[str, ...] = ()) -> None:
+        self._tokens = set(tokens)
+
+    def get(self, token: str) -> object | None:
+        return {"token": token} if token in self._tokens else None
+
+
+def _session_app(
+    token: str, *, gallery: tuple[str, ...] = (), indexing: tuple[str, ...] = ()
+) -> BearerGuard:
+    app = Starlette(
+        routes=[
+            Route("/mcp", _ok),
+            Route("/shutdown", _ok, methods=["POST"]),
+            Route("/gallery/{token}", _ok),
+            Route("/api/results/{token}", _ok),
+            Route("/media/{token}/{kind}/{library}/{rest:path}", _ok),
+            Route("/api/indexing/{session_id}", _ok),
+        ]
+    )
+    return BearerGuard(
+        app,
+        token=token,
+        gallery_sessions=_FakeManager(gallery),
+        indexing_sessions=_FakeManager(indexing),
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/gallery/g1", "/api/results/g1", "/media/g1/thumbnail/lib/2024-07/hash"],
+)
+def test_bearer_guard_accepts_live_gallery_session_token_in_path(path: str) -> None:
+    client = TestClient(_session_app("master", gallery=("g1",)))
+    assert client.get(path).status_code == 200
+
+
+def test_bearer_guard_rejects_unknown_gallery_session_token() -> None:
+    client = TestClient(_session_app("master", gallery=("g1",)))
+    assert client.get("/gallery/nope").status_code == 401
+    assert client.get("/media/nope/thumbnail/lib/2024-07/hash").status_code == 401
+
+
+def test_bearer_guard_rejects_session_token_on_control_plane() -> None:
+    client = TestClient(_session_app("master", gallery=("g1",)))
+    # A live gallery token is no credential for /mcp or /shutdown.
+    assert client.get("/mcp").status_code == 401
+    assert client.post("/shutdown").status_code == 401
+
+
+def test_bearer_guard_accepts_live_indexing_session_token() -> None:
+    client = TestClient(_session_app("master", indexing=("i1",)))
+    assert client.get("/api/indexing/i1").status_code == 200
+
+
+def test_bearer_guard_isolates_managers() -> None:
+    # A gallery token cannot reach an indexing route and vice versa.
+    client = TestClient(_session_app("master", gallery=("g1",), indexing=("i1",)))
+    assert client.get("/api/indexing/g1").status_code == 401
+    assert client.get("/api/results/i1").status_code == 401
+
+
+def test_bearer_guard_master_token_reaches_control_plane_and_sessions() -> None:
+    client = TestClient(_session_app("master"))
+    hdr = {"Authorization": "Bearer master"}
+    assert client.get("/mcp", headers=hdr).status_code == 200
+    assert client.get("/gallery/anything", headers=hdr).status_code == 200
+
+
 def test_host_origin_guard_accepts_allowed_host() -> None:
     client = TestClient(_host_app({"testserver"}))
     resp = client.get("/thing")

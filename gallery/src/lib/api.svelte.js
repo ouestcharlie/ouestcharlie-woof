@@ -40,10 +40,11 @@ export function getResolvedOrigin() {
   return resolvedOrigin;
 }
 
-/** Query-string suffix carrying the bearer token, for URLs (e.g. `<img src>`)
- * that can't set an Authorization header — empty string when unauthenticated. */
-function tokenQueryParam() {
-  return authToken ? `?token=${encodeURIComponent(authToken)}` : '';
+/** Path prefix scoping media requests to the current gallery session (OEC-50b).
+ * The token both authenticates and scopes the request
+ * Empty when unauthenticated (stdio/test), where routes carry no session prefix. */
+function mediaPrefix() {
+  return authToken ? `/media/${encodeURIComponent(authToken)}` : '';
 }
 
 async function request(path, options) {
@@ -96,13 +97,13 @@ function encodePartition(partition) {
 /** URL for a match's proxied AVIF thumbnail grid, or null if unavailable. */
 export function thumbnailUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.avifHash || match?.tileIndex == null) return null;
-  return `${resolvedOrigin}/thumbnail/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.avifHash)}${tokenQueryParam()}`;
+  return `${resolvedOrigin}${mediaPrefix()}/thumbnail/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.avifHash)}`;
 }
 
 /** URL for a match's on-demand JPEG preview, or null if unavailable. */
 export function previewUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.contentHash) return null;
-  return `${resolvedOrigin}/previews/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.jpg${tokenQueryParam()}`;
+  return `${resolvedOrigin}${mediaPrefix()}/previews/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.jpg`;
 }
 
 /**
@@ -114,5 +115,5 @@ export function previewUrl(match) {
 export function videoUrl(match) {
   if (!resolvedOrigin || !match?.library || !match?.contentHash) return null;
   const ext = /\.mov$/i.test(match.filename ?? '') ? 'mov' : 'mp4';
-  return `${resolvedOrigin}/video/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.${ext}${tokenQueryParam()}`;
+  return `${resolvedOrigin}${mediaPrefix()}/video/${encodeURIComponent(match.library)}/${encodePartition(match.partition)}/${encodeURIComponent(match.contentHash)}.${ext}`;
 }

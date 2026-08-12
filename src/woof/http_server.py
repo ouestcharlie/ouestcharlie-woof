@@ -14,14 +14,16 @@ URL scheme:
   GET /api/results/{token}/page/{page}         — load 0-indexed Wally page into session
   GET /api/indexing/{session_id}               — JSON indexing session state
   GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
-  GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
-  GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
-  GET /video/{library_name}/{partition}/{content_hash}.mp4    — proxied to Wally (Range)
+  GET /media/{token}/thumbnail/{library_name}/{partition}/{avif_hash}       — to Wally
+  GET /media/{token}/previews/{library_name}/{partition}/{content_hash}.jpg — to Wally
+  GET /media/{token}/video/{library_name}/{partition}/{content_hash}.mp4    — to Wally (Range)
 
 where {partition} may contain slashes (e.g. "2024/2024-07").
 All library media (thumbnails, previews and video) is served by Wally and proxied
-here. The proxy streams bodies and forwards Range/Content-Range so <video> seeking
-works without buffering GB-scale files (OEC-39a §2).
+here. Media is scoped to a gallery session: {token} names the session and the file
+must be one of its matches, else 403 (OEC-50b). The proxy streams bodies and forwards
+Range/Content-Range so <video> seeking works without buffering GB-scale files
+(OEC-39a §2).
 """
 
 from __future__ import annotations
@@ -48,6 +50,41 @@ _log = logging.getLogger(__name__)
 # Pre-built Svelte app (produced by `npm run build` in gallery/)
 _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
+
+
+def _session_matches(session: Any) -> list[dict[str, Any]]:
+    """All match records reachable from *session*, including chained sub-sessions.
+
+    A merged (chained) session keeps its first page in ``matches`` and the rest in
+    ``chainedSessions``; the union is the set of files the user was shown.
+    """
+    collected = list(session.matches)
+    for sub in getattr(session, "chainedSessions", []) or []:
+        collected.extend(sub.matches)
+    return collected
+
+
+def _media_in_session(session: Any, library: str, rest: str) -> bool:
+    """Whether a ``/media`` request names a file in *session* (OEC-50b scope check).
+
+    ``rest`` is ``{partition}/{hash}[.ext]`` where ``partition`` may contain
+    slashes, so the hash is the last path segment with any extension stripped and
+    the partition is everything before it. The stem must be either the ``avifHash``
+    (thumbnail grid, shared by colocated photos) or the ``contentHash`` (preview,
+    video) of an in-session match in the same library and partition — matching
+    against both is robust to the ``kind`` label and safe (the two hash spaces do
+    not collide).
+    """
+    parts = rest.split("/")
+    filename = parts[-1]
+    partition = "/".join(parts[:-1])
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return any(
+        match.get("library") == library
+        and match.get("partition") == partition
+        and stem in (match.get("avifHash"), match.get("contentHash"))
+        for match in _session_matches(session)
+    )
 
 
 def get_gallery_html(
@@ -94,9 +131,9 @@ def build_gallery_app(
     """Build the gallery/media/lifecycle Starlette app
 
     Args:
-        token: Embedded into the gallery HTML (``data-server-token``) so the
-            frontend can authenticate — this is HTTP mode's bearer token
-            value, not a wrapping concern of this function.
+        token: HTTP mode's master bearer token. No longer embedded in the gallery
+            HTML — each gallery is served with its own session token instead
+            (OEC-50b) — but retained for callers and potential lifecycle use.
         activity_tracker: touched by the ``/keepalive`` route.
         shutdown_handle: object with a ``.request()`` method invoked by
             ``POST /shutdown``.
@@ -107,7 +144,9 @@ def build_gallery_app(
         session = session_manager.get(path_token)
         if session is None:
             return Response(status_code=404)
-        html = get_gallery_html(server_url, token=token)
+        # Embed the session token (not the master token) so a direct-browser gallery
+        # authenticates as its own session only (OEC-50b).
+        html = get_gallery_html(server_url, token=path_token)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
@@ -143,9 +182,18 @@ def build_gallery_app(
         return JSONResponse(session.transfert_object())
 
     async def proxy_media(request: Request) -> Response:
+        session_token = request.path_params["token"]
         kind = request.path_params["kind"]
         library = request.path_params["library"]
         rest = request.path_params["rest"]
+        # Scope the media to the gallery session: the token in the path must name a
+        # live session, and the requested file must be one of that session's matches
+        # (OEC-50b). A valid token alone is necessary but not sufficient.
+        session = session_manager.get(session_token)
+        if session is None:
+            return Response("Unknown gallery session", status_code=404)
+        if not _media_in_session(session, library, rest):
+            return Response("File not in gallery session", status_code=403)
         wally_port, wally_token = (
             wally_connection_fn(library) if wally_connection_fn is not None else (None, None)
         )
@@ -239,7 +287,7 @@ def build_gallery_app(
         Route("/api/indexing/{session_id}/cancel", api_indexing_cancel, methods=["POST"]),
         Route("/api/indexing/{session_id}", api_indexing),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
-        Route("/{kind}/{library}/{rest:path}", proxy_media),
+        Route("/media/{token}/{kind}/{library}/{rest:path}", proxy_media),
     ]
     return Starlette(routes=routes)
 

@@ -16,6 +16,8 @@ combined MCP + gallery app:
 
 from __future__ import annotations
 
+from typing import Any
+
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -24,26 +26,62 @@ from starlette.types import ASGIApp
 from .discovery import ActivityTracker
 
 
-class BearerGuard(BaseHTTPMiddleware):
-    """Reject requests that lack a valid bearer token.
+def _classify_session_route(path: str) -> tuple[str, str] | None:
+    """Map a request path to its ``(manager, in-path session token)``, or ``None``.
 
-    Accepts the token either as ``Authorization: Bearer <token>`` (used by
-    the stdio bridge and by ``fetch()`` calls from the gallery frontend) or
-    as a ``?token=`` query parameter (used by ``<img src>`` loads, which
-    cannot set custom headers).
+    Session-scoped routes carry their session token as a path segment, which is
+    both the credential and the scope key (OEC-50b). Gallery routes are owned by
+    the gallery session manager, indexing routes by the indexing session manager;
+    anything else (control plane, media-less paths) returns ``None``.
+    """
+    segments = [s for s in path.split("/") if s]
+    if len(segments) >= 2 and segments[0] in ("gallery", "media"):
+        return ("gallery", segments[1])
+    if len(segments) >= 3 and segments[0] == "api" and segments[1] == "results":
+        return ("gallery", segments[2])
+    if len(segments) >= 3 and segments[0] == "api" and segments[1] == "indexing":
+        return ("indexing", segments[2])
+    return None
+
+
+class BearerGuard(BaseHTTPMiddleware):
+    """Reject requests that lack a valid credential.
+
+    Two credential classes are accepted (OEC-50b):
+
+    - The **master token**, as ``Authorization: Bearer <token>`` or a ``?token=``
+      query parameter — used by the stdio bridge; grants every route.
+    - A live **session token** carried in the path of a session-scoped route
+      (``/gallery/{t}``, ``/api/results/{t}``, ``/media/{t}/…`` bound to the
+      gallery manager; ``/api/indexing/{sid}`` to the indexing manager). It grants
+      only its own session's routes and never the control plane. Per-file media
+      scoping is enforced separately in ``proxy_media``.
 
     ``exempt_path_prefixes`` skips auth entirely for matching paths — used
     for ``/gallery-static/`` (the compiled JS/CSS bundle), which `<script
     src>`/`<link href>` tags load with no way to attach a token at all, and
     which carries no user data anyway (identical bundle for every install).
+
+    ``gallery_sessions``/``indexing_sessions`` are the two managers (anything
+    exposing ``.get(token)`` returning ``None`` when absent); when omitted, only
+    the master token is accepted (the standalone gallery test server passes
+    neither, but also mounts no ``BearerGuard``).
     """
 
     def __init__(
-        self, app: ASGIApp, *, token: str, exempt_path_prefixes: tuple[str, ...] = ()
+        self,
+        app: ASGIApp,
+        *,
+        token: str,
+        exempt_path_prefixes: tuple[str, ...] = (),
+        gallery_sessions: Any | None = None,
+        indexing_sessions: Any | None = None,
     ) -> None:
         super().__init__(app)
         self._token = token
         self._exempt_path_prefixes = exempt_path_prefixes
+        self._gallery_sessions = gallery_sessions
+        self._indexing_sessions = indexing_sessions
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.url.path.startswith(self._exempt_path_prefixes):
@@ -53,7 +91,17 @@ class BearerGuard(BaseHTTPMiddleware):
             return await call_next(request)
         if request.query_params.get("token") == self._token:
             return await call_next(request)
+        if self._session_route_authorized(request.url.path):
+            return await call_next(request)
         return Response("Unauthorized", status_code=401)
+
+    def _session_route_authorized(self, path: str) -> bool:
+        classified = _classify_session_route(path)
+        if classified is None:
+            return False
+        manager_kind, token = classified
+        manager = self._gallery_sessions if manager_kind == "gallery" else self._indexing_sessions
+        return manager is not None and manager.get(token) is not None
 
 
 class HostOriginGuard(BaseHTTPMiddleware):

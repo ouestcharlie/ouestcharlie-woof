@@ -146,10 +146,10 @@ describe('api.svelte.js — URL builders', () => {
     expect(previewUrl({ ...match, contentHash: undefined })).toBeNull();
   });
 
-  it('appends the bearer token as a query param when set (img src cannot set headers)', () => {
+  it('scopes media under /media/{sessionToken}/ when a token is set (OEC-50b)', () => {
     initServerOrigins(['http://localhost:1']);
     initServerToken('secret');
-    expect(thumbnailUrl(match)).toBe('http://localhost:1/thumbnail/lib/2024/07/avif1?token=secret');
-    expect(previewUrl(match)).toBe('http://localhost:1/previews/lib/2024/07/hash1.jpg?token=secret');
+    expect(thumbnailUrl(match)).toBe('http://localhost:1/media/secret/thumbnail/lib/2024/07/avif1');
+    expect(previewUrl(match)).toBe('http://localhost:1/media/secret/previews/lib/2024/07/hash1.jpg');
   });
 });

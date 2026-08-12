@@ -113,6 +113,8 @@ async def _run() -> None:
         token=_token,
         allowed_hosts=_endpoint.allowed_hosts,
         activity_tracker=tracker,
+        gallery_sessions=_gallery_session_manager,
+        indexing_sessions=_indexing_session_manager,
     )
 
     uv_server = make_uvicorn_server(app, _endpoint, log_level="info")

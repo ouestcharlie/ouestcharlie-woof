@@ -290,6 +290,9 @@ async def test_index_library_launches_background_task(server: McpServer) -> None
     assert "session_id" in result
     assert result["library_name"] == "testlib"
     assert result["serverUrls"] == server.server_urls
+    # OEC-50b: the frontend credential is the indexing session_id, not the master token.
+    assert result["serverToken"] == result["session_id"]
+    assert result["serverToken"] != server._token
     assert captured["module"] == "whitebeard"
     assert captured["tool_name"] == "index_library"
     assert captured["args"]["generate_thumbnails"] is True
@@ -691,6 +694,11 @@ async def test_browse_gallery_returns_session_matches(server: McpServer) -> None
     assert result["totalCount"] == len(matches)
     merged_token = result["token"]
     assert server._sessions.sessions[merged_token].matches == matches
+    # OEC-50b: the frontend credential is the merged session token, not the master
+    # token; galleryUrl points at the session-scoped path.
+    assert result["serverToken"] == merged_token
+    assert result["serverToken"] != server._token
+    assert result["galleryUrl"] == f"{server.server_url}/gallery/{merged_token}"
 
 
 @pytest.mark.asyncio

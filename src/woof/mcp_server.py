@@ -425,7 +425,9 @@ class McpServer:
                 "partition_scope": partition_scope,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,
-                "serverToken": self._token,
+                # The indexing session_id is the frontend's credential for its
+                # /api/indexing/{session_id} routes (OEC-50b) — not the master token.
+                "serverToken": session_id,
             }
 
         async def _search_photos_tool(
@@ -544,8 +546,10 @@ class McpServer:
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,
-                "serverToken": self._token,
-                "galleryUrl": f"{self.server_url}/gallery?token={merged_token}",
+                # The merged session token is the frontend's credential for its
+                # /api/results and /media routes (OEC-50b) — not the master token.
+                "serverToken": merged_token,
+                "galleryUrl": f"{self.server_url}/gallery/{merged_token}",
                 "totalCount": data.totalCount,
             }
 
@@ -565,7 +569,10 @@ class McpServer:
             ),
         )
         async def gallery_resource() -> str:
-            return get_gallery_html(self.server_url, self.server_urls, self._token)
+            # No token embedded: this static MCP resource is shared across sessions,
+            # so the frontend receives its per-session token from the tool result
+            # (serverToken) instead (OEC-50b).
+            return get_gallery_html(self.server_url, self.server_urls, None)
 
     # ------------------------------------------------------------------
     # Helpers
