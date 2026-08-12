@@ -3,8 +3,7 @@
 Independent concerns, composed together by ``__main__.py`` around the
 combined MCP + gallery app:
   - BearerGuard: authenticates the caller (bridge, or gallery iframe via
-    Authorization header / ``?token=`` query param for requests — like
-    ``<img src>`` — that cannot carry custom headers).
+    Authorization header / ``/session_id`` path segment for the gallery.
   - HostOriginGuard: rejects requests whose ``Host`` header doesn't match one
     of the loopback origins Woof itself is bound to, mitigating DNS rebinding
     (a remote page tricking a browser into resolving an attacker-controlled
@@ -27,12 +26,12 @@ from .discovery import ActivityTracker
 
 
 def _classify_session_route(path: str) -> tuple[str, str] | None:
-    """Map a request path to its ``(manager, in-path session token)``, or ``None``.
+    """Map a request path to its ``(manager, in-path session id)``, or ``None``.
 
-    Session-scoped routes are ``/gallery/{token}/…`` (HTML, results, media — owned
-    by the gallery session manager) and ``/indexing/{token}/…`` (status, cancel —
-    owned by the indexing session manager); the token is always the second segment,
-    both credential and scope key. Anything else (control plane,
+    Session-scoped routes are ``/gallery/{session_id}/…`` (HTML, results, media —
+    owned by the gallery session manager) and ``/indexing/{session_id}/…`` (status,
+    cancel — owned by the indexing session manager); the session id is always the
+    second segment, both credential and scope key. Anything else (control plane,
     ``/gallery-static/``) returns ``None``.
     """
     segments = [s for s in path.split("/") if s]
@@ -48,11 +47,11 @@ class BearerGuard(BaseHTTPMiddleware):
 
     - The **master token**, as ``Authorization: Bearer <token>`` or a ``?token=``
       query parameter — used by the stdio bridge; grants every route.
-    - A live **session token** carried as the second path segment of a
-      session-scoped route (``/gallery/{t}/…`` — HTML, results, media — bound to the
-      gallery manager; ``/indexing/{t}/…`` to the indexing manager). It grants only
-      its own session's routes and never the control plane. Per-file media scoping
-      is enforced separately in ``proxy_media``.
+    - A live **session id** carried as the second path segment of a session-scoped
+      route (``/gallery/{session_id}/…`` — HTML, results, media — bound to the
+      gallery manager; ``/indexing/{session_id}/…`` to the indexing manager). It
+      grants only its own session's routes and never the control plane. Per-file
+      media scoping is enforced separately in ``proxy_media``.
 
     ``exempt_path_prefixes`` skips auth entirely for matching paths — used
     for ``/gallery-static/`` (the compiled JS/CSS bundle), which `<script
@@ -96,9 +95,9 @@ class BearerGuard(BaseHTTPMiddleware):
         classified = _classify_session_route(path)
         if classified is None:
             return False
-        manager_kind, token = classified
+        manager_kind, session_id = classified
         manager = self._gallery_sessions if manager_kind == "gallery" else self._indexing_sessions
-        return manager is not None and manager.get(token) is not None
+        return manager is not None and manager.get(session_id) is not None
 
 
 class HostOriginGuard(BaseHTTPMiddleware):

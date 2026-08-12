@@ -1,6 +1,6 @@
 """Gallery session management for Woof.
 
-Tracks search-result sessions keyed by URL-safe tokens.
+Tracks search-result sessions keyed by URL-safe session_ids.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class ChainedSessionHandler(SessionHandler):
 
 
 class GallerySessionManager:
-    """Stores and retrieves gallery sessions keyed by URL-safe tokens.
+    """Stores and retrieves gallery sessions keyed by URL-safe session_ids.
 
     The ``sessions`` property exposes the underlying dict so the HTTP server
     can share it by reference without importing this class.
@@ -119,11 +119,11 @@ class GallerySessionManager:
     def __init__(self) -> None:
         self._sessions: dict[str, SessionHandler] = {}  # insertion-ordered (Python 3.7+)
 
-    def _add_session(self, token: str, data: SessionHandler) -> None:
-        """Evict the oldest session if at capacity, then store *data* under *token*."""
+    def _add_session(self, session_id: str, data: SessionHandler) -> None:
+        """Evict the oldest session if at capacity, then store *data* under *session_id*."""
         while len(self._sessions) >= _MAX_SESSIONS:
             del self._sessions[next(iter(self._sessions))]
-        self._sessions[token] = data
+        self._sessions[session_id] = data
 
     @property
     def sessions(self) -> dict[str, Any]:
@@ -140,7 +140,7 @@ class GallerySessionManager:
         page: int = 0,
         matches: list[Any] | None = None,
     ) -> str:
-        """Store a new search-result session and return its token.
+        """Store a new search-result session and return its session_id.
 
         Args:
             library: Library the matches belong to.
@@ -152,12 +152,12 @@ class GallerySessionManager:
             page: 0-indexed current server page.
             matches: Photo match records from a Wally search result.
         """
-        token = secrets.token_urlsafe(16)
+        session_id = secrets.token_urlsafe(16)
         if matches is None:
             matches = []
         stamped = [{**m, "library": library.name} for m in matches]
         self._add_session(
-            token,
+            session_id,
             SessionHandler(
                 library=library,
                 agent=agent,
@@ -168,21 +168,21 @@ class GallerySessionManager:
                 matches=stamped,
             ),
         )
-        return token
+        return session_id
 
-    def get(self, token: str) -> SessionHandler | None:
-        """Return the session for *token*, or ``None`` if not found."""
-        return self._sessions.get(token)
+    def get(self, session_id: str) -> SessionHandler | None:
+        """Return the session for *session_id*, or ``None`` if not found."""
+        return self._sessions.get(session_id)
 
-    def unknown_tokens(self, tokens: list[str]) -> list[str]:
-        """Return the subset of *tokens* not present in the session store."""
-        return [t for t in tokens if t not in self._sessions]
+    def unknown_session_ids(self, session_ids: list[str]) -> list[str]:
+        """Return the subset of *session_ids* not present in the session store."""
+        return [t for t in session_ids if t not in self._sessions]
 
     def merge(
         self,
-        tokens: list[str],
+        session_ids: list[str],
     ) -> tuple[str, SessionHandler]:
-        """Merge sessions from *tokens* into a new session and return it.
+        """Merge sessions from *session_ids* into a new session and return it.
 
         Single-session merge:
             Inherits ``queryContext`` and ``totalCount`` from the source so
@@ -201,20 +201,20 @@ class GallerySessionManager:
             ``totalCount`` is the sum of loaded matches across all sources.
 
         Each match already carries its ``"library"`` field from :meth:`create`.
-        Assumes all *tokens* are valid — call :meth:`unknown_tokens` first.
+        Assumes all *session_ids* are valid — call :meth:`unknown_session_ids` first.
 
         Returns:
-            ``(merged_token, session_data)`` where *session_data* has the
+            ``(merged_session_id, session_data)`` where *session_data* has the
             standard session shape described on this class.
         """
-        merged_token = secrets.token_urlsafe(16)
-        if len(tokens) == 0:
+        merged_session_id = secrets.token_urlsafe(16)
+        if len(session_ids) == 0:
             raise ValueError("nothing to merge")
-        elif len(tokens) == 1:
-            src = self._sessions[tokens[0]]
-            return tokens[0], src
+        elif len(session_ids) == 1:
+            src = self._sessions[session_ids[0]]
+            return session_ids[0], src
         else:
-            chained_sessions = [self._sessions[t] for t in tokens]
+            chained_sessions = [self._sessions[t] for t in session_ids]
             if len(chained_sessions) == 0:
                 raise ValueError("no sessions found")
             total_count = sum(s.totalCount for s in chained_sessions)
@@ -222,8 +222,8 @@ class GallerySessionManager:
                 # Merge matches with deduplicatation
                 seen_hashes: set[str] = set()
                 merged_matches: list[Any] = []
-                for token in tokens:
-                    for match in self._sessions[token].matches:
+                for session_id in session_ids:
+                    for match in self._sessions[session_id].matches:
                         h = match.get("contentHash", "")
                         if h not in seen_hashes:
                             seen_hashes.add(h)
@@ -237,7 +237,7 @@ class GallerySessionManager:
                     matches=merged_matches,
                 )
             else:
-                first_src = self._sessions[tokens[0]]
+                first_src = self._sessions[session_ids[0]]
                 session_data = ChainedSessionHandler(
                     library=None,
                     agent=chained_sessions[0].agent,
@@ -248,5 +248,5 @@ class GallerySessionManager:
                     matches=first_src.matches,
                 )
 
-        self._add_session(merged_token, session_data)
-        return merged_token, session_data
+        self._add_session(merged_session_id, session_data)
+        return merged_session_id, session_data

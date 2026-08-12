@@ -10,7 +10,7 @@
 
 let candidates = $state([]);
 let resolvedOrigin = $state(null);
-let authToken = $state(null);
+let sessionId = $state(null);
 
 /**
  * Set (or refresh) the candidate origin list. Safe to call more than once —
@@ -26,13 +26,13 @@ export function initServerOrigins(origins) {
 }
 
 /**
- * Set (or refresh) the bearer token used to authenticate against Woof's
- * HTTP-mode server (OEC-27). A no-op / null in stdio mode, where routes are
- * unauthenticated.
- * @param {string | null | undefined} token
+ * Set (or refresh) the gallery/indexing session id used to authenticate and scope
+ * requests against Woof's HTTP-mode server. A no-op / null in stdio mode, where
+ * routes are unauthenticated.
+ * @param {string | null | undefined} id
  */
-export function initServerToken(token) {
-  authToken = token ?? null;
+export function initSessionId(id) {
+  sessionId = id ?? null;
 }
 
 /** Currently known-working origin, or the first untried candidate. Reactive. */
@@ -41,19 +41,19 @@ export function getResolvedOrigin() {
 }
 
 /** Path prefix scoping media requests to the current gallery session.
- * Media lives under the gallery family: `/gallery/{sessionToken}/media/…`; the token
- * both authenticates and scopes the request.
+ * Media lives under the gallery family: `/gallery/{sessionId}/media/…`; the session
+ * id both authenticates and scopes the request.
  * Empty when unauthenticated (stdio/test), where routes carry no session prefix. */
 function mediaPrefix() {
-  return authToken ? `/gallery/${encodeURIComponent(authToken)}/media` : '';
+  return sessionId ? `/gallery/${encodeURIComponent(sessionId)}/media` : '';
 }
 
 async function request(path, options) {
   const tryOrder = resolvedOrigin
     ? [resolvedOrigin, ...candidates.filter((origin) => origin !== resolvedOrigin)]
     : candidates;
-  const finalOptions = authToken
-    ? { ...options, headers: { ...options?.headers, Authorization: `Bearer ${authToken}` } }
+  const finalOptions = sessionId
+    ? { ...options, headers: { ...options?.headers, Authorization: `Bearer ${sessionId}` } }
     : options;
 
   let lastError;
@@ -72,13 +72,13 @@ async function request(path, options) {
   throw lastError ?? new Error('No server origin available');
 }
 
-export async function fetchResults(token) {
-  const response = await request(`/gallery/${token}/results`);
+export async function fetchResults(sessionId) {
+  const response = await request(`/gallery/${sessionId}/results`);
   return response.json();
 }
 
-export async function fetchResultsPage(token, page) {
-  const response = await request(`/gallery/${token}/results/page/${page}`);
+export async function fetchResultsPage(sessionId, page) {
+  const response = await request(`/gallery/${sessionId}/results/page/${page}`);
   return response.json();
 }
 

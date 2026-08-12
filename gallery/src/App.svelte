@@ -5,7 +5,7 @@
   import IndexingProgress from './components/IndexingProgress.svelte';
   import {
     initServerOrigins,
-    initServerToken,
+    initSessionId,
     fetchResults,
     fetchResultsPage,
     thumbnailUrl,
@@ -32,8 +32,8 @@
     }
   }
 
-  function embeddedServerToken() {
-    const raw = document.documentElement.dataset.serverToken;
+  function embeddedSessionId() {
+    const raw = document.documentElement.dataset.sessionId;
     if (!raw) return null;
     try {
       return JSON.parse(raw);
@@ -42,7 +42,7 @@
     }
   }
 
-  let token = $state(null);
+  let sessionId = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
   let serverPage = $state(0);
@@ -70,8 +70,8 @@
     notifyHostHeight(mcpApp, INLINE_HEIGHTS[mode] ?? 400);
   });
 
-  function applySession(session, tok, page) {
-    if (tok !== undefined) token = tok;
+  function applySession(session, sid, page) {
+    if (sid !== undefined) sessionId = sid;
     matches = session.matches ?? [];
     pageMap = session.pageMap;
     serverPage = page;
@@ -82,25 +82,25 @@
     selectedIndex = matches.length > 0 ? 0 : null;
   }
 
-  // Load a gallery session by token and apply it, mapping failures to the
-  // status bar. Shared by the URL-token path and the MCP tool-result path.
+  // Load a gallery session by its session id and apply it, mapping failures to the
+  // status bar. Shared by the direct-URL path and the MCP tool-result path.
   // On failure the grid stays in its loading (skeleton) state — pageMap is
   // still null, so rendering the populated grid would crash — while the error
   // surfaces in the status bar.
-  async function loadGallery(tok, onError) {
+  async function loadGallery(sid, onError) {
     try {
-      const data = await fetchResults(tok);
-      applySession(data, tok, 0);
+      const data = await fetchResults(sid);
+      applySession(data, sid, 0);
     } catch (err) {
       if (!matches.length) status = onError(err);
     }
   }
 
   async function fetchServerPage(page) {
-    if (!token) return;
+    if (!sessionId) return;
     serverPageLoading = true;
     try {
-      const data = await fetchResultsPage(token, page);
+      const data = await fetchResultsPage(sessionId, page);
       matches = data.matches ?? [];
       serverPage = page;
     } catch (err) {
@@ -117,13 +117,13 @@
     // Initial locale from the browser; refined from the MCP host context below.
     applyLocale(navigator.language);
     initServerOrigins(embeddedServerUrls() ?? [location.origin]);
-    initServerToken(embeddedServerToken());
+    initSessionId(embeddedSessionId());
 
     // Path 1: direct HTTP access (Chrome, any non-MCP host) — works because
     // app.connect() may hang indefinitely outside Claude Desktop, so we cannot
     // rely on it throwing before this fallback would otherwise run. The session
-    // token is the second path segment of /gallery/{token}/html or
-    // /indexing/{token}/html; indexing metadata (library, partitions)
+    // the session id is the second path segment of /gallery/{session_id}/html or
+    // /indexing/{session_id}/html; indexing metadata (library, partitions)
     // is read from the status endpoint, not the URL.
     const galleryPath = location.pathname?.match(/^\/gallery\/([^/]+)\/html$/);
     const indexingPath = location.pathname?.match(/^\/indexing\/([^/]+)\/html$/);
@@ -154,11 +154,11 @@
         modeKnown = true;
         loading = false;
       },
-      onGallery: ({ querySummary: qs, token: tok }) => {
+      onGallery: ({ querySummary: qs, sessionId: sid }) => {
         mode = 'gallery';
         modeKnown = true;
         querySummary = qs;
-        loadGallery(tok, err => m.status_error_loading_gallery({ message: err.message }));
+        loadGallery(sid, err => m.status_error_loading_gallery({ message: err.message }));
       },
     });
   });

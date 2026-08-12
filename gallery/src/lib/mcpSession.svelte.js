@@ -3,7 +3,7 @@
  *
  * Concentrates everything about the postMessage channel to the MCP host —
  * constructing the App, parsing tool results, refreshing the server origin /
- * token from each result, applying host context (locale/theme/styles), and the
+ * session id from each result, applying host context (locale/theme/styles), and the
  * connect() handshake — so the root component keeps only view/selection state.
  *
  * The host channel is one of two entry paths (the other is URL params handled
@@ -12,7 +12,7 @@
  */
 
 import { App, applyHostStyleVariables, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
-import { initServerOrigins, initServerToken } from './api.svelte.js';
+import { initServerOrigins, initSessionId } from './api.svelte.js';
 import { applyLocale } from './locale.js';
 
 function applyHostContext(ctx) {
@@ -45,7 +45,7 @@ function displayModeFlags(ctx) {
  * @param {() => void} handlers.onReady - connect() handshake completed
  * @param {(flags: {canFullscreen: boolean, isFullscreen: boolean}) => void} handlers.onDisplayMode
  * @param {(info: {sessionId: string}) => void} handlers.onIndexing
- * @param {(info: {querySummary: string, token: string}) => void} handlers.onGallery
+ * @param {(info: {querySummary: string, sessionId: string}) => void} handlers.onGallery
  * @returns {App | null} the app, or null if not running inside an MCP host
  */
 export function initMcpSession({ onApp, onReady, onDisplayMode, onIndexing, onGallery }) {
@@ -69,15 +69,15 @@ export function initMcpSession({ onApp, onReady, onDisplayMode, onIndexing, onGa
     if (result.type === 'indexing') {
       // The indexing session_id is the frontend's credential; library/partition
       // scope are read from the status endpoint, not the tool result.
-      initServerToken(result.session_id);
+      initSessionId(result.session_id);
       onIndexing({ sessionId: result.session_id });
       return;
     }
 
     // Gallery mode (result.type === 'gallery' or legacy without type field): the
-    // merged session token authenticates and scopes /gallery/{token}/… requests.
-    initServerToken(result.token);
-    onGallery({ querySummary: result.querySummary, token: result.token });
+    // merged session id authenticates and scopes /gallery/{session_id}/… requests.
+    initSessionId(result.session_id);
+    onGallery({ querySummary: result.querySummary, sessionId: result.session_id });
   };
 
   app.onhostcontextchanged = (ctx) => {

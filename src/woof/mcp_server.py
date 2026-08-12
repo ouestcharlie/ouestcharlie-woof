@@ -438,7 +438,7 @@ class McpServer:
             sort_order: str = "desc",
         ) -> dict[str, Any]:
             library = self._require_library(library_name)
-            # The MCP client never paginates — it only hands the session_token to
+            # The MCP client never paginates — it only hands the session_id to
             # browse_gallery. Page navigation happens entirely in the gallery's HTTP
             # backend (GallerySession.fetch_page), which re-issues the query per page.
             # So query_args carry no "page" key; fetch_page supplies it, and this
@@ -459,10 +459,10 @@ class McpServer:
             except AgentError as exc:
                 _log.error("search_photos(%r) failed: %s", library_name, exc)
                 return {"error": str(exc)}
-            # Store matches server-side; return only a token so Claude never
+            # Store matches server-side; return only a session id so Claude never
             # echoes the full payload back as browse_gallery arguments.
             matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
-            token = self._sessions.create(
+            session_id = self._sessions.create(
                 library=library,
                 agent=self._agent,
                 query_args=args,
@@ -472,7 +472,7 @@ class McpServer:
                 matches=matches,
             )
             return {
-                "session_token": token,
+                "session_id": session_id,
                 "totalCount": result.get("totalCount", len(matches)),
                 "errors": result.get("errors", 0),
                 "errorDetails": result.get("errorDetails", []),
@@ -486,8 +486,8 @@ class McpServer:
             Use ``list_search_fields`` to discover available filter fields and
             their expected formats before constructing a query.
 
-            Returns a session token only — nothing is displayed.
-            Pass the token to ``browse_gallery`` to show results.
+            Returns a session id only — nothing is displayed.
+            Pass the session id to ``browse_gallery`` to show results.
 
             Args:
                 library_name: Name of the library to search.
@@ -495,7 +495,7 @@ class McpServer:
                 {_SORT_SYNTAX_DOC}
 
             Returns:
-                ``session_token`` — opaque handle to the stored results; pass it
+                ``session_id`` — opaque handle to the stored results; pass it
                 to ``browse_gallery``. The matches themselves are held server-side and
                 are not returned here. Pagination is handled by the gallery, not the
                 caller.
@@ -511,39 +511,38 @@ class McpServer:
             annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
         )
         async def browse_gallery(
-            session_tokens: JsonStrList,
+            session_ids: JsonStrList,
             query_summary: str = "",
         ) -> dict[str, Any]:
             """Display photos from one or more search results in the gallery viewer.
 
             Call search_photos one or more times, then pass all returned
-            session_tokens here.  Matches are merged and deduplicated by
+            session_ids here.  Matches are merged and deduplicated by
             content hash so the same photo never appears twice even when it
             is returned by several queries.
 
             Args:
-                session_tokens: List of session_token values returned by
+                session_ids: List of session_id values returned by
                     search_photos.  Pass a single-element list when showing
                     one query's results.
                 query_summary: Short human-readable description shown in the
                     gallery header (e.g. "Nikon photos, July 2024").
                     Leave empty to show a default title.
             """
-            tokens = session_tokens
-            unknown = self._sessions.unknown_tokens(tokens)
+            unknown = self._sessions.unknown_session_ids(session_ids)
             if unknown:
                 return {
                     "error": (
-                        f"Unknown session_token(s): {', '.join(repr(t) for t in unknown)}. "
+                        f"Unknown session_id(s): {', '.join(repr(t) for t in unknown)}. "
                         "Call search_photos first."
                     )
                 }
 
-            merged_token, data = self._sessions.merge(tokens)
-            # `token` is the frontend's credential for its /gallery/{token}/… routes;
-            # the full URL is derivable from serverUrl + token, so it is not repeated.
+            merged_session_id, data = self._sessions.merge(session_ids)
+            # `session_id` is the frontend's credential for its /gallery/{session_id}/…
+            # routes; the full URL is derivable from serverUrl + session_id.
             return {
-                "token": merged_token,
+                "session_id": merged_session_id,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,

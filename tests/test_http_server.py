@@ -115,13 +115,13 @@ def test_get_gallery_html_defaults_server_urls_to_single_element_list() -> None:
 
 
 def test_get_gallery_html_embeds_token_when_provided() -> None:
-    html = get_gallery_html("http://localhost:12345", token="secret")
-    assert "data-server-token='\"secret\"'" in html
+    html = get_gallery_html("http://localhost:12345", session_id="secret")
+    assert "data-session-id='\"secret\"'" in html
 
 
 def test_get_gallery_html_omits_token_attribute_when_none() -> None:
     html = get_gallery_html("http://localhost:12345")
-    assert "data-server-token" not in html
+    assert "data-session-id" not in html
 
 
 def test_gallery_unknown_token_returns_404() -> None:

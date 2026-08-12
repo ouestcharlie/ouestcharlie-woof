@@ -231,7 +231,7 @@ describe('App — MCP tool-result path', () => {
 
     const { getByText } = render(App);
     toolResult({
-      type: 'gallery', token: 'gtok', querySummary: 'sunsets',
+      type: 'gallery', session_id: 'gtok', querySummary: 'sunsets',
       serverUrls: ['http://localhost'],
     });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   initServerOrigins,
-  initServerToken,
+  initSessionId,
   getResolvedOrigin,
   fetchResults,
   fetchResultsPage,
@@ -14,7 +14,7 @@ import {
 // Module state (resolvedOrigin, authToken) persists across tests — force a clean slate each time.
 beforeEach(() => {
   initServerOrigins([]);
-  initServerToken(null);
+  initSessionId(null);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -87,10 +87,10 @@ describe('api.svelte.js — origin fallback', () => {
   });
 });
 
-describe('api.svelte.js — bearer token (HTTP mode)', () => {
-  it('attaches an Authorization header to GET requests once a token is set', async () => {
+describe('api.svelte.js — session id auth (HTTP mode)', () => {
+  it('attaches an Authorization header to GET requests once a session id is set', async () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
+    initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await fetchResults('tok');
@@ -102,7 +102,7 @@ describe('api.svelte.js — bearer token (HTTP mode)', () => {
 
   it('merges the Authorization header into existing request options (e.g. POST)', async () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
+    initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await cancelIndexing('sess');
@@ -113,7 +113,7 @@ describe('api.svelte.js — bearer token (HTTP mode)', () => {
     });
   });
 
-  it('sends no Authorization header when no token is set', async () => {
+  it('sends no Authorization header when no session id is set', async () => {
     initServerOrigins(['http://localhost:1']);
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
@@ -146,9 +146,9 @@ describe('api.svelte.js — URL builders', () => {
     expect(previewUrl({ ...match, contentHash: undefined })).toBeNull();
   });
 
-  it('scopes media under /gallery/{sessionToken}/media/ when a token is set', () => {
+  it('scopes media under /gallery/{sessionId}/media/ when a session id is set', () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
+    initSessionId('secret');
     expect(thumbnailUrl(match)).toBe('http://localhost:1/gallery/secret/media/thumbnail/lib/2024/07/avif1');
     expect(previewUrl(match)).toBe('http://localhost:1/gallery/secret/media/previews/lib/2024/07/hash1.jpg');
   });
