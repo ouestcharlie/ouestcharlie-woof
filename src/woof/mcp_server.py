@@ -141,9 +141,11 @@ class McpServer:
             server_urls: Candidate URLs (e.g. ``http://localhost:<port>``,
                 ``http://127.0.0.1:<port>``) this MCP server is reachable at
                 over HTTP — embedded in tool results and the gallery CSP.
-            token: Bearer token, embedded in the gallery HTML / tool results
-                so a frontend can authenticate against whatever serves
-                *server_urls*. ``None`` is only meaningful for tests that
+            token: The master bearer token that guards the HTTP server. Not
+                embedded in tool results or the gallery HTML — the frontend
+                authenticates with per-session tokens instead (the merged
+                ``token`` from ``browse_gallery``, the ``session_id`` from
+                ``index_library``). ``None`` is only meaningful for tests that
                 construct a ``McpServer`` without ever serving it over HTTP.
         """
         self.config = config
@@ -425,9 +427,6 @@ class McpServer:
                 "partition_scope": partition_scope,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,
-                # The indexing session_id is the frontend's credential for its
-                # /api/indexing/{session_id} routes (OEC-50b) — not the master token.
-                "serverToken": session_id,
             }
 
         async def _search_photos_tool(
@@ -541,15 +540,13 @@ class McpServer:
                 }
 
             merged_token, data = self._sessions.merge(tokens)
+            # `token` is the frontend's credential for its /gallery/{token}/… routes;
+            # the full URL is derivable from serverUrl + token, so it is not repeated.
             return {
                 "token": merged_token,
                 "querySummary": query_summary,
                 "serverUrl": self.server_url,
                 "serverUrls": self.server_urls,
-                # The merged session token is the frontend's credential for its
-                # /api/results and /media routes (OEC-50b) — not the master token.
-                "serverToken": merged_token,
-                "galleryUrl": f"{self.server_url}/gallery/{merged_token}",
                 "totalCount": data.totalCount,
             }
 
@@ -571,7 +568,7 @@ class McpServer:
         async def gallery_resource() -> str:
             # No token embedded: this static MCP resource is shared across sessions,
             # so the frontend receives its per-session token from the tool result
-            # (serverToken) instead (OEC-50b).
+            # (browse_gallery's `token` / index_library's `session_id`) instead.
             return get_gallery_html(self.server_url, self.server_urls, None)
 
     # ------------------------------------------------------------------

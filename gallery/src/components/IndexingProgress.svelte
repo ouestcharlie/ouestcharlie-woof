@@ -4,7 +4,12 @@
   import { notifyHostMeasured } from '../lib/hostSize.js';
   import * as m from '../paraglide/messages.js';
 
-  let { sessionId, library, partitionScope = [], mcpApp, mcpReady = false } = $props();
+  let { sessionId, mcpApp, mcpReady = false } = $props();
+
+  // Library and partition scope come from the indexing status response,
+  // not from the caller — so both the MCP and direct-URL entries need only a sessionId.
+  let library = $state('');
+  let partitionScope = $state([]);
 
   let scopeLabel = $derived(
     partitionScope.length === 0
@@ -45,6 +50,8 @@
       message = data.message ?? '';
       summary = data.summary ?? null;
       error = data.error ?? null;
+      library = data.library_name ?? '';
+      partitionScope = data.partition_scope ?? [];
 
       if (status !== 'running' && status !== 'cancelling') {
         clearInterval(pollInterval);

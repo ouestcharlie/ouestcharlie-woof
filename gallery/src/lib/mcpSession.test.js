@@ -69,38 +69,22 @@ describe('initMcpSession — construction', () => {
 });
 
 describe('initMcpSession — tool results', () => {
-  it('routes an indexing result to onIndexing with normalized fields', () => {
+  it('routes an indexing result to onIndexing and uses session_id as the token', () => {
     const h = makeHandlers();
     initMcpSession(h);
     instances[0].ontoolresult(toolResult({
       type: 'indexing',
       session_id: 'sess-1',
-      library_name: 'Photos',
-      partition_scope: ['2024/07'],
       serverUrls: ['http://127.0.0.1:9000'],
-      serverToken: 'tok',
     }));
 
-    expect(h.onIndexing).toHaveBeenCalledWith({
-      sessionId: 'sess-1',
-      library: 'Photos',
-      partitionScope: ['2024/07'],
-    });
+    expect(h.onIndexing).toHaveBeenCalledWith({ sessionId: 'sess-1' });
     expect(h.onGallery).not.toHaveBeenCalled();
     expect(initServerOrigins).toHaveBeenCalledWith(['http://127.0.0.1:9000']);
-    expect(initServerToken).toHaveBeenCalledWith('tok');
+    expect(initServerToken).toHaveBeenCalledWith('sess-1');
   });
 
-  it('defaults partitionScope to [] when absent', () => {
-    const h = makeHandlers();
-    initMcpSession(h);
-    instances[0].ontoolresult(toolResult({ type: 'indexing', session_id: 's', library_name: 'L' }));
-    expect(h.onIndexing).toHaveBeenCalledWith(
-      expect.objectContaining({ partitionScope: [] }),
-    );
-  });
-
-  it('routes a gallery result to onGallery', () => {
+  it('routes a gallery result to onGallery and uses token as the credential', () => {
     const h = makeHandlers();
     initMcpSession(h);
     instances[0].ontoolresult(toolResult({
@@ -108,6 +92,7 @@ describe('initMcpSession — tool results', () => {
     }));
     expect(h.onGallery).toHaveBeenCalledWith({ querySummary: 'cats', token: 'gtok' });
     expect(h.onIndexing).not.toHaveBeenCalled();
+    expect(initServerToken).toHaveBeenCalledWith('gtok');
   });
 
   it('treats a legacy result with no type field as gallery', () => {

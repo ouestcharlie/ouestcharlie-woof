@@ -44,7 +44,7 @@ function displayModeFlags(ctx) {
  * @param {(app: App) => void} handlers.onApp - receives the constructed instance
  * @param {() => void} handlers.onReady - connect() handshake completed
  * @param {(flags: {canFullscreen: boolean, isFullscreen: boolean}) => void} handlers.onDisplayMode
- * @param {(info: {sessionId: string, library: string, partitionScope: string[]}) => void} handlers.onIndexing
+ * @param {(info: {sessionId: string}) => void} handlers.onIndexing
  * @param {(info: {querySummary: string, token: string}) => void} handlers.onGallery
  * @returns {App | null} the app, or null if not running inside an MCP host
  */
@@ -65,18 +65,18 @@ export function initMcpSession({ onApp, onReady, onDisplayMode, onIndexing, onGa
     // context location.origin is ui://… not the Woof HTTP server URL, and the
     // server may have restarted on a new port since the page loaded.
     initServerOrigins(result.serverUrls ?? [result.serverUrl]);
-    initServerToken(result.serverToken);
 
     if (result.type === 'indexing') {
-      onIndexing({
-        sessionId: result.session_id,
-        library: result.library_name,
-        partitionScope: result.partition_scope ?? [],
-      });
+      // The indexing session_id is the frontend's credential; library/partition
+      // scope are read from the status endpoint, not the tool result.
+      initServerToken(result.session_id);
+      onIndexing({ sessionId: result.session_id });
       return;
     }
 
-    // Gallery mode (result.type === 'gallery' or legacy without type field)
+    // Gallery mode (result.type === 'gallery' or legacy without type field): the
+    // merged session token authenticates and scopes /gallery/{token}/… requests.
+    initServerToken(result.token);
     onGallery({ querySummary: result.querySummary, token: result.token });
   };
 

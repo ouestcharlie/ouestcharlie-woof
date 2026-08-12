@@ -29,33 +29,30 @@ from .discovery import ActivityTracker
 def _classify_session_route(path: str) -> tuple[str, str] | None:
     """Map a request path to its ``(manager, in-path session token)``, or ``None``.
 
-    Session-scoped routes carry their session token as a path segment, which is
-    both the credential and the scope key (OEC-50b). Gallery routes are owned by
-    the gallery session manager, indexing routes by the indexing session manager;
-    anything else (control plane, media-less paths) returns ``None``.
+    Session-scoped routes are ``/gallery/{token}/…`` (HTML, results, media — owned
+    by the gallery session manager) and ``/indexing/{token}/…`` (status, cancel —
+    owned by the indexing session manager); the token is always the second segment,
+    both credential and scope key. Anything else (control plane,
+    ``/gallery-static/``) returns ``None``.
     """
     segments = [s for s in path.split("/") if s]
-    if len(segments) >= 2 and segments[0] in ("gallery", "media"):
-        return ("gallery", segments[1])
-    if len(segments) >= 3 and segments[0] == "api" and segments[1] == "results":
-        return ("gallery", segments[2])
-    if len(segments) >= 3 and segments[0] == "api" and segments[1] == "indexing":
-        return ("indexing", segments[2])
+    if len(segments) >= 2 and segments[0] in ("gallery", "indexing"):
+        return (segments[0], segments[1])
     return None
 
 
 class BearerGuard(BaseHTTPMiddleware):
     """Reject requests that lack a valid credential.
 
-    Two credential classes are accepted (OEC-50b):
+    Two credential classes are accepted:
 
     - The **master token**, as ``Authorization: Bearer <token>`` or a ``?token=``
       query parameter — used by the stdio bridge; grants every route.
-    - A live **session token** carried in the path of a session-scoped route
-      (``/gallery/{t}``, ``/api/results/{t}``, ``/media/{t}/…`` bound to the
-      gallery manager; ``/api/indexing/{sid}`` to the indexing manager). It grants
-      only its own session's routes and never the control plane. Per-file media
-      scoping is enforced separately in ``proxy_media``.
+    - A live **session token** carried as the second path segment of a
+      session-scoped route (``/gallery/{t}/…`` — HTML, results, media — bound to the
+      gallery manager; ``/indexing/{t}/…`` to the indexing manager). It grants only
+      its own session's routes and never the control plane. Per-file media scoping
+      is enforced separately in ``proxy_media``.
 
     ``exempt_path_prefixes`` skips auth entirely for matching paths — used
     for ``/gallery-static/`` (the compiled JS/CSS bundle), which `<script

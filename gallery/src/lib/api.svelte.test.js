@@ -25,7 +25,7 @@ describe('api.svelte.js — origin fallback', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
     expect(getResolvedOrigin()).toBe('http://localhost:1');
   });
 
@@ -37,8 +37,8 @@ describe('api.svelte.js — origin fallback', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenNthCalledWith(1, 'http://localhost:1/api/results/tok');
-    expect(global.fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:1/api/results/tok');
+    expect(global.fetch).toHaveBeenNthCalledWith(1, 'http://localhost:1/gallery/tok/results');
+    expect(global.fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:1/gallery/tok/results');
     expect(getResolvedOrigin()).toBe('http://127.0.0.1:1');
   });
 
@@ -55,7 +55,7 @@ describe('api.svelte.js — origin fallback', () => {
     await fetchResultsPage('tok', 1);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1/api/results/tok/page/1');
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1/gallery/tok/results/page/1');
   });
 
   it('throws once every candidate has failed', async () => {
@@ -71,7 +71,7 @@ describe('api.svelte.js — origin fallback', () => {
 
     await cancelIndexing('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess/cancel', {
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/cancel', {
       method: 'POST',
     });
   });
@@ -82,7 +82,7 @@ describe('api.svelte.js — origin fallback', () => {
 
     const data = await fetchIndexingStatus('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/status');
     expect(data).toEqual({ status: 'running' });
   });
 });
@@ -95,7 +95,7 @@ describe('api.svelte.js — bearer token (HTTP mode)', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok', {
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results', {
       headers: { Authorization: 'Bearer secret' },
     });
   });
@@ -107,7 +107,7 @@ describe('api.svelte.js — bearer token (HTTP mode)', () => {
 
     await cancelIndexing('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess/cancel', {
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/cancel', {
       method: 'POST',
       headers: { Authorization: 'Bearer secret' },
     });
@@ -119,7 +119,7 @@ describe('api.svelte.js — bearer token (HTTP mode)', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
   });
 });
 
@@ -146,10 +146,10 @@ describe('api.svelte.js — URL builders', () => {
     expect(previewUrl({ ...match, contentHash: undefined })).toBeNull();
   });
 
-  it('scopes media under /media/{sessionToken}/ when a token is set (OEC-50b)', () => {
+  it('scopes media under /gallery/{sessionToken}/media/ when a token is set', () => {
     initServerOrigins(['http://localhost:1']);
     initServerToken('secret');
-    expect(thumbnailUrl(match)).toBe('http://localhost:1/media/secret/thumbnail/lib/2024/07/avif1');
-    expect(previewUrl(match)).toBe('http://localhost:1/media/secret/previews/lib/2024/07/hash1.jpg');
+    expect(thumbnailUrl(match)).toBe('http://localhost:1/gallery/secret/media/thumbnail/lib/2024/07/avif1');
+    expect(previewUrl(match)).toBe('http://localhost:1/gallery/secret/media/previews/lib/2024/07/hash1.jpg');
   });
 });

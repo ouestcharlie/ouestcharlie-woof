@@ -20,6 +20,10 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 - **No inline imports**: all `import` statements must be at the top of the file. Never place imports inside functions or test bodies.
 - **Docstrings/comments describe requirements, not callers**: a class or function's docstring should state what it needs and what it does, not assume or describe the outside architecture that calls it (e.g. don't write "binding the port is `__main__.py`'s job" inside `McpServer`'s docstring — just document that `server_urls` is a required list of URLs). Keeps the module decoupled from any specific caller and avoids stale references when callers change.
 
+## Documentation
+
+- **Don't reference issue numbers in code or docs**: Issue numbers (e.g. "OEC-39") are only valid at the time of their implementation and become stale afterwards. Explain the rationale directly instead of pointing to an issue.
+
 ## Testing
 
 ### Python (Woof server)

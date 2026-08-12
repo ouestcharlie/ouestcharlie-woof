@@ -1,8 +1,6 @@
 """Gallery session management for Woof.
 
-Tracks search-result sessions keyed by URL-safe tokens.  The underlying
-``sessions`` dict is shared with the HTTP server so it can serve
-``/api/results/{token}`` without any additional coupling.
+Tracks search-result sessions keyed by URL-safe tokens.
 """
 
 from __future__ import annotations

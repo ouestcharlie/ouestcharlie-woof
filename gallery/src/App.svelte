@@ -61,8 +61,6 @@
   let mode = $state('gallery'); // 'gallery' | 'indexing'
   let modeKnown = $state(false); // false until first ontoolresult or URL param processed
   let indexingSessionId = $state(null);
-  let indexingLibrary = $state('');
-  let indexingPartitionScope = $state([]);
 
   // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
   // from ever firing. Manually notify the host whenever the displayed content changes.
@@ -121,23 +119,22 @@
     initServerOrigins(embeddedServerUrls() ?? [location.origin]);
     initServerToken(embeddedServerToken());
 
-    // Path 1: URL params — works in Chrome and any direct HTTP access.
-    // app.connect() may hang indefinitely outside Claude Desktop so we cannot
-    // rely on it throwing before this fallback would otherwise run.
-    const urlParams = new URLSearchParams(location.search);
-    const urlToken = urlParams.get('token');
-    const urlSessionId = urlParams.get('sessionId');
-    if (urlSessionId) {
-      indexingSessionId = urlSessionId;
-      indexingLibrary = urlParams.get('library') ?? '';
-      const urlPartitionScope = urlParams.get('partitionScope');
-      indexingPartitionScope = urlPartitionScope ? urlPartitionScope.split(',').filter(Boolean) : [];
+    // Path 1: direct HTTP access (Chrome, any non-MCP host) — works because
+    // app.connect() may hang indefinitely outside Claude Desktop, so we cannot
+    // rely on it throwing before this fallback would otherwise run. The session
+    // token is the second path segment of /gallery/{token}/html or
+    // /indexing/{token}/html; indexing metadata (library, partitions)
+    // is read from the status endpoint, not the URL.
+    const galleryPath = location.pathname?.match(/^\/gallery\/([^/]+)\/html$/);
+    const indexingPath = location.pathname?.match(/^\/indexing\/([^/]+)\/html$/);
+    if (indexingPath) {
+      indexingSessionId = decodeURIComponent(indexingPath[1]);
       mode = 'indexing';
       modeKnown = true;
       loading = false;
-    } else if (urlToken) {
+    } else if (galleryPath) {
       modeKnown = true;
-      loadGallery(urlToken, err => m.status_error({ message: err.message }));
+      loadGallery(decodeURIComponent(galleryPath[1]), err => m.status_error({ message: err.message }));
     }
 
     // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.
@@ -151,10 +148,8 @@
         if (cf !== undefined) canFullscreen = cf;
         if (fs !== undefined) isFullscreen = fs;
       },
-      onIndexing: ({ sessionId, library, partitionScope }) => {
+      onIndexing: ({ sessionId }) => {
         indexingSessionId = sessionId;
-        indexingLibrary = library;
-        indexingPartitionScope = partitionScope;
         mode = 'indexing';
         modeKnown = true;
         loading = false;
@@ -199,8 +194,6 @@
   {:else if mode === 'indexing'}
     <IndexingProgress
       sessionId={indexingSessionId}
-      library={indexingLibrary}
-      partitionScope={indexingPartitionScope}
       {mcpApp}
       {mcpReady}
     />

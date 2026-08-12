@@ -40,11 +40,12 @@ export function getResolvedOrigin() {
   return resolvedOrigin;
 }
 
-/** Path prefix scoping media requests to the current gallery session (OEC-50b).
- * The token both authenticates and scopes the request
+/** Path prefix scoping media requests to the current gallery session.
+ * Media lives under the gallery family: `/gallery/{sessionToken}/media/…`; the token
+ * both authenticates and scopes the request.
  * Empty when unauthenticated (stdio/test), where routes carry no session prefix. */
 function mediaPrefix() {
-  return authToken ? `/media/${encodeURIComponent(authToken)}` : '';
+  return authToken ? `/gallery/${encodeURIComponent(authToken)}/media` : '';
 }
 
 async function request(path, options) {
@@ -72,22 +73,22 @@ async function request(path, options) {
 }
 
 export async function fetchResults(token) {
-  const response = await request(`/api/results/${token}`);
+  const response = await request(`/gallery/${token}/results`);
   return response.json();
 }
 
 export async function fetchResultsPage(token, page) {
-  const response = await request(`/api/results/${token}/page/${page}`);
+  const response = await request(`/gallery/${token}/results/page/${page}`);
   return response.json();
 }
 
 export async function fetchIndexingStatus(sessionId) {
-  const response = await request(`/api/indexing/${sessionId}`);
+  const response = await request(`/indexing/${sessionId}/status`);
   return response.json();
 }
 
 export async function cancelIndexing(sessionId) {
-  await request(`/api/indexing/${sessionId}/cancel`, { method: 'POST' });
+  await request(`/indexing/${sessionId}/cancel`, { method: 'POST' });
 }
 
 function encodePartition(partition) {

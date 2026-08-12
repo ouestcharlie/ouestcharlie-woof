@@ -13,19 +13,30 @@ function mockFetch(sessions) {
   });
 }
 
+// library_name/partition_scope travel in the status response, so the
+// component reads scope from the poll, not from props.
 function runningSession(overrides = {}) {
-  return { status: 'running', progress: 0, total: 1, message: '', summary: null, error: null, ...overrides };
+  return {
+    status: 'running', progress: 0, total: 1, message: '', summary: null, error: null,
+    library_name: 'MyLib', partition_scope: [], ...overrides,
+  };
 }
 
 function completedSession(summary = {}) {
-  return { status: 'completed', progress: 1, total: 1, message: '', summary, error: null };
+  return {
+    status: 'completed', progress: 1, total: 1, message: '', summary, error: null,
+    library_name: 'MyLib', partition_scope: [],
+  };
 }
 
 function failedSession(error = 'disk full') {
-  return { status: 'failed', progress: 0, total: 1, message: '', summary: null, error };
+  return {
+    status: 'failed', progress: 0, total: 1, message: '', summary: null, error,
+    library_name: 'MyLib', partition_scope: [],
+  };
 }
 
-const baseProps = { sessionId: 'abc', library: 'MyLib', partitionScope: [] };
+const baseProps = { sessionId: 'abc' };
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -213,7 +224,7 @@ describe('IndexingProgress — stop button', () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        'http://localhost/api/indexing/abc/cancel',
+        'http://localhost/indexing/abc/cancel',
         { method: 'POST' },
       ),
     );
@@ -248,18 +259,14 @@ describe('IndexingProgress — header', () => {
   });
 
   it('shows partition count in header when scoped', async () => {
-    mockFetch(runningSession());
-    const { getByRole } = render(IndexingProgress, {
-      props: { ...baseProps, partitionScope: ['2024/07'] },
-    });
+    mockFetch(runningSession({ partition_scope: ['2024/07'] }));
+    const { getByRole } = render(IndexingProgress, { props: baseProps });
     await waitFor(() => expect(getByRole('heading', { name: /1 partition in MyLib/ })).toBeTruthy());
   });
 
   it('shows plural partition count in header for multiple entries', async () => {
-    mockFetch(runningSession());
-    const { getByRole } = render(IndexingProgress, {
-      props: { ...baseProps, partitionScope: ['2024/07', '2024/08'] },
-    });
+    mockFetch(runningSession({ partition_scope: ['2024/07', '2024/08'] }));
+    const { getByRole } = render(IndexingProgress, { props: baseProps });
     await waitFor(() => expect(getByRole('heading', { name: /2 partitions in MyLib/ })).toBeTruthy());
   });
 });
