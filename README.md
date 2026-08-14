@@ -10,11 +10,11 @@
 
 mcp-name: io.github.ouestcharlie/ouestcharlie-woof
 
-Woof is a media management system that keeps your photos exactly where they are — on your own drives — while giving you a beautiful, searchable **gallery** powered by **your AI assistant** (Claude Desktop, Goose...).
+Woof is the photo and video gallery companion to your **your AI assistant** (Claude Desktop, Goose...). It complements those powerful tools with a searchable **gallery**. Your photos and videos remain exactly where they are — on your own drives (local or mounted).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
-Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" in French), a full AI native framework to manage you photos (later movies and other media).
+Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" in French), a full AI native framework to manage your photos and videos.
 
 ## What makes it different
 
@@ -151,6 +151,10 @@ The gallery panel will appear inline in your conversation with matching results.
 
 <p align="center"><img src="assets/screenshot_2024-07-05.jpg" alt="Woof in Claude Desktop" height="500"></p>
 <p align="center"><i>Ouestcharlie Woof photo gallery inside Claude Desktop</i></p>
+
+## More tutorials
+
+- [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
 
 ---
 
