@@ -147,6 +147,7 @@
     gap: 4px;
     padding: 1rem;
     align-content: flex-start;
+    justify-content: center;
     overflow-y: auto;
   }
 
