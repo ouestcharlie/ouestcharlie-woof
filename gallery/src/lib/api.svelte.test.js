@@ -88,19 +88,18 @@ describe('api.svelte.js — origin fallback', () => {
 });
 
 describe('api.svelte.js — session id auth (HTTP mode)', () => {
-  it('attaches an Authorization header to GET requests once a session id is set', async () => {
+  it('never attaches an Authorization header (auth is via the URL path)', async () => {
     initServerOrigins(['http://localhost:1']);
     initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results', {
-      headers: { Authorization: 'Bearer secret' },
-    });
+    // GET with a session id set: still no header — the session id is in the path.
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
   });
 
-  it('merges the Authorization header into existing request options (e.g. POST)', async () => {
+  it('does not add headers to a POST either', async () => {
     initServerOrigins(['http://localhost:1']);
     initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
@@ -109,17 +108,7 @@ describe('api.svelte.js — session id auth (HTTP mode)', () => {
 
     expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/cancel', {
       method: 'POST',
-      headers: { Authorization: 'Bearer secret' },
     });
-  });
-
-  it('sends no Authorization header when no session id is set', async () => {
-    initServerOrigins(['http://localhost:1']);
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
-
-    await fetchResults('tok');
-
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
   });
 });
 

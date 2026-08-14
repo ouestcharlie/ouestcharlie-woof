@@ -565,10 +565,10 @@ class McpServer:
             ),
         )
         async def gallery_resource() -> str:
-            # No token embedded: this static MCP resource is shared across sessions,
-            # so the frontend receives its per-session token from the tool result
-            # (browse_gallery's `token` / index_library's `session_id`) instead.
-            return get_gallery_html(self.server_url, self.server_urls, None)
+            # This static MCP resource is shared across sessions; the frontend
+            # receives its per-session id from the tool result (browse_gallery /
+            # index_library) instead.
+            return get_gallery_html(self.server_url)
 
     # ------------------------------------------------------------------
     # Helpers

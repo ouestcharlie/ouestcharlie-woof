@@ -237,10 +237,7 @@ describe('App — MCP tool-result path', () => {
 
     await waitFor(() => expect(getByText('sunsets')).toBeTruthy());
     await waitFor(() => expect(getByText('3 items')).toBeTruthy());
-    // token 'gtok' is now the session credential, so results are fetched with it.
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/gtok/results', {
-      headers: { Authorization: 'Bearer gtok' },
-    });
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/gtok/results');
   });
 
   it('surfaces a gallery load failure in the status bar', async () => {

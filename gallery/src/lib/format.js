@@ -3,6 +3,12 @@
 // use `{#if}` to omit empty rows.
 
 import { getLocale } from '../paraglide/runtime.js';
+import * as m from '../paraglide/messages.js';
+
+// Item count as a string (photos + videos), pluralized in the active locale.
+export function itemCountLabel(n) {
+  return n === 1 ? m.status_items_one({ count: n }) : m.status_items_other({ count: n });
+}
 
 /**
  * Format an ISO datetime string to a locale-aware human-readable form.

@@ -31,7 +31,6 @@ Range/Content-Range so <video> seeking works without buffering GB-scale files
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -90,34 +89,20 @@ def _media_in_session(session: Any, library: str, rest: str) -> bool:
     )
 
 
-def get_gallery_html(
-    server_url: str, server_urls: list[str] | None = None, session_id: str | None = None
-) -> str:
+def get_gallery_html(server_url: str) -> str:
     """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
     those relative-rooted paths with {server_url}/gallery-static/ so the MCP
     Apps iframe (and direct browser access) can load JS/CSS.
 
-    ``server_urls`` (defaulting to a single-element list of ``server_url``) is
-    embedded as a ``data-server-urls`` attribute on ``<html>`` so the frontend can
-    try each candidate origin in turn — different MCP hosts accept different
-    loopback hostnames in their CSP. A data attribute (rather than an inline
-    ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
-
-    ``session_id`` (``None`` for the unauthenticated test-only standalone gallery
-    server, see ``tests/http_test_server.py::start_http_server``) is embedded
-    alongside as ``data-session-id`` — the gallery/indexing session this page is
-    scoped to; the frontend uses it to authenticate and build session-scoped URLs.
+    Nothing else is embedded. The frontend derives its candidate origins from the
+    tool result (MCP host path) or ``location.origin`` (direct access), and its
+    session id from the tool result or the URL path (``/gallery/{session_id}/html``).
     """
-    candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
-        html = html.replace("/gallery-static/", f"{server_url}/gallery-static/")
-        attrs = f"data-server-urls='{json.dumps(candidates)}'"
-        if session_id is not None:
-            attrs += f" data-session-id='{json.dumps(session_id)}'"
-        return html.replace("<html", f"<html {attrs}", 1)
+        return html.replace("/gallery-static/", f"{server_url}/gallery-static/")
     return _gallery_placeholder()
 
 
@@ -147,9 +132,9 @@ def build_gallery_app(
         session = session_manager.get(session_id)
         if session is None:
             return Response(status_code=404)
-        # Embed the session id (not the master token) so a direct-browser gallery
-        # authenticates as its own session only.
-        html = get_gallery_html(server_url, session_id=session_id)
+        # The frontend reads its session id from this page's URL path, so nothing
+        # session-specific needs embedding here.
+        html = get_gallery_html(server_url)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
@@ -252,10 +237,9 @@ def build_gallery_app(
         session_id = request.path_params["session_id"]
         if indexing_session_manager is None or indexing_session_manager.get(session_id) is None:
             return Response(status_code=404)
-        # Embed the indexing session_id as the frontend's credential, mirroring the
-        # gallery HTML route. Library/partition_scope are read from the
-        # status endpoint, not the URL.
-        html = get_gallery_html(server_url, session_id=session_id)
+        # The frontend reads its session id from this page's URL path; library and
+        # partition_scope come from the status endpoint.
+        html = get_gallery_html(server_url)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},

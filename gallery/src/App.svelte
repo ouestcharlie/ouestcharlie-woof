@@ -16,31 +16,7 @@
   import { applyLocale } from './lib/locale.js';
   import { notifyHostHeight } from './lib/hostSize.js';
   import { initMcpSession } from './lib/mcpSession.svelte.js';
-
-  // Item count as a string (photos + videos), pluralized in the active locale.
-  function itemCountLabel(n) {
-    return n === 1 ? m.status_items_one({ count: n }) : m.status_items_other({ count: n });
-  }
-
-  function embeddedServerUrls() {
-    const raw = document.documentElement.dataset.serverUrls;
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  function embeddedSessionId() {
-    const raw = document.documentElement.dataset.sessionId;
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
+  import { itemCountLabel } from './lib/format.js';
 
   let sessionId = $state(null);
   let matches = $state([]);
@@ -116,25 +92,28 @@
     window.addEventListener('keydown', onKeydown);
     // Initial locale from the browser; refined from the MCP host context below.
     applyLocale(navigator.language);
-    initServerOrigins(embeddedServerUrls() ?? [location.origin]);
-    initSessionId(embeddedSessionId());
+    // Direct access: location.origin is the Woof server. In the MCP iframe it is
+    // ui://… (unusable), but the tool result overrides origins before any request.
+    initServerOrigins([location.origin]);
 
     // Path 1: direct HTTP access (Chrome, any non-MCP host) — works because
     // app.connect() may hang indefinitely outside Claude Desktop, so we cannot
-    // rely on it throwing before this fallback would otherwise run. The session
-    // the session id is the second path segment of /gallery/{session_id}/html or
-    // /indexing/{session_id}/html; indexing metadata (library, partitions)
-    // is read from the status endpoint, not the URL.
+    // rely on it throwing before this fallback would otherwise run. The session id
+    // is the second path segment of /gallery/{session_id}/html or
+    // /indexing/{session_id}/html — URL-safe by construction, so no decoding needed;
+    // indexing metadata (library, partitions) is read from the status endpoint.
     const galleryPath = location.pathname?.match(/^\/gallery\/([^/]+)\/html$/);
     const indexingPath = location.pathname?.match(/^\/indexing\/([^/]+)\/html$/);
     if (indexingPath) {
-      indexingSessionId = decodeURIComponent(indexingPath[1]);
+      initSessionId(indexingPath[1]);
+      indexingSessionId = indexingPath[1];
       mode = 'indexing';
       modeKnown = true;
       loading = false;
     } else if (galleryPath) {
+      initSessionId(galleryPath[1]);
       modeKnown = true;
-      loadGallery(decodeURIComponent(galleryPath[1]), err => m.status_error({ message: err.message }));
+      loadGallery(galleryPath[1], err => m.status_error({ message: err.message }));
     }
 
     // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.

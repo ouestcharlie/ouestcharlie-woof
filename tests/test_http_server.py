@@ -101,27 +101,20 @@ def test_gallery_token_route_serves_html() -> None:
         assert "<html" in body
 
 
-def test_get_gallery_html_embeds_server_urls_as_data_attribute() -> None:
-    urls = ["http://localhost:12345", "http://127.0.0.1:12345"]
-    html = get_gallery_html(urls[0], urls)
-    assert 'data-server-urls=\'["http://localhost:12345", "http://127.0.0.1:12345"]\'' in html
+def test_get_gallery_html_rewrites_static_assets_to_absolute_urls() -> None:
+    html = get_gallery_html("http://localhost:12345")
+    # Vite's root-relative asset base is rewritten to an absolute server URL.
+    assert "http://localhost:12345/gallery-static/" in html
     # No inline <script> should be introduced — CSP script-src should not need widening.
     assert "<script>window" not in html
 
 
-def test_get_gallery_html_defaults_server_urls_to_single_element_list() -> None:
-    html = get_gallery_html("http://localhost:12345")
-    assert "data-server-urls='[\"http://localhost:12345\"]'" in html
-
-
-def test_get_gallery_html_embeds_token_when_provided() -> None:
-    html = get_gallery_html("http://localhost:12345", session_id="secret")
-    assert "data-session-id='\"secret\"'" in html
-
-
-def test_get_gallery_html_omits_token_attribute_when_none() -> None:
+def test_get_gallery_html_embeds_no_data_attributes() -> None:
+    # Origins come from the tool result / location.origin, the session id from the
+    # URL path / tool result — nothing session- or origin-specific is embedded.
     html = get_gallery_html("http://localhost:12345")
     assert "data-session-id" not in html
+    assert "data-server-urls" not in html
 
 
 def test_gallery_unknown_token_returns_404() -> None:

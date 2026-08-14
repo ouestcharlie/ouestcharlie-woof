@@ -26,9 +26,7 @@ export function initServerOrigins(origins) {
 }
 
 /**
- * Set (or refresh) the gallery/indexing session id used to authenticate and scope
- * requests against Woof's HTTP-mode server. A no-op / null in stdio mode, where
- * routes are unauthenticated.
+ * Set (or refresh) the gallery/indexing session id. 
  * @param {string | null | undefined} id
  */
 export function initSessionId(id) {
@@ -41,27 +39,23 @@ export function getResolvedOrigin() {
 }
 
 /** Path prefix scoping media requests to the current gallery session.
- * Media lives under the gallery family: `/gallery/{sessionId}/media/…`; the session
- * id both authenticates and scopes the request.
+ * The session id both authenticates and scopes the request. 
+ * Session ids are URL-safe by construction, so they need no encoding.
  * Empty when unauthenticated (stdio/test), where routes carry no session prefix. */
 function mediaPrefix() {
-  return sessionId ? `/gallery/${encodeURIComponent(sessionId)}/media` : '';
+  return sessionId ? `/gallery/${sessionId}/media` : '';
 }
 
 async function request(path, options) {
   const tryOrder = resolvedOrigin
     ? [resolvedOrigin, ...candidates.filter((origin) => origin !== resolvedOrigin)]
     : candidates;
-  const finalOptions = sessionId
-    ? { ...options, headers: { ...options?.headers, Authorization: `Bearer ${sessionId}` } }
-    : options;
 
   let lastError;
   for (const origin of tryOrder) {
     try {
       const url = `${origin}${path}`;
-      const response =
-        finalOptions !== undefined ? await fetch(url, finalOptions) : await fetch(url);
+      const response = options !== undefined ? await fetch(url, options) : await fetch(url);
       if (!response.ok) throw new Error(response.statusText);
       resolvedOrigin = origin;
       return response;

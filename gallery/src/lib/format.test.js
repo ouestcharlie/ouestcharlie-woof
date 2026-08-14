@@ -12,6 +12,7 @@ import {
   codecUnplayable,
   formatGps,
   truncate,
+  itemCountLabel,
 } from './format.js';
 
 describe('roundTrim', () => {
@@ -163,5 +164,17 @@ describe('formatDate', () => {
     const out = formatDate('2024-07-15T14:32:00');
     expect(out).toMatch(/2024/);
     expect(out).toMatch(/15/);
+  });
+});
+
+describe('itemCountLabel', () => {
+  it('uses the singular form for exactly one', () => {
+    expect(itemCountLabel(1)).toBe('1 item');
+  });
+  it('uses the plural form for zero', () => {
+    expect(itemCountLabel(0)).toBe('0 items');
+  });
+  it('uses the plural form for many', () => {
+    expect(itemCountLabel(42)).toBe('42 items');
   });
 });
