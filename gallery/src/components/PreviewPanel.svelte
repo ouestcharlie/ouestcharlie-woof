@@ -23,9 +23,11 @@
    *   previewUrl: (match: any) => string | null,
    *   videoUrl?: (match: any) => string | null,
    *   active?: boolean,
+   *   isFullscreen?: boolean,
+   *   inlineMaxHeight?: number,
    * }}
    */
-  let { matches, selectedIndex, onNavigate, previewUrl, videoUrl = () => null, active = true } = $props();
+  let { matches, selectedIndex, onNavigate, previewUrl, videoUrl = () => null, active = true, isFullscreen = false, inlineMaxHeight = 520 } = $props();
 
   let match = $derived(matches[selectedIndex]);
   let isVideo = $derived(match?.mediaType === 'video');
@@ -98,7 +100,7 @@
 
 <div class="panel">
   <div class="viewer">
-    <div class="preview-container" style="aspect-ratio: {aspectRatio};">
+    <div class="preview-container" class:fullscreen={isFullscreen} style="aspect-ratio: {aspectRatio}; --inline-max: {inlineMaxHeight}px;">
       {#if isVideo}
         <!--
           Video: <video> with the cover-frame JPEG as poster so the panel shows
@@ -309,11 +311,23 @@
     border-radius: var(--border-radius-xs, 4px);
     flex-shrink: 0;
     background: var(--color-background-secondary);
-    max-width: 100%;
-    max-height: 100%;
-    /* width/height resolved by CSS from aspect-ratio + max constraints */
+    /* Width-driven sizing is load-bearing: the top-down height:100% chain is
+       indefinite in the MCP iframe, so width:100% + aspect-ratio is what gives
+       the container (and the whole panel) a non-zero height, bottom-up. The
+       height therefore needs a max cap so a tall portrait does not overflow. */
     width: 100%;
-    /*height: 100%;*/
+    max-width: 100%;
+    /* Inline (chat-flow): a FIXED px cap (--inline-max, from App's
+       INLINE_PREVIEW_MAX = iframe height minus header+status chrome). dvh here
+       would track the auto-resizing iframe and feed back into an infinite reflow,
+       so the cap must be decoupled from the iframe height. */
+    max-height: var(--inline-max, 520px);
+  }
+
+  /* Fullscreen: the iframe viewport is the fixed screen, so dvh is stable and
+     lets the image use the full height (minus header + status chrome). */
+  .preview-container.fullscreen {
+    max-height: calc(100dvh - 5rem);
   }
 
   .preview-img {

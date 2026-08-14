@@ -40,7 +40,16 @@
 
   // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
   // from ever firing. Manually notify the host whenever the displayed content changes.
-  const INLINE_HEIGHTS = { gallery: 600, indexing: 280 };
+  //
+  // Inline gallery height is sized to show 3 thumbnail rows without clipping:
+  //   grid 3 rows (matches MediaGrid GRID_MIN_HEIGHT) + grid nav bars + header + status.
+  const GRID_ROWS_HEIGHT = 3 * 160 + 2 * 4 + 32; // 520 — 3 tiles + gaps + 1rem padding each side
+  const HEADER_STATUS = 76;                       // header bar + status bar
+  const GRID_NAV = 68;                            // nav-top + nav-bottom bars
+  const INLINE_GALLERY_HEIGHT = GRID_ROWS_HEIGHT + GRID_NAV + HEADER_STATUS; // 664
+  // Preview has no nav bars, so its usable height is the iframe minus header+status.
+  const INLINE_PREVIEW_MAX = INLINE_GALLERY_HEIGHT - HEADER_STATUS; // 588
+  const INLINE_HEIGHTS = { gallery: INLINE_GALLERY_HEIGHT, indexing: 280 };
   $effect(() => {
     if (!modeKnown || !mcpApp || !mcpReady || isFullscreen) return;
     notifyHostHeight(mcpApp, INLINE_HEIGHTS[mode] ?? 400);
@@ -239,6 +248,8 @@
           {matches}
           {selectedIndex}
           active={view === 'preview'}
+          {isFullscreen}
+          inlineMaxHeight={INLINE_PREVIEW_MAX}
           onNavigate={(i) => (selectedIndex = i)}
           {previewUrl}
           {videoUrl}
