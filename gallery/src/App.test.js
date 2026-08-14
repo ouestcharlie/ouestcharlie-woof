@@ -54,13 +54,15 @@ function makeMatches(n) {
   return Array.from({ length: n }, (_, i) => makeMatch(i));
 }
 
-// Set ?token= in the URL so App uses the HTTP path (not MCP postMessage).
+// Put the session token in the /gallery/{token}/html path so App uses the HTTP
+// path (not MCP postMessage) — the direct-browser entry.
 function setUrlToken(token) {
   Object.defineProperty(window, 'location', {
     writable: true,
     value: {
       origin: 'http://localhost',
-      search: `?token=${token}`,
+      pathname: `/gallery/${token}/html`,
+      search: '',
     },
   });
 }
@@ -69,7 +71,7 @@ function setUrlToken(token) {
 function setUrlNoParams() {
   Object.defineProperty(window, 'location', {
     writable: true,
-    value: { origin: 'http://localhost', search: '' },
+    value: { origin: 'http://localhost', pathname: '/', search: '' },
   });
 }
 
@@ -92,7 +94,7 @@ describe('App — initial session load via URL token', () => {
 
     const { getByText } = render(App);
     await waitFor(() => expect(getByText('600 items')).toBeTruthy());
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/tok1');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/tok1/results');
   });
 
   it('shows error message when session fetch fails', async () => {
@@ -136,7 +138,7 @@ describe('App — server page navigation', () => {
     await fireEvent.click(nextBtn);
 
     await waitFor(() =>
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/tok2/page/1'),
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/tok2/results/page/1'),
     );
   });
 
@@ -157,13 +159,13 @@ describe('App — server page navigation', () => {
     // Navigate forward to server page 1.
     await fireEvent.click(getAllByText(/Next/)[0].closest('button'));
     await waitFor(() =>
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/tok2/page/1'),
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/tok2/results/page/1'),
     );
 
     // Now on server page 1, localPage 0 — Previous should fetch server page 0.
     await fireEvent.click(getAllByText(/Previous/)[0].closest('button'));
     await waitFor(() =>
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/tok2/page/0'),
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/tok2/results/page/0'),
     );
   });
 
@@ -208,15 +210,16 @@ describe('App — MCP tool-result path', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('renders the indexing view when an indexing tool result arrives', async () => {
-    // IndexingProgress polls status on mount.
+    // IndexingProgress polls status on mount; library/partition_scope now come
+    // from the status response, not the tool result.
     global.fetch = vi.fn().mockResolvedValue({
-      ok: true, json: () => Promise.resolve({ status: 'running', progress: 0, total: 1 }),
+      ok: true,
+      json: () => Promise.resolve({ status: 'running', progress: 0, total: 1, library_name: 'Vacations' }),
     });
 
     const { getByText } = render(App);
     toolResult({
-      type: 'indexing', session_id: 's1', library_name: 'Vacations',
-      serverUrls: ['http://localhost'], serverToken: null,
+      type: 'indexing', session_id: 's1', serverUrls: ['http://localhost'],
     });
 
     await waitFor(() => expect(getByText(/Vacations/)).toBeTruthy());
@@ -228,13 +231,13 @@ describe('App — MCP tool-result path', () => {
 
     const { getByText } = render(App);
     toolResult({
-      type: 'gallery', token: 'gtok', querySummary: 'sunsets',
-      serverUrls: ['http://localhost'], serverToken: null,
+      type: 'gallery', session_id: 'gtok', querySummary: 'sunsets',
+      serverUrls: ['http://localhost'],
     });
 
     await waitFor(() => expect(getByText('sunsets')).toBeTruthy());
     await waitFor(() => expect(getByText('3 items')).toBeTruthy());
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost/api/results/gtok');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost/gallery/gtok/results');
   });
 
   it('surfaces a gallery load failure in the status bar', async () => {

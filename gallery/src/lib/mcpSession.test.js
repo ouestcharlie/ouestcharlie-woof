@@ -22,10 +22,10 @@ vi.mock('@modelcontextprotocol/ext-apps', () => ({
 
 // api origin/token refresh — spy only.
 const initServerOrigins = vi.fn();
-const initServerToken = vi.fn();
+const initSessionId = vi.fn();
 vi.mock('./api.svelte.js', () => ({
   initServerOrigins: (...a) => initServerOrigins(...a),
-  initServerToken: (...a) => initServerToken(...a),
+  initSessionId: (...a) => initSessionId(...a),
 }));
 
 const applyLocale = vi.fn();
@@ -69,58 +69,43 @@ describe('initMcpSession — construction', () => {
 });
 
 describe('initMcpSession — tool results', () => {
-  it('routes an indexing result to onIndexing with normalized fields', () => {
+  it('routes an indexing result to onIndexing and uses session_id as the token', () => {
     const h = makeHandlers();
     initMcpSession(h);
     instances[0].ontoolresult(toolResult({
       type: 'indexing',
       session_id: 'sess-1',
-      library_name: 'Photos',
-      partition_scope: ['2024/07'],
       serverUrls: ['http://127.0.0.1:9000'],
-      serverToken: 'tok',
     }));
 
-    expect(h.onIndexing).toHaveBeenCalledWith({
-      sessionId: 'sess-1',
-      library: 'Photos',
-      partitionScope: ['2024/07'],
-    });
+    expect(h.onIndexing).toHaveBeenCalledWith({ sessionId: 'sess-1' });
     expect(h.onGallery).not.toHaveBeenCalled();
     expect(initServerOrigins).toHaveBeenCalledWith(['http://127.0.0.1:9000']);
-    expect(initServerToken).toHaveBeenCalledWith('tok');
+    expect(initSessionId).toHaveBeenCalledWith('sess-1');
   });
 
-  it('defaults partitionScope to [] when absent', () => {
-    const h = makeHandlers();
-    initMcpSession(h);
-    instances[0].ontoolresult(toolResult({ type: 'indexing', session_id: 's', library_name: 'L' }));
-    expect(h.onIndexing).toHaveBeenCalledWith(
-      expect.objectContaining({ partitionScope: [] }),
-    );
-  });
-
-  it('routes a gallery result to onGallery', () => {
+  it('routes a gallery result to onGallery and uses session_id as the credential', () => {
     const h = makeHandlers();
     initMcpSession(h);
     instances[0].ontoolresult(toolResult({
-      type: 'gallery', token: 'gtok', querySummary: 'cats',
+      type: 'gallery', session_id: 'gtok', querySummary: 'cats',
     }));
-    expect(h.onGallery).toHaveBeenCalledWith({ querySummary: 'cats', token: 'gtok' });
+    expect(h.onGallery).toHaveBeenCalledWith({ querySummary: 'cats', sessionId: 'gtok' });
     expect(h.onIndexing).not.toHaveBeenCalled();
+    expect(initSessionId).toHaveBeenCalledWith('gtok');
   });
 
   it('treats a legacy result with no type field as gallery', () => {
     const h = makeHandlers();
     initMcpSession(h);
-    instances[0].ontoolresult(toolResult({ token: 'gtok', querySummary: 'dogs' }));
-    expect(h.onGallery).toHaveBeenCalledWith({ querySummary: 'dogs', token: 'gtok' });
+    instances[0].ontoolresult(toolResult({ session_id: 'gtok', querySummary: 'dogs' }));
+    expect(h.onGallery).toHaveBeenCalledWith({ querySummary: 'dogs', sessionId: 'gtok' });
   });
 
   it('falls back to the singular serverUrl when serverUrls is absent', () => {
     const h = makeHandlers();
     initMcpSession(h);
-    instances[0].ontoolresult(toolResult({ token: 't', serverUrl: 'http://localhost:8080' }));
+    instances[0].ontoolresult(toolResult({ session_id: 't', serverUrl: 'http://localhost:8080' }));
     expect(initServerOrigins).toHaveBeenCalledWith(['http://localhost:8080']);
   });
 

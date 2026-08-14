@@ -12,7 +12,7 @@ from __future__ import annotations
 import socket
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 from starlette.applications import Starlette
@@ -91,6 +91,8 @@ def build_http_asgi_app(
     token: str,
     allowed_hosts: set[str],
     activity_tracker: ActivityTracker,
+    gallery_sessions: Any | None = None,
+    indexing_sessions: Any | None = None,
 ) -> ASGIApp:
     """Combine the MCP app and gallery app into one authenticated ASGI app.
 
@@ -120,7 +122,13 @@ def build_http_asgi_app(
         lifespan=mcp_app.router.lifespan_context,
     )
     combined = ActivityMiddleware(combined, tracker=activity_tracker)
-    combined = BearerGuard(combined, token=token, exempt_path_prefixes=("/gallery-static/",))
+    combined = BearerGuard(
+        combined,
+        token=token,
+        exempt_path_prefixes=("/gallery-static/",),
+        gallery_sessions=gallery_sessions,
+        indexing_sessions=indexing_sessions,
+    )
     combined = HostOriginGuard(combined, allowed_hosts=allowed_hosts)
     return with_permissive_cors(combined)
 

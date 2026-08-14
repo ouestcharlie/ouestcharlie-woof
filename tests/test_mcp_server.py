@@ -290,6 +290,11 @@ async def test_index_library_launches_background_task(server: McpServer) -> None
     assert "session_id" in result
     assert result["library_name"] == "testlib"
     assert result["serverUrls"] == server.server_urls
+    # session_id is the only session credential returned (no duplicate serverToken,
+    # no derivable URL), and it is not the master token.
+    assert result["session_id"] != server._token
+    assert "serverToken" not in result
+    assert "indexingUrl" not in result
     assert captured["module"] == "whitebeard"
     assert captured["tool_name"] == "index_library"
     assert captured["args"]["generate_thumbnails"] is True
@@ -600,13 +605,13 @@ async def test_search_photos_returns_total_count_and_token(server: McpServer) ->
         result = await tool_fn(ctx=None, library_name="testlib")
     assert result["totalCount"] == 3
     assert "pageStats" not in result
-    assert "session_token" in result
+    assert "session_id" in result
     # Pagination is a gallery/HTTP concern — the MCP tool must not surface it.
     assert "page" not in result
     assert "pageSize" not in result
     assert "hasMore" not in result
     # query_args stored for the session carry no "page" key; fetch_page supplies it.
-    session = server._sessions.sessions[result["session_token"]]
+    session = server._sessions.sessions[result["session_id"]]
     assert "page" not in session.queryArgs
 
 
@@ -617,7 +622,7 @@ async def test_search_photos_stores_session(server: McpServer) -> None:
     with patch.object(server._agent, "call_tool", new=mock):
         tool_fn = await _get_tool(server, "search_photos")
         result = await tool_fn(ctx=None, library_name="testlib")
-    token = result["session_token"]
+    token = result["session_id"]
     session = server._sessions.sessions[token]
     assert all(m["library"] == "testlib" for m in session.matches)
     assert [m["partition"] for m in session.matches] == [m["partition"] for m in matches]
@@ -645,7 +650,7 @@ async def test_search_photos_agent_error_is_logged(
 @pytest.mark.asyncio
 async def test_browse_gallery_unknown_token(server: McpServer) -> None:
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=["bad-token"])
+    result = await tool_fn(session_ids=["bad-token"])
     assert "error" in result
 
 
@@ -662,7 +667,7 @@ async def test_browse_gallery_coerces_stringified_session_tokens(server: McpServ
         totalCount=1,
         matches=matches,
     )
-    tool_result = await _run_tool(server, "browse_gallery", session_tokens=json.dumps([token]))
+    tool_result = await _run_tool(server, "browse_gallery", session_ids=json.dumps([token]))
     result = tool_result.structured_content
     assert "error" not in result
     assert result["totalCount"] == len(matches)
@@ -681,7 +686,7 @@ async def test_browse_gallery_returns_session_matches(server: McpServer) -> None
         matches=matches,
     )
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=[token], query_summary="My query")
+    result = await tool_fn(session_ids=[token], query_summary="My query")
     # browse_gallery no longer returns matches inline — only a token so the
     # gallery fetches directly from the HTTP server (OEC#19).
     assert "matches" not in result
@@ -689,8 +694,13 @@ async def test_browse_gallery_returns_session_matches(server: McpServer) -> None
     assert result["serverUrls"] == server.server_urls
     assert result["querySummary"] == "My query"
     assert result["totalCount"] == len(matches)
-    merged_token = result["token"]
-    assert server._sessions.sessions[merged_token].matches == matches
+    merged_session_id = result["session_id"]
+    assert server._sessions.sessions[merged_session_id].matches == matches
+    # `token` is the only session credential returned (no duplicate serverToken,
+    # no derivable galleryUrl), and it is not the master token.
+    assert merged_session_id != server._token
+    assert "serverToken" not in result
+    assert "galleryUrl" not in result
 
 
 @pytest.mark.asyncio
@@ -719,12 +729,12 @@ async def test_browse_gallery_merges_and_deduplicates(server: McpServer) -> None
     )
 
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=["tok-a", "tok-b"], query_summary="")
+    result = await tool_fn(session_ids=["tok-a", "tok-b"], query_summary="")
 
     # Matches are stored in the merged session, not returned inline.
     assert "matches" not in result
-    merged_token = result["token"]
-    merged_matches = server._sessions.sessions[merged_token].matches
+    merged_session_id = result["session_id"]
+    merged_matches = server._sessions.sessions[merged_session_id].matches
     hashes = [m["contentHash"] for m in merged_matches]
     assert hashes == ["hash0", "hash1", "hash2"]
     assert result["totalCount"] == 3
@@ -734,7 +744,7 @@ async def test_browse_gallery_merges_and_deduplicates(server: McpServer) -> None
 async def test_browse_gallery_partial_unknown_token(server: McpServer) -> None:
     server._sessions.sessions["good"] = {"matches": [], "backend": "lib", "querySummary": ""}
     tool_fn = await _get_tool(server, "browse_gallery")
-    result = await tool_fn(session_tokens=["good", "missing"])
+    result = await tool_fn(session_ids=["good", "missing"])
     assert "error" in result
     assert "missing" in result["error"]
 

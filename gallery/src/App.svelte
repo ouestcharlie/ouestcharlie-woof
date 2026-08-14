@@ -5,7 +5,7 @@
   import IndexingProgress from './components/IndexingProgress.svelte';
   import {
     initServerOrigins,
-    initServerToken,
+    initSessionId,
     fetchResults,
     fetchResultsPage,
     thumbnailUrl,
@@ -16,33 +16,9 @@
   import { applyLocale } from './lib/locale.js';
   import { notifyHostHeight } from './lib/hostSize.js';
   import { initMcpSession } from './lib/mcpSession.svelte.js';
+  import { itemCountLabel } from './lib/format.js';
 
-  // Item count as a string (photos + videos), pluralized in the active locale.
-  function itemCountLabel(n) {
-    return n === 1 ? m.status_items_one({ count: n }) : m.status_items_other({ count: n });
-  }
-
-  function embeddedServerUrls() {
-    const raw = document.documentElement.dataset.serverUrls;
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  function embeddedServerToken() {
-    const raw = document.documentElement.dataset.serverToken;
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  let token = $state(null);
+  let sessionId = $state(null);
   let matches = $state([]);
   let querySummary = $state('');
   let serverPage = $state(0);
@@ -61,8 +37,6 @@
   let mode = $state('gallery'); // 'gallery' | 'indexing'
   let modeKnown = $state(false); // false until first ontoolresult or URL param processed
   let indexingSessionId = $state(null);
-  let indexingLibrary = $state('');
-  let indexingPartitionScope = $state([]);
 
   // body { height: 100%; overflow: hidden } prevents the SDK's autoResize (ResizeObserver on body)
   // from ever firing. Manually notify the host whenever the displayed content changes.
@@ -72,8 +46,8 @@
     notifyHostHeight(mcpApp, INLINE_HEIGHTS[mode] ?? 400);
   });
 
-  function applySession(session, tok, page) {
-    if (tok !== undefined) token = tok;
+  function applySession(session, sid, page) {
+    if (sid !== undefined) sessionId = sid;
     matches = session.matches ?? [];
     pageMap = session.pageMap;
     serverPage = page;
@@ -84,25 +58,25 @@
     selectedIndex = matches.length > 0 ? 0 : null;
   }
 
-  // Load a gallery session by token and apply it, mapping failures to the
-  // status bar. Shared by the URL-token path and the MCP tool-result path.
+  // Load a gallery session by its session id and apply it, mapping failures to the
+  // status bar. Shared by the direct-URL path and the MCP tool-result path.
   // On failure the grid stays in its loading (skeleton) state — pageMap is
   // still null, so rendering the populated grid would crash — while the error
   // surfaces in the status bar.
-  async function loadGallery(tok, onError) {
+  async function loadGallery(sid, onError) {
     try {
-      const data = await fetchResults(tok);
-      applySession(data, tok, 0);
+      const data = await fetchResults(sid);
+      applySession(data, sid, 0);
     } catch (err) {
       if (!matches.length) status = onError(err);
     }
   }
 
   async function fetchServerPage(page) {
-    if (!token) return;
+    if (!sessionId) return;
     serverPageLoading = true;
     try {
-      const data = await fetchResultsPage(token, page);
+      const data = await fetchResultsPage(sessionId, page);
       matches = data.matches ?? [];
       serverPage = page;
     } catch (err) {
@@ -118,26 +92,28 @@
     window.addEventListener('keydown', onKeydown);
     // Initial locale from the browser; refined from the MCP host context below.
     applyLocale(navigator.language);
-    initServerOrigins(embeddedServerUrls() ?? [location.origin]);
-    initServerToken(embeddedServerToken());
+    // Direct access: location.origin is the Woof server. In the MCP iframe it is
+    // ui://… (unusable), but the tool result overrides origins before any request.
+    initServerOrigins([location.origin]);
 
-    // Path 1: URL params — works in Chrome and any direct HTTP access.
-    // app.connect() may hang indefinitely outside Claude Desktop so we cannot
-    // rely on it throwing before this fallback would otherwise run.
-    const urlParams = new URLSearchParams(location.search);
-    const urlToken = urlParams.get('token');
-    const urlSessionId = urlParams.get('sessionId');
-    if (urlSessionId) {
-      indexingSessionId = urlSessionId;
-      indexingLibrary = urlParams.get('library') ?? '';
-      const urlPartitionScope = urlParams.get('partitionScope');
-      indexingPartitionScope = urlPartitionScope ? urlPartitionScope.split(',').filter(Boolean) : [];
+    // Path 1: direct HTTP access (Chrome, any non-MCP host) — works because
+    // app.connect() may hang indefinitely outside Claude Desktop, so we cannot
+    // rely on it throwing before this fallback would otherwise run. The session id
+    // is the second path segment of /gallery/{session_id}/html or
+    // /indexing/{session_id}/html — URL-safe by construction, so no decoding needed;
+    // indexing metadata (library, partitions) is read from the status endpoint.
+    const galleryPath = location.pathname?.match(/^\/gallery\/([^/]+)\/html$/);
+    const indexingPath = location.pathname?.match(/^\/indexing\/([^/]+)\/html$/);
+    if (indexingPath) {
+      initSessionId(indexingPath[1]);
+      indexingSessionId = indexingPath[1];
       mode = 'indexing';
       modeKnown = true;
       loading = false;
-    } else if (urlToken) {
+    } else if (galleryPath) {
+      initSessionId(galleryPath[1]);
       modeKnown = true;
-      loadGallery(urlToken, err => m.status_error({ message: err.message }));
+      loadGallery(galleryPath[1], err => m.status_error({ message: err.message }));
     }
 
     // Path 2: MCP Apps channel — works in Claude Desktop via postMessage.
@@ -151,19 +127,17 @@
         if (cf !== undefined) canFullscreen = cf;
         if (fs !== undefined) isFullscreen = fs;
       },
-      onIndexing: ({ sessionId, library, partitionScope }) => {
+      onIndexing: ({ sessionId }) => {
         indexingSessionId = sessionId;
-        indexingLibrary = library;
-        indexingPartitionScope = partitionScope;
         mode = 'indexing';
         modeKnown = true;
         loading = false;
       },
-      onGallery: ({ querySummary: qs, token: tok }) => {
+      onGallery: ({ querySummary: qs, sessionId: sid }) => {
         mode = 'gallery';
         modeKnown = true;
         querySummary = qs;
-        loadGallery(tok, err => m.status_error_loading_gallery({ message: err.message }));
+        loadGallery(sid, err => m.status_error_loading_gallery({ message: err.message }));
       },
     });
   });
@@ -199,8 +173,6 @@
   {:else if mode === 'indexing'}
     <IndexingProgress
       sessionId={indexingSessionId}
-      library={indexingLibrary}
-      partitionScope={indexingPartitionScope}
       {mcpApp}
       {mcpReady}
     />

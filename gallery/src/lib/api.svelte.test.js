@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   initServerOrigins,
-  initServerToken,
+  initSessionId,
   getResolvedOrigin,
   fetchResults,
   fetchResultsPage,
@@ -14,7 +14,7 @@ import {
 // Module state (resolvedOrigin, authToken) persists across tests — force a clean slate each time.
 beforeEach(() => {
   initServerOrigins([]);
-  initServerToken(null);
+  initSessionId(null);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -25,7 +25,7 @@ describe('api.svelte.js — origin fallback', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
     expect(getResolvedOrigin()).toBe('http://localhost:1');
   });
 
@@ -37,8 +37,8 @@ describe('api.svelte.js — origin fallback', () => {
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenNthCalledWith(1, 'http://localhost:1/api/results/tok');
-    expect(global.fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:1/api/results/tok');
+    expect(global.fetch).toHaveBeenNthCalledWith(1, 'http://localhost:1/gallery/tok/results');
+    expect(global.fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:1/gallery/tok/results');
     expect(getResolvedOrigin()).toBe('http://127.0.0.1:1');
   });
 
@@ -55,7 +55,7 @@ describe('api.svelte.js — origin fallback', () => {
     await fetchResultsPage('tok', 1);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1/api/results/tok/page/1');
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1/gallery/tok/results/page/1');
   });
 
   it('throws once every candidate has failed', async () => {
@@ -71,7 +71,7 @@ describe('api.svelte.js — origin fallback', () => {
 
     await cancelIndexing('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess/cancel', {
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/cancel', {
       method: 'POST',
     });
   });
@@ -82,44 +82,33 @@ describe('api.svelte.js — origin fallback', () => {
 
     const data = await fetchIndexingStatus('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess');
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/status');
     expect(data).toEqual({ status: 'running' });
   });
 });
 
-describe('api.svelte.js — bearer token (HTTP mode)', () => {
-  it('attaches an Authorization header to GET requests once a token is set', async () => {
+describe('api.svelte.js — session id auth (HTTP mode)', () => {
+  it('never attaches an Authorization header (auth is via the URL path)', async () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
+    initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await fetchResults('tok');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok', {
-      headers: { Authorization: 'Bearer secret' },
-    });
+    // GET with a session id set: still no header — the session id is in the path.
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/gallery/tok/results');
   });
 
-  it('merges the Authorization header into existing request options (e.g. POST)', async () => {
+  it('does not add headers to a POST either', async () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
+    initSessionId('secret');
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await cancelIndexing('sess');
 
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/indexing/sess/cancel', {
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/indexing/sess/cancel', {
       method: 'POST',
-      headers: { Authorization: 'Bearer secret' },
     });
-  });
-
-  it('sends no Authorization header when no token is set', async () => {
-    initServerOrigins(['http://localhost:1']);
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
-
-    await fetchResults('tok');
-
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:1/api/results/tok');
   });
 });
 
@@ -146,10 +135,10 @@ describe('api.svelte.js — URL builders', () => {
     expect(previewUrl({ ...match, contentHash: undefined })).toBeNull();
   });
 
-  it('appends the bearer token as a query param when set (img src cannot set headers)', () => {
+  it('scopes media under /gallery/{sessionId}/media/ when a session id is set', () => {
     initServerOrigins(['http://localhost:1']);
-    initServerToken('secret');
-    expect(thumbnailUrl(match)).toBe('http://localhost:1/thumbnail/lib/2024/07/avif1?token=secret');
-    expect(previewUrl(match)).toBe('http://localhost:1/previews/lib/2024/07/hash1.jpg?token=secret');
+    initSessionId('secret');
+    expect(thumbnailUrl(match)).toBe('http://localhost:1/gallery/secret/media/thumbnail/lib/2024/07/avif1');
+    expect(previewUrl(match)).toBe('http://localhost:1/gallery/secret/media/previews/lib/2024/07/hash1.jpg');
   });
 });

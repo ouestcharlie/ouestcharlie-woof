@@ -106,23 +106,23 @@ def test_get_returns_session() -> None:
 
 
 # ---------------------------------------------------------------------------
-# unknown_tokens
+# unknown_session_ids
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_tokens_all_valid() -> None:
+def test_unknown_session_ids_all_valid() -> None:
     mgr, tokens = _manager_with_sessions({}, {})
-    assert mgr.unknown_tokens(tokens) == []
+    assert mgr.unknown_session_ids(tokens) == []
 
 
-def test_unknown_tokens_detects_bad_token() -> None:
+def test_unknown_session_ids_detects_bad_token() -> None:
     mgr, tokens = _manager_with_sessions({})
-    assert mgr.unknown_tokens([tokens[0], "bad"]) == ["bad"]
+    assert mgr.unknown_session_ids([tokens[0], "bad"]) == ["bad"]
 
 
-def test_unknown_tokens_empty_input() -> None:
+def test_unknown_session_ids_empty_input() -> None:
     mgr = GallerySessionManager()
-    assert mgr.unknown_tokens([]) == []
+    assert mgr.unknown_session_ids([]) == []
 
 
 # ---------------------------------------------------------------------------

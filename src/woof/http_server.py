@@ -8,25 +8,29 @@ bridging. Tests that need this app served standalone (no MCP app) should use
 ``tests/http_test_server.py::start_http_server`` instead of adding a
 production entry point for it.
 
-URL scheme:
-  GET /gallery/{token}                         — gallery HTML (token identifies session)
-  GET /api/results/{token}                     — JSON session data (matches + metadata)
-  GET /api/results/{token}/page/{page}         — load 0-indexed Wally page into session
-  GET /api/indexing/{session_id}               — JSON indexing session state
-  GET /gallery-static/{path}                   — gallery JS/CSS assets from dist/
-  GET /thumbnail/{library_name}/{partition}/{avif_hash}        — proxied to Wally
-  GET /previews/{library_name}/{partition}/{content_hash}.jpg — proxied to Wally
-  GET /video/{library_name}/{partition}/{content_hash}.mp4    — proxied to Wally (Range)
+URL scheme — every session-scoped route carries its session id as the second
+path segment, which both authenticates and scopes the request:
+  GET  /gallery/{session_id}/html                    — gallery HTML
+  GET  /gallery/{session_id}/results                 — JSON session data (matches + metadata)
+  GET  /gallery/{session_id}/results/page/{page}     — load 0-indexed Wally page into session
+  GET  /gallery/{session_id}/media/thumbnail/{library}/{partition}/{avif_hash}       (to Wally)
+  GET  /gallery/{session_id}/media/previews/{library}/{partition}/{content_hash}.jpg (to Wally)
+  GET  /gallery/{session_id}/media/video/{library}/{partition}/{content_hash}.mp4    (Wally, Range)
+  GET  /indexing/{session_id}/html                   — indexing progress HTML
+  GET  /indexing/{session_id}/status                 — JSON indexing session state
+  POST /indexing/{session_id}/cancel                 — request indexing cancellation
+  GET  /gallery-static/{path}                   — gallery JS/CSS assets from dist/
 
 where {partition} may contain slashes (e.g. "2024/2024-07").
 All library media (thumbnails, previews and video) is served by Wally and proxied
-here. The proxy streams bodies and forwards Range/Content-Range so <video> seeking
-works without buffering GB-scale files (OEC-39a §2).
+here. Media is scoped to a gallery session: {session_id} names the session and the file
+must be one of its matches, else 403. The proxy streams bodies and forwards
+Range/Content-Range so <video> seeking works without buffering GB-scale files
+(OEC-39a §2).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -50,34 +54,55 @@ _GALLERY_DIST_DIR = Path(__file__).parent / "gallery" / "dist"
 _GALLERY_DIST_HTML = _GALLERY_DIST_DIR / "index.html"
 
 
-def get_gallery_html(
-    server_url: str, server_urls: list[str] | None = None, token: str | None = None
-) -> str:
+def _session_matches(session: Any) -> list[dict[str, Any]]:
+    """All match records reachable from *session*, including chained sub-sessions.
+
+    A merged (chained) session keeps its first page in ``matches`` and the rest in
+    ``chainedSessions``; the union is the set of files the user was shown.
+    """
+    collected = list(session.matches)
+    for sub in getattr(session, "chainedSessions", []) or []:
+        collected.extend(sub.matches)
+    return collected
+
+
+def _media_in_session(session: Any, library: str, rest: str) -> bool:
+    """Whether a ``/media`` request names a file in *session* (per-session scope check).
+
+    ``rest`` is ``{partition}/{hash}[.ext]`` where ``partition`` may contain
+    slashes, so the hash is the last path segment with any extension stripped and
+    the partition is everything before it. The stem must be either the ``avifHash``
+    (thumbnail grid, shared by colocated photos) or the ``contentHash`` (preview,
+    video) of an in-session match in the same library and partition — matching
+    against both is robust to the ``kind`` label and safe (the two hash spaces do
+    not collide).
+    """
+    parts = rest.split("/")
+    filename = parts[-1]
+    partition = "/".join(parts[:-1])
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return any(
+        match.get("library") == library
+        and match.get("partition") == partition
+        and stem in (match.get("avifHash"), match.get("contentHash"))
+        for match in _session_matches(session)
+    )
+
+
+def get_gallery_html(server_url: str) -> str:
     """Return the gallery HTML with asset URLs rewritten to absolute server URLs.
 
     Vite builds the app with base='/gallery-static/'.  At runtime we replace
     those relative-rooted paths with {server_url}/gallery-static/ so the MCP
     Apps iframe (and direct browser access) can load JS/CSS.
 
-    ``server_urls`` (defaulting to a single-element list of ``server_url``) is
-    embedded as a ``data-server-urls`` attribute on ``<html>`` so the frontend can
-    try each candidate origin in turn — different MCP hosts accept different
-    loopback hostnames in their CSP. A data attribute (rather than an inline
-    ``<script>``) avoids requiring ``script-src 'unsafe-inline'`` in the CSP.
-
-    ``token`` (``None`` for the unauthenticated test-only standalone gallery
-    server, see ``tests/http_test_server.py::start_http_server``) is embedded
-    alongside as ``data-server-token`` so the frontend can attach it as a
-    bearer token / ``?token=`` query param.
+    Nothing else is embedded. The frontend derives its candidate origins from the
+    tool result (MCP host path) or ``location.origin`` (direct access), and its
+    session id from the tool result or the URL path (``/gallery/{session_id}/html``).
     """
-    candidates = server_urls if server_urls is not None else [server_url]
     if _GALLERY_DIST_HTML.exists():
         html = _GALLERY_DIST_HTML.read_text(encoding="utf-8")
-        html = html.replace("/gallery-static/", f"{server_url}/gallery-static/")
-        attrs = f"data-server-urls='{json.dumps(candidates)}'"
-        if token is not None:
-            attrs += f" data-server-token='{json.dumps(token)}'"
-        return html.replace("<html", f"<html {attrs}", 1)
+        return html.replace("/gallery-static/", f"{server_url}/gallery-static/")
     return _gallery_placeholder()
 
 
@@ -94,42 +119,44 @@ def build_gallery_app(
     """Build the gallery/media/lifecycle Starlette app
 
     Args:
-        token: Embedded into the gallery HTML (``data-server-token``) so the
-            frontend can authenticate — this is HTTP mode's bearer token
-            value, not a wrapping concern of this function.
+        token: HTTP mode's master bearer token. No longer embedded in the gallery
+            HTML — each gallery is served with its own session id instead —
+            retained for callers and potential lifecycle use.
         activity_tracker: touched by the ``/keepalive`` route.
         shutdown_handle: object with a ``.request()`` method invoked by
             ``POST /shutdown``.
     """
 
-    async def gallery_token(request: Request) -> Response:
-        path_token = request.path_params["token"]
-        session = session_manager.get(path_token)
+    async def gallery_html(request: Request) -> Response:
+        session_id = request.path_params["session_id"]
+        session = session_manager.get(session_id)
         if session is None:
             return Response(status_code=404)
-        html = get_gallery_html(server_url, token=token)
+        # The frontend reads its session id from this page's URL path, so nothing
+        # session-specific needs embedding here.
+        html = get_gallery_html(server_url)
         return HTMLResponse(
             html,
             headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
         )
 
     async def api_results(request: Request) -> Response:
-        token = request.path_params["token"]
-        session = session_manager.get(token)
+        session_id = request.path_params["session_id"]
+        session = session_manager.get(session_id)
         if session is None:
             return JSONResponse(
-                {"error": f"Session {token!r} not found or expired"}, status_code=404
+                {"error": f"Session {session_id!r} not found or expired"}, status_code=404
             )
         return JSONResponse(session.transfert_object())
 
     async def api_page(request: Request) -> Response:
-        token = request.path_params["token"]
+        session_id = request.path_params["session_id"]
         try:
             page = int(request.path_params["page"])
         except (ValueError, KeyError):
             return JSONResponse({"error": "invalid page"}, status_code=400)
 
-        session = session_manager.get(token)
+        session = session_manager.get(session_id)
         if session is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
 
@@ -143,9 +170,18 @@ def build_gallery_app(
         return JSONResponse(session.transfert_object())
 
     async def proxy_media(request: Request) -> Response:
+        session_id = request.path_params["session_id"]
         kind = request.path_params["kind"]
         library = request.path_params["library"]
         rest = request.path_params["rest"]
+        # Scope the media to the gallery session: the session id in the path must name
+        # a live session, and the requested file must be one of that session's matches.
+        # A valid session id alone is necessary but not sufficient.
+        session = session_manager.get(session_id)
+        if session is None:
+            return Response("Unknown gallery session", status_code=404)
+        if not _media_in_session(session, library, rest):
+            return Response("File not in gallery session", status_code=403)
         wally_port, wally_token = (
             wally_connection_fn(library) if wally_connection_fn is not None else (None, None)
         )
@@ -197,6 +233,18 @@ def build_gallery_app(
             headers=passthrough,
         )
 
+    async def indexing_html(request: Request) -> Response:
+        session_id = request.path_params["session_id"]
+        if indexing_session_manager is None or indexing_session_manager.get(session_id) is None:
+            return Response(status_code=404)
+        # The frontend reads its session id from this page's URL path; library and
+        # partition_scope come from the status endpoint.
+        html = get_gallery_html(server_url)
+        return HTMLResponse(
+            html,
+            headers={"Content-Security-Policy": f"default-src 'self' {server_url}"},
+        )
+
     async def api_indexing(request: Request) -> Response:
         if indexing_session_manager is None:
             return JSONResponse({"error": "not configured"}, status_code=503)
@@ -233,13 +281,14 @@ def build_gallery_app(
         Route("/healthz", healthz, methods=["GET"]),
         Route("/keepalive", keepalive, methods=["POST"]),
         Route("/shutdown", shutdown, methods=["POST"]),
-        Route("/gallery/{token}", gallery_token),
-        Route("/api/results/{token}/page/{page}", api_page),
-        Route("/api/results/{token}", api_results),
-        Route("/api/indexing/{session_id}/cancel", api_indexing_cancel, methods=["POST"]),
-        Route("/api/indexing/{session_id}", api_indexing),
+        Route("/gallery/{session_id}/html", gallery_html),
+        Route("/gallery/{session_id}/results/page/{page}", api_page),
+        Route("/gallery/{session_id}/results", api_results),
+        Route("/gallery/{session_id}/media/{kind}/{library}/{rest:path}", proxy_media),
+        Route("/indexing/{session_id}/html", indexing_html),
+        Route("/indexing/{session_id}/cancel", api_indexing_cancel, methods=["POST"]),
+        Route("/indexing/{session_id}/status", api_indexing),
         Mount("/gallery-static", StaticFiles(directory=str(_GALLERY_DIST_DIR), check_dir=False)),
-        Route("/{kind}/{library}/{rest:path}", proxy_media),
     ]
     return Starlette(routes=routes)
 
