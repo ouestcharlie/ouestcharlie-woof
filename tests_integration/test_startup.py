@@ -45,9 +45,9 @@ class TestHttpServer:
         assert server_url.startswith("http://localhost:")
 
     def test_unknown_session_returns_404(self) -> None:
-        """Requesting /api/results/<unknown-token> must return HTTP 404."""
+        """Requesting /gallery/<unknown-session>/results must return HTTP 404."""
         server_url = start_http_server()
-        url = f"{server_url}/api/results/no-such-token"
+        url = f"{server_url}/gallery/no-such-session/results"
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 404
@@ -55,12 +55,12 @@ class TestHttpServer:
     def test_known_session_returns_200_with_data(
         self, agent_client: AgentClient, library: LibraryConfig
     ) -> None:
-        """A session created in the shared manager is served via /api/results."""
+        """A session created in the shared manager is served via /gallery/{id}/results."""
         mgr = GallerySessionManager()
-        token = mgr.create(library, agent_client, {}, 500, 1, matches=[{"filename": "a.jpg"}])
+        session_id = mgr.create(library, agent_client, {}, 500, 1, matches=[{"filename": "a.jpg"}])
         server_url = start_http_server(session_manager=mgr)
 
-        url = f"{server_url}/api/results/{token}"
+        url = f"{server_url}/gallery/{session_id}/results"
         with urllib.request.urlopen(url) as resp:
             assert resp.status == 200
             data: dict[str, Any] = json.loads(resp.read())
@@ -69,8 +69,16 @@ class TestHttpServer:
 
     def test_thumbnail_without_wally_returns_503(self) -> None:
         """Media proxy returns 503 when no Wally port is configured."""
-        server_url = start_http_server()
-        url = f"{server_url}/thumbnails/lib/2024/thumbnails.avif"
+        mgr = GallerySessionManager()
+        session_id = mgr.create(
+            LibraryConfig(name="lib", type="filesystem", path="/tmp"),
+            None,
+            {},
+            500,
+            matches=[{"partition": "2024", "avifHash": "thumbnails", "tileIndex": 0}],
+        )
+        server_url = start_http_server(session_manager=mgr)
+        url = f"{server_url}/gallery/{session_id}/media/thumbnail/lib/2024/thumbnails.avif"
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(url)
         assert exc_info.value.code == 503
@@ -250,6 +258,15 @@ class TestFullStack:
         agent = AgentClient()
         try:
             session_manager = GallerySessionManager()
+            # A live session containing the requested file, so the media request passes
+            # the scope check and actually reaches the Wally proxy.
+            session_id = session_manager.create(
+                config.libraries[0],
+                None,
+                {},
+                500,
+                matches=[{"partition": "2024", "avifHash": "thumbnails", "tileIndex": 0}],
+            )
             server = McpServer(
                 config,
                 server_urls=_TEST_SERVER_URLS,
@@ -268,7 +285,8 @@ class TestFullStack:
 
             # The proxy now knows Wally's port: a thumbnail request should reach
             # Wally and return 404 (unknown partition), not 503 (no Wally port).
-            url = f"{server_url}/thumbnails/integration-test/2024/thumbnails.avif"
+            media = "thumbnail/integration-test/2024/thumbnails.avif"
+            url = f"{server_url}/gallery/{session_id}/media/{media}"
             try:
                 urllib.request.urlopen(url)
             except urllib.error.HTTPError as exc:
