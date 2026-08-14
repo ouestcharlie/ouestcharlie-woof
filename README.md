@@ -176,16 +176,18 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 
 | Feature | Notes |
 |---|---|
-| Local filesystem indexing (macOS, Linux, Windows) |  |
-| Mounted cloud drives (iCloud Drive, OneDrive, kDrive) | Files must be locally synced |
+| Compatible with Claude Desktop, Goose, VS Code| Any desktop application with MCP App support|
+| Available on Macos, Windows, Linux| Python packages are built and released in Pypi|
+| Local filesystem indexing | Files must be locally synced |
 | Photos (JPEG, PNG, TIFF, HEIC, RAW) | HEIC and RAW depend on the build options |
 | Video support (MOV, MP4) ||
+| Gallery view as grid or preview | Photo details on preview |
+| Image thumbnails and previews | Optimized for display |
 | Search description, tags, rating, date, partition | full text search on description |
 | Search photo features (date, dimensions, GPS bounding box) |  |
 | Search video features (duration, dimensions, GPS bounding box) |  |
 | Search camera features (make, model, aperture, lens) | | 
 | Sort ascending or descending on any field |  |
-| Gallery view (Claude Desktop or Goose) as grid or preview | Photo details on preview |
 | Change detection / automatic re-indexing | Partial — added and removed pictures |
 
 ### Planned features
@@ -198,7 +200,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Mobile companion app |
 | Native cloud libraries (S3, OneDrive, GCS…) |
 
-**What this means for you**: if you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 
 ---
 
@@ -225,6 +227,10 @@ For privacy questions, please [open an issue](https://github.com/ouestcharlie/ou
 ## Developers' corner
 
 For developer and architecture documentation, see [README_DEV.md](README_DEV.md).
+
+### Contributing
+
+See the [Contributing section in OuEstCharlie](https://github.com/ouestcharlie/ouestcharlie#contributing)
 
 ---
 
