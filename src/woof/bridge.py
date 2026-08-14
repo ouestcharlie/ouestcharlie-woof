@@ -32,8 +32,8 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 
+from . import discovery
 from .discovery import (
-    LOCK_TIMEOUT_SECONDS,
     DiscoveryInfo,
     LockTimeout,
     is_pid_alive,
@@ -41,13 +41,24 @@ from .discovery import (
     read_discovery,
     remove_discovery,
     spawn_log_path,
-    startup_lock,
 )
 from .logging_setup import setup_logging
 
 _log = logging.getLogger(__name__)
 
-_SPAWN_WAIT_SECONDS = 15.0
+# How long to wait for a lazily-spawned Woof to finish booting (heavy module
+# imports, DB/index setup) before giving up. Overridable for slow machines —
+# see WOOF_SPAWN_WAIT_SECONDS.
+_SPAWN_WAIT_SECONDS = float(os.environ.get("WOOF_SPAWN_WAIT_SECONDS", "45.0"))
+
+# The startup lock is held for the *entire* check-spawn-wait sequence below,
+# not just the check — only the lock holder is allowed to call _spawn_woof(),
+# so a bridge that can't get the lock must never spawn on its own, only poll
+# for the holder's discovery file. That means a waiting bridge has to be
+# willing to sit through another bridge's full spawn wait, plus a little
+# slack so it isn't kicked out right as the holder is about to finish.
+_LOCK_TIMEOUT_SECONDS = _SPAWN_WAIT_SECONDS + 5.0
+
 _KEEPALIVE_INTERVAL_SECONDS = 60.0
 
 
@@ -94,11 +105,13 @@ async def ensure_woof_running() -> DiscoveryInfo:
     opening more than one connection at once) never spawn competing
     instances — the second bridge blocks until the first has either
     confirmed an existing instance or finished spawning + writing a fresh
-    discovery file.
+    discovery file. The lock must be held for the *whole* wait, not just the
+    initial check: only the lock holder is allowed to call _spawn_woof(), so
+    a bridge that loses the lock race has to sit and poll rather than assume
+    no one else is spawning and start its own competing instance.
     """
-    lock = startup_lock()
     try:
-        with lock.acquire(timeout=LOCK_TIMEOUT_SECONDS):
+        with discovery.acquire_startup_lock(_LOCK_TIMEOUT_SECONDS):
             info = read_discovery()
             if info is not None and await probe_alive(info):
                 return info
@@ -110,7 +123,8 @@ async def ensure_woof_running() -> DiscoveryInfo:
             return await _wait_for_discovery(_SPAWN_WAIT_SECONDS)
     except LockTimeout:
         # Another bridge is mid-startup; give it a chance to finish rather
-        # than failing outright.
+        # than failing outright. Never spawns here — only the lock holder
+        # spawns, to avoid a competing second Woof instance.
         return await _wait_for_discovery(_SPAWN_WAIT_SECONDS)
 
 
@@ -144,7 +158,17 @@ async def run_bridge() -> None:
 
     async with (
         httpx.AsyncClient(
-            base_url=info.server_url, headers=headers, follow_redirects=True
+            base_url=info.server_url,
+            headers=headers,
+            follow_redirects=True,
+            # streamable_http_client() would normally build its own client with
+            # generous MCP-appropriate timeouts (30s connect, 5min read) — but
+            # passing our own httpx_client (below, so /keepalive can share it)
+            # opts out of that and falls back to httpx's bare 5s-everything
+            # default, which cuts off any tool call slower than 5s (e.g. a
+            # lazily-spawned Wally sidecar taking ~20s to come up). Match the
+            # SDK's own recommended defaults instead of inheriting httpx's.
+            timeout=httpx.Timeout(30.0, read=300.0),
         ) as http_client,
         stdio_server() as (host_read, host_write),
         # Trailing slash: Woof mounts its MCP app at "/mcp" via Starlette's
@@ -188,13 +212,42 @@ async def stop_running_instance() -> bool:
     return True
 
 
+def _print_lock_diagnosis() -> None:
+    """Human-readable dump of `discovery.describe_lock_state`, for ``--diagnose``."""
+    state = discovery.describe_lock_state()
+
+    print(f"startup lock: {'HELD' if state.lock_held else 'free'}")
+    if state.holder_pid is not None:
+        liveness = "alive" if state.holder_alive else "NOT running — stale owner file"
+        print(f"  owner pid: {state.holder_pid} ({liveness})")
+    elif state.lock_held:
+        print("  owner pid: unknown (lock held, but no owner file found)")
+
+    if state.discovery_pid is not None:
+        liveness = "alive" if state.discovery_alive else "NOT running — stale discovery file"
+        print(f"discovery file: pid={state.discovery_pid} ({liveness})")
+    else:
+        print("discovery file: none")
+
+
 def main() -> None:
     setup_logging("woof-bridge", log_file_env_var="WOOF_BRIDGE_LOG_FILE", level=logging.DEBUG)
+    # filelock logs every ~0.05s poll retry at DEBUG while contended, which
+    # drowns out the rest of a bridge's log during a slow/contended startup.
+    logging.getLogger("filelock").setLevel(logging.WARNING)
 
-    if "--stop" in sys.argv[1:]:
+    argv = sys.argv[1:]
+    if "--stop" in argv:
         asyncio.run(stop_running_instance())
         return
-    asyncio.run(run_bridge())
+    if "--diagnose" in argv:
+        _print_lock_diagnosis()
+        return
+    try:
+        asyncio.run(run_bridge())
+    except TimeoutError as exc:
+        _log.error("Woof did not become ready in time: %s", exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

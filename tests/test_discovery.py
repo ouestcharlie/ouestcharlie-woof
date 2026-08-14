@@ -106,6 +106,72 @@ def test_startup_lock_serializes_second_acquire() -> None:
         pass  # pragma: no cover — must time out before entering
 
 
+def test_acquire_startup_lock_writes_and_clears_owner_pid() -> None:
+    with discovery.acquire_startup_lock(timeout=1.0):
+        assert discovery.lock_owner_path().read_text(encoding="utf-8") == str(os.getpid())
+    assert not discovery.lock_owner_path().exists()
+
+
+def test_acquire_startup_lock_clears_owner_pid_even_on_error() -> None:
+    with pytest.raises(RuntimeError), discovery.acquire_startup_lock(timeout=1.0):
+        raise RuntimeError("boom")
+    assert not discovery.lock_owner_path().exists()
+
+
+def test_acquire_startup_lock_raises_lock_timeout_when_contended() -> None:
+    with (
+        discovery.startup_lock().acquire(timeout=1.0),
+        pytest.raises(discovery.LockTimeout),
+        discovery.acquire_startup_lock(timeout=0.2),
+    ):
+        pass  # pragma: no cover — must time out before entering
+
+
+def test_describe_lock_state_when_nothing_running() -> None:
+    state = discovery.describe_lock_state()
+    assert state == discovery.LockState(
+        lock_held=False,
+        holder_pid=None,
+        holder_alive=None,
+        discovery_pid=None,
+        discovery_alive=None,
+    )
+
+
+def test_describe_lock_state_reports_held_lock_and_live_owner() -> None:
+    with discovery.acquire_startup_lock(timeout=1.0):
+        state = discovery.describe_lock_state()
+
+    assert state.lock_held is True
+    assert state.holder_pid == os.getpid()
+    assert state.holder_alive is True
+
+
+def test_describe_lock_state_reports_stale_owner_file() -> None:
+    # A leftover owner file from a process that no longer exists, with no
+    # live OS-level lock held (e.g. that process crashed and the OS already
+    # released its lock, but our sidecar file survived).
+    discovery.lock_owner_path().write_text(str(2**30), encoding="utf-8")
+
+    state = discovery.describe_lock_state()
+
+    assert state.lock_held is False
+    assert state.holder_pid == 2**30
+    assert state.holder_alive is False
+
+
+def test_describe_lock_state_reports_discovery_pid_liveness() -> None:
+    discovery.write_discovery(discovery.DiscoveryInfo(pid=os.getpid(), port=1, token="t"))
+    state = discovery.describe_lock_state()
+    assert state.discovery_pid == os.getpid()
+    assert state.discovery_alive is True
+
+    discovery.write_discovery(discovery.DiscoveryInfo(pid=2**30, port=1, token="t"))
+    state = discovery.describe_lock_state()
+    assert state.discovery_pid == 2**30
+    assert state.discovery_alive is False
+
+
 def test_activity_tracker_idle_seconds_increases_and_resets() -> None:
     tracker = discovery.ActivityTracker()
     first = tracker.idle_seconds()
