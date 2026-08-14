@@ -21,7 +21,7 @@ import os
 import secrets
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -33,11 +33,14 @@ from platformdirs import user_config_dir
 __all__ = [
     "ActivityTracker",
     "DiscoveryInfo",
-    "LOCK_TIMEOUT_SECONDS",
+    "LockState",
     "LockTimeout",
+    "acquire_startup_lock",
+    "describe_lock_state",
     "discovery_path",
     "generate_token",
     "is_pid_alive",
+    "lock_owner_path",
     "lock_path",
     "probe_alive",
     "read_discovery",
@@ -53,9 +56,6 @@ _log = logging.getLogger(__name__)
 _APP_DIR = Path(user_config_dir("ouestcharlie"))
 _DISCOVERY_FILE = _APP_DIR / "woof-discovery.json"
 _LOCK_FILE = _APP_DIR / "woof-discovery.lock"
-
-# How long a bridge waits to acquire the startup lock before giving up.
-LOCK_TIMEOUT_SECONDS = 10.0
 
 # Default HTTP health-check timeout when probing an existing instance.
 _PROBE_TIMEOUT_SECONDS = 2.0
@@ -101,11 +101,47 @@ def startup_lock() -> FileLock:
 
     Callers should use it as a context manager with a bounded timeout, e.g.::
 
-        with startup_lock().acquire(timeout=LOCK_TIMEOUT_SECONDS):
+        with startup_lock().acquire(timeout=30.0):
             ...
+
+    Prefer `acquire_startup_lock` over calling this directly — it additionally
+    records which process holds the lock, which `describe_lock_state` needs.
     """
     _APP_DIR.mkdir(parents=True, exist_ok=True)
     return FileLock(str(_LOCK_FILE))
+
+
+def lock_owner_path() -> Path:
+    """Sidecar file recording the pid currently holding the startup lock.
+
+    The lock file itself is an anonymous OS-level lock (and on Windows is
+    unlinked on release) — it carries no owner information a waiter could
+    read. This sidecar exists purely so `describe_lock_state` can report
+    *who* holds the lock, for diagnostics; it plays no part in the locking
+    itself.
+    """
+    return _LOCK_FILE.with_name(_LOCK_FILE.name + ".owner")
+
+
+@contextlib.contextmanager
+def acquire_startup_lock(timeout: float) -> Generator[None, None, None]:
+    """Acquire the startup lock for *timeout* seconds, recording this process as owner.
+
+    Raises `LockTimeout` if the lock isn't acquired in time. Only the caller
+    holding this lock may spawn a new Woof instance — a caller that fails to
+    acquire it must wait for the holder's spawn instead of starting its own,
+    or two competing instances get spawned. That means callers should expect
+    to hold this for as long as their whole check-spawn-wait sequence takes,
+    not just an initial check.
+    """
+    with startup_lock().acquire(timeout=timeout):
+        owner_path = lock_owner_path()
+        owner_path.write_text(str(os.getpid()), encoding="utf-8")
+        try:
+            yield
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                owner_path.unlink()
 
 
 def write_discovery(info: DiscoveryInfo) -> None:
@@ -208,6 +244,59 @@ async def probe_alive(info: DiscoveryInfo, *, timeout: float = _PROBE_TIMEOUT_SE
     except httpx.HTTPError:
         return False
     return resp.status_code == 200
+
+
+@dataclass(frozen=True)
+class LockState:
+    """Snapshot of who (if anyone) currently holds the startup lock.
+
+    ``holder_pid``/``holder_alive`` come from the `lock_owner_path` sidecar,
+    not the OS lock itself, so they can be stale (e.g. an owner file left
+    behind by a hard-killed process on a filesystem where cleanup didn't run)
+    — that staleness is exactly the signal ``holder_alive=False`` is meant to
+    surface.
+    """
+
+    lock_held: bool
+    holder_pid: int | None
+    holder_alive: bool | None
+    discovery_pid: int | None
+    discovery_alive: bool | None
+
+
+def describe_lock_state() -> LockState:
+    """Best-effort diagnostic snapshot of the startup lock and discovery file.
+
+    Distinguishes "another bridge is actively spawning Woof right now"
+    (lock held, owner pid alive) from "a lock/owner file was left behind by a
+    process that no longer exists" (owner pid dead) — the only case where
+    something might actually be stuck. Even then, an OS-level advisory lock
+    is released automatically once its owning process exits, so this is
+    read-only diagnostic information, not a signal to delete files by hand.
+    """
+    owner_pid: int | None
+    try:
+        owner_pid = int(lock_owner_path().read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        owner_pid = None
+    holder_alive = is_pid_alive(owner_pid) if owner_pid is not None else None
+
+    try:
+        with startup_lock().acquire(timeout=0):
+            lock_held = False
+    except LockTimeout:
+        lock_held = True
+
+    info = read_discovery()
+    discovery_alive = is_pid_alive(info.pid) if info is not None else None
+
+    return LockState(
+        lock_held=lock_held,
+        holder_pid=owner_pid,
+        holder_alive=holder_alive,
+        discovery_pid=info.pid if info is not None else None,
+        discovery_alive=discovery_alive,
+    )
 
 
 class ActivityTracker:
