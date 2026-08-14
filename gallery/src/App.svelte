@@ -49,9 +49,13 @@
   const INLINE_GALLERY_HEIGHT = GRID_ROWS_HEIGHT + GRID_NAV + HEADER_STATUS; // 664
   // Preview has no nav bars, so its usable height is the iframe minus header+status.
   const INLINE_PREVIEW_MAX = INLINE_GALLERY_HEIGHT - HEADER_STATUS; // 588
-  const INLINE_HEIGHTS = { gallery: INLINE_GALLERY_HEIGHT, indexing: 280 };
+  const INLINE_HEIGHTS = { gallery: INLINE_GALLERY_HEIGHT };
   $effect(() => {
     if (!modeKnown || !mcpApp || !mcpReady || isFullscreen) return;
+    // Indexing reports its own measured height (IndexingProgress.notifyHostMeasured) —
+    // a fixed value here raced it and could clamp the iframe below the real content
+    // height (e.g. clipping the Stop button / summary on Windows).
+    if (mode === 'indexing') return;
     notifyHostHeight(mcpApp, INLINE_HEIGHTS[mode] ?? 400);
   });
 

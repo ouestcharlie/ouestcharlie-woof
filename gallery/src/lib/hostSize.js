@@ -3,9 +3,10 @@
 // html/body are fixed-height with overflow hidden, so the SDK's autoResize
 // (a ResizeObserver on body) never fires for content-driven changes — every
 // view must report its own height explicitly. Two shapes are needed:
-//   - a known fixed height (gallery/indexing inline modes), and
-//   - a measured height from a DOM element (progress view, which grows as
-//     status rows and summaries appear).
+//   - a known fixed height (gallery inline mode), and
+//   - a measured height from a DOM element (indexing progress, which grows as
+//     status rows and summaries appear — a fixed height here would race the
+//     measured one and could clamp the iframe below the real content height).
 // Both funnel through sendSizeChanged with the same best-effort error handling.
 
 /**
