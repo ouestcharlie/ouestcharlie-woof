@@ -990,7 +990,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-whitebeard"
-version = "0.14.1"
+version = "0.14.2"
 source = { editable = "../ouestcharlie-whitebeard" }
 dependencies = [
     { name = "mcp" },
@@ -1014,7 +1014,7 @@ dev = [
 
 [[package]]
 name = "ouestcharlie-woof"
-version = "0.14.0"
+version = "0.14.4"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
