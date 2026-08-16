@@ -353,10 +353,13 @@ class McpServer:
             Progress is shown in the gallery app; the summary is sent back
             to the model context when indexing completes.
 
-            By default runs in incremental mode: only new photos are indexed,
-            deleted photos are removed from the index. Sidecar edits on
-            unchanged media are not picked up.
+            By default runs in incremental mode: only new photos are indexed;
+            already-indexed photos are skipped. Sidecar edits on unchanged
+            media are not picked up.
             Use ``force_full_index=True`` to re-process all photos.
+            Photos deleted from disk since the last run are always detected
+            and removed from the index, in both incremental and full-index
+            modes.
 
             Scans the library for photos, writes XMP sidecars with metadata
             and content hashes, builds leaf manifests, and generates
