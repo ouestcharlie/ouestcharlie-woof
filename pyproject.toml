@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ouestcharlie-woof"
-version = "0.13.2"
+version = "0.14.0"
 description = "The MCP-App Photo Gallery"
 requires-python = ">=3.13"
 readme = "README.md"
@@ -25,8 +25,8 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-whitebeard>=0.13.0",
-    "ouestcharlie-wally>=0.13.0",
+    "ouestcharlie-whitebeard>=0.14.2",
+    "ouestcharlie-wally>=0.14.0",
 ]
 
 [project.urls]
