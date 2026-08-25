@@ -1,8 +1,8 @@
 # Gallery
 
-Svelte app embedded in the MCP host (Claude Desktop, CoWork, …) as an MCP
-Apps iframe. Built with Vite; assets are served by the Woof HTTP server at
-`/gallery-static/`.
+Svelte app embedded in the MCP host (Claude Desktop, CoWork, VS Code / GitHub
+Copilot, …) as an MCP Apps iframe. Built with Vite; assets are served by the
+Woof HTTP server at `/gallery-static/`.
 
 ```
 npm run dev           # local dev server

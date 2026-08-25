@@ -131,6 +131,21 @@ describe('MediaGrid — tile selection', () => {
   });
 });
 
+describe('MediaGrid — thumbnail tile clipping', () => {
+  it('overrides max-width/max-height on the sprite image so a host default cannot shrink it', () => {
+    const { container } = render(
+      MediaGrid,
+      makeProps({
+        matches: makeMatches(1),
+        thumbnailTile: () => ({ url: 'sprite.avif', col: 2, row: 1, cols: 8 }),
+      }),
+    );
+    const img = container.querySelector('.tile img');
+    expect(img.style.maxWidth).toBe('none');
+    expect(img.style.maxHeight).toBe('none');
+  });
+});
+
 describe('MediaGrid — loading state', () => {
   it('renders skeleton tiles when loading', () => {
     const { container } = render(MediaGrid, makeProps({ loading: true }));
