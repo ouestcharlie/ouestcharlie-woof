@@ -10,7 +10,7 @@
 
 mcp-name: io.github.ouestcharlie/ouestcharlie-woof
 
-Woof is the photo and video gallery companion to your **your AI assistant** (Claude Desktop, Goose...). It complements those powerful tools with a searchable **gallery**. Your photos and videos remain exactly where they are — on your own drives (local or mounted).
+Woof is the photo and video gallery companion to your **your AI assistant** (Claude Desktop, Goose, VS Code / GitHub Copilot...). It complements those powerful tools with a searchable **gallery**. Your photos and videos remain exactly where they are — on your own drives (local or mounted).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
@@ -20,7 +20,7 @@ Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" 
 
 Most photo managers lock your library into a cloud service (Google Photos, iCloud) or require a database server that becomes a single point of failure. Woof takes a different approach:
 
-- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
+- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose, VS Code / GitHub Copilot…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
 - **Privacy by design.** Only metadata travels to your AI assistant — your actual photos are served locally by Woof. Your pictures are never uploaded to any AI service unless you explicitly ask.
 - **No database lock-in.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
 - **Open formats, forever.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. Every tool you already use — Lightroom, darktable, ExifTool — can read your metadata today and long after OuEstCharlie is gone.
@@ -102,10 +102,40 @@ extensions:
     enabled: true
 ```
 
+### Add to VS Code (Github Copilot harness)
+
+To install in VS Code:
+- From the command Palette (Ctrl+Shift+P or Cmd+Shift+P), select "MCP: Add Server..."
+- Simplest is using "Pip Package" install option
+   - Type in the Woof package name: "ouestcharlie-woof"
+   - Accept to confirm
+   - The entry point is woof-bridge (not woof as proposed by the prompt)
+
+The composed configuration should be:
+```json
+{
+	"servers": {
+		"woof-bridge": {
+			"command": "uvx",
+			"args": [
+				"--python",
+				"3.13",
+				"--from",
+				"ouestcharlie-woof",
+				"woof-bridge"
+			],
+			"type": "stdio"
+		}
+	},
+	"inputs": []
+}
+```
+
+Check if woof-bridge is activated through the "MCP: List Servers" from the Command Palette.
 
 #### Other supported AI Assistants
 
-Other clients support MCP Apps, for example VSCode Github Copilot or Codex.
+Other clients support MCP Apps, for example Codex.
 
 See the [MCP Extension Support Matrix](https://modelcontextprotocol.io/extensions/client-matrix)
 
@@ -201,6 +231,9 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Native cloud libraries (S3, OneDrive, GCS…) |
 
 If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
+<p align="center"><img src="assets/screenshot_vscode_2026-08-25.jpg" alt="Woof in VSCode" height="500"></p>
+<p align="center"><i>Ouestcharlie Woof photo gallery inside VSCode, an alternative to Claude CoWork for techies</i></p>
 
 ---
 

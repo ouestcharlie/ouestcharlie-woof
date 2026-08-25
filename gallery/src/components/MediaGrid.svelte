@@ -108,7 +108,9 @@
           alt={match.filename}
           style="
             width: {tile.cols * DISPLAY_SIZE}px;
+            max-width: none;
             height: auto;
+            max-height: none;
             margin-left: -{tile.col * DISPLAY_SIZE}px;
             margin-top: -{tile.row * DISPLAY_SIZE}px;
             display: block;
