@@ -156,6 +156,25 @@ The gallery panel will appear inline in your conversation with matching results.
 
 - [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
 
+
+## Photo workflow skills
+
+Skills that teach your AI Assistant (Claude, Goose, VSCode...) to sort a camera roll into per-event folders and write
+descriptions and tags into XMP sidecars — matching a Strava activity log where
+one exists, and asking you about the rest.
+
+For Claude:
+```
+    /plugin marketplace add ouestcharlie/ouestcharlie-woof
+    /plugin install woof-photo-workflows@ouestcharlie
+```
+
+Requires Woof MCP. The Strava skill additionally needs the
+[Strava MCP Connector](https://support.strava.com/en-us/articles/15401531-strava-mcp-connector) and an active Strava subscription.
+
+<!-- Walkthroughs: [sorting with a Strava activity log](<blog-url-1>) ·
+[sorting by day clusters](<blog-url-2>)-->
+
 ---
 
 ## Storage
@@ -201,6 +220,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Native cloud libraries (S3, OneDrive, GCS…) |
 
 If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+
 
 ---
 

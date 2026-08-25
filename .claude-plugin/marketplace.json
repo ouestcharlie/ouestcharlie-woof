@@ -1,0 +1,22 @@
+{
+  "name": "ouestcharlie",
+  "owner": {
+    "name": "OuEstCharlie",
+    "url": "https://github.com/ouestcharlie"
+  },
+  "metadata": {
+    "description": "Plugins and skills for OuEstCharlie Woof",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "woof-photo-workflows",
+      "source": "./plugins/woof-photo-workflows",
+      "description": "Sort a camera roll into per-event folders and write descriptions and tags into XMP sidecars — either by matching a Strava activity log, or by grouping photos into day clusters and asking.",
+      "version": "0.1.0",
+      "author": { "name": "Antoine Hue" },
+      "license": "MIT",
+      "keywords": ["photos", "video", "xmp", "metadata", "tags", "strava", "exif", "interactive"]
+    }
+  ]
+}
