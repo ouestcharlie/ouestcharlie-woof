@@ -12,11 +12,13 @@ Makefile
 .github
 .ruff_cache
 .vscode
-/gallery
-doc
-/assets
 .claude
+.claude-plugin/
 .pre-commit-config.yaml
 .mypy_cache
 glama.json
 pyproject.toml
+/plugins
+/gallery
+/doc
+/assets

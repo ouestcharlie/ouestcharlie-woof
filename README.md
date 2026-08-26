@@ -102,7 +102,7 @@ extensions:
     enabled: true
 ```
 
-### Add to VS Code (Github Copilot harness)
+#### Add to VS Code (Github Copilot harness)
 
 To install in VS Code:
 - From the command Palette (Ctrl+Shift+P or Cmd+Shift+P), select "MCP: Add Server..."
@@ -138,6 +138,12 @@ Check if woof-bridge is activated through the "MCP: List Servers" from the Comma
 Other clients support MCP Apps, for example Codex.
 
 See the [MCP Extension Support Matrix](https://modelcontextprotocol.io/extensions/client-matrix)
+
+## Optional skill plugin
+
+Woof provides optional skills with workflows, see the Tutorial section below. To install the plugin containing the skills, reference this repository as `ouestcharlie/ouestcharlie-woof`:
+- Claude Desktop, from the Settings > "Plugins" > "Add" at the top-right corner > "Add a market place" > "Add from a repository"
+- VSCode, from the Command Palette > "Chat: Install Plugin from Source"
 
 ---
 
@@ -185,6 +191,25 @@ The gallery panel will appear inline in your conversation with matching results.
 ## More tutorials
 
 - [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
+
+
+## Photo workflow skills
+
+Skills that teach your AI Assistant (Claude, Goose, VSCode...) to sort a camera roll into per-event folders and write
+descriptions and tags into XMP sidecars — matching a Strava activity log where
+one exists, and asking you about the rest.
+
+For Claude:
+```
+    /plugin marketplace add ouestcharlie/ouestcharlie-woof
+    /plugin install woof-photo-workflows@ouestcharlie
+```
+
+Requires Woof MCP. The Strava skill additionally needs the
+[Strava MCP Connector](https://support.strava.com/en-us/articles/15401531-strava-mcp-connector) and an active Strava subscription.
+
+<!-- Walkthroughs: [sorting with a Strava activity log](<blog-url-1>) ·
+[sorting by day clusters](<blog-url-2>)-->
 
 ---
 

@@ -1,0 +1,26 @@
+{
+  "name": "woof-photo-workflows",
+  "version": "0.1.0",
+  "description": "Organise a photo library with Claude: match photos and videos to the activities that produced them, write descriptions and tags into their XMP sidecars, and file a camera roll into per-event folders. Skills for the Woof photo server, which is installed separately.",
+  "author": {
+    "name": "Antoine Hue"
+  },
+  "license": "MIT",
+  "keywords": [
+    "photos",
+    "video",
+    "xmp",
+    "sidecar",
+    "metadata",
+    "tags",
+    "strava",
+    "gpx",
+    "activity",
+    "hiking",
+    "cycling",
+    "skiing",
+    "photo-organisation",
+    "exif"
+  ],
+  "skills": "./skills"
+}
