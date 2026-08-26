@@ -102,7 +102,7 @@ extensions:
     enabled: true
 ```
 
-### Add to VS Code (Github Copilot harness)
+#### Add to VS Code (Github Copilot harness)
 
 To install in VS Code:
 - From the command Palette (Ctrl+Shift+P or Cmd+Shift+P), select "MCP: Add Server..."
@@ -138,6 +138,12 @@ Check if woof-bridge is activated through the "MCP: List Servers" from the Comma
 Other clients support MCP Apps, for example Codex.
 
 See the [MCP Extension Support Matrix](https://modelcontextprotocol.io/extensions/client-matrix)
+
+## Optional skill plugin
+
+Woof provides optional skills with workflows, see the Tutorial section below. To install the plugin containing the skills, reference this repository as `ouestcharlie/ouestcharlie-woof`:
+- Claude Desktop, from the Settings > "Plugins" > "Add" at the top-right corner > "Add a market place" > "Add from a repository"
+- VSCode, from the Command Palette > "Chat: Install Plugin from Source"
 
 ---
 
