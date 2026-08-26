@@ -41,7 +41,23 @@ import sys
 import tarfile
 import xml.dom.minidom
 
-MEDIA_EXT = (".jpg", ".jpeg", ".heic", ".mp4", ".mov", ".png", ".tif", ".tiff")
+MEDIA_EXT = (
+    ".jpg",
+    ".jpeg",
+    ".heic",
+    ".heif",
+    ".png",
+    ".dng",
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".arw",
+    ".raf",
+    ".orf",
+    ".rw2",
+    ".mp4",
+    ".mov",
+)
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
 
 

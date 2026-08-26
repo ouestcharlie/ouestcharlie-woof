@@ -26,7 +26,23 @@ import sys
 import time
 import xml.dom.minidom
 
-MEDIA_EXT = (".jpg", ".jpeg", ".heic", ".mp4", ".mov")
+MEDIA_EXT = (
+    ".jpg",
+    ".jpeg",
+    ".heic",
+    ".heif",
+    ".png",
+    ".dng",
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".arw",
+    ".raf",
+    ".orf",
+    ".rw2",
+    ".mp4",
+    ".mov",
+)
 
 
 def recent(path, window_s):
