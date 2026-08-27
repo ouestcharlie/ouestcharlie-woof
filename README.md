@@ -190,27 +190,9 @@ The gallery panel will appear inline in your conversation with matching results.
 
 ## More tutorials
 
-- [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
-
-
-## Photo workflow skills
-
-Skills that teach your AI Assistant (Claude, Goose, VSCode...) to sort a camera roll into per-event folders and write
-descriptions and tags into XMP sidecars — matching a Strava activity log where
-one exists, and asking you about the rest.
-
-For Claude:
-```
-    /plugin marketplace add ouestcharlie/ouestcharlie-woof
-    /plugin install woof-photo-workflows@ouestcharlie
-```
-
-Requires Woof MCP. The Strava skill additionally needs the
-[Strava MCP Connector](https://support.strava.com/en-us/articles/15401531-strava-mcp-connector) and an active Strava subscription.
-
-<!-- Walkthroughs: [sorting with a Strava activity log](<blog-url-1>) ·
-[sorting by day clusters](<blog-url-2>)-->
-
+- [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof - Prompt version](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
+- [Use an AI workflow to sort photos by grouping them into clusters](https://ouestcharlie.github.io/ouestcharlie/2026/08/26/ai-workflow-sort-photos-by-grouping-clusters/)
+- [Use an AI workflow to sort and enrich photos using your Strava activity log - Skill version](https://ouestcharlie.github.io/ouestcharlie/2026/08/27/ai-workflow-sort-photos-using-strava-activity-log/)
 ---
 
 ## Storage
