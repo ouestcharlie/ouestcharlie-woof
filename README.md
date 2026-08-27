@@ -191,7 +191,7 @@ The gallery panel will appear inline in your conversation with matching results.
 ## More tutorials
 
 - [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof - Prompt version](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
-- [Use an AI workflow to sort photos by grouping them into clusters](https://ouestcharlie.github.io/ouestcharlie/2026/08/26/ai-workflow-sort-photos-by-grouping-clusters/)
+- [Use an AI workflow to sort and enrich photos by grouping them into clusters](https://ouestcharlie.github.io/ouestcharlie/2026/08/26/ai-workflow-sort-photos-by-grouping-clusters/)
 - [Use an AI workflow to sort and enrich photos using your Strava activity log - Skill version](https://ouestcharlie.github.io/ouestcharlie/2026/08/27/ai-workflow-sort-photos-using-strava-activity-log/)
 ---
 
