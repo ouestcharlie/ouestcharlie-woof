@@ -44,8 +44,15 @@ def spawn_fake_woof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Mock:
     def _spawn() -> None:
         kwargs: dict[str, object] = {}
         if sys.platform == "win32":
+            # CREATE_NO_WINDOW, not DETACHED_PROCESS: DETACHED_PROCESS only
+            # *skips* console allocation, and that "skip" marker isn't
+            # reliably carried through every layer between here and the
+            # console-subsystem python.exe actually running, so Windows can
+            # still flash a visible console (cpython issue #85785 / bpo-41619).
+            # CREATE_NO_WINDOW allocates a console up front but hidden, which
+            # is inherited consistently instead.
             kwargs["creationflags"] = (
-                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
             )
         else:
             kwargs["start_new_session"] = True

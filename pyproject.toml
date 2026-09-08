@@ -53,6 +53,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",
     "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    # Windows ProactorEventLoop closes subprocess/pipe transports after gc; harmless.
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.ruff]

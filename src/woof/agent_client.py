@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import secrets
+import subprocess
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -105,12 +106,20 @@ class _WallySidecar:
         proc: asyncio.subprocess.Process | None = None
         try:
             _log.info("Launching Wally: %s", command)
+            kwargs: dict[str, Any] = {}
+            if sys.platform == "win32":
+                # Without this, a parent with no console of its own (e.g. run
+                # under a GUI MCP host, or a debugger with no attached
+                # console) causes Windows to auto-allocate and show a new,
+                # visible console for this child.
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             proc = await asyncio.create_subprocess_exec(
                 *command,
                 env=env,
                 stdin=asyncio.subprocess.DEVNULL,  # explicitly close stdin
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # merge into stdout
+                **kwargs,
             )
             try:
                 port = await asyncio.wait_for(
