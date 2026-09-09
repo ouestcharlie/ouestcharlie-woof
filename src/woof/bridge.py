@@ -82,7 +82,14 @@ def _spawn_woof() -> None:
     env = {**os.environ, "WOOF_TRANSPORT": "http"}
     kwargs: dict[str, Any] = {}
     if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # CREATE_NO_WINDOW, not DETACHED_PROCESS: DETACHED_PROCESS only
+        # *skips* console allocation, and that "skip" marker isn't reliably
+        # carried through every layer between here and the console-subsystem
+        # python.exe actually running, so Windows can still flash a visible
+        # console (cpython issue #85785 / bpo-41619). CREATE_NO_WINDOW
+        # allocates a console up front but hidden, which is inherited
+        # consistently instead.
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
     log_path = spawn_log_path()

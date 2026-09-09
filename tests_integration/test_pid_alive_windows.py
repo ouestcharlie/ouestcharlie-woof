@@ -32,7 +32,11 @@ def _run_prober_without_console(target_pid: int, out_path: Path) -> str:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS,  # no console at all -- the crux of the bug
+        # CREATE_NO_WINDOW: reliably no visible window (unlike DETACHED_PROCESS,
+        # which can still flash one -- cpython issue #85785 / bpo-41619). The
+        # actual no-console precondition -- the crux of the bug -- is now
+        # guaranteed inside the prober itself via FreeConsole().
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     proc.wait(timeout=10)
     return out_path.read_text(encoding="utf-8").strip()
@@ -44,7 +48,11 @@ def test_is_pid_alive_true_for_live_process_from_console_less_caller(tmp_path: P
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        # CREATE_NO_WINDOW, not DETACHED_PROCESS: this is just a background
+        # dummy process to probe, unlike the console-less prober below, so it
+        # doesn't need to reproduce the bug -- DETACHED_PROCESS can still
+        # flash a visible console here (cpython issue #85785 / bpo-41619).
+        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     try:
         time.sleep(0.5)
@@ -61,7 +69,7 @@ def test_is_pid_alive_false_for_exited_process_from_console_less_caller(tmp_path
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     target.wait(timeout=5)
 

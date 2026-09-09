@@ -8,12 +8,19 @@ normally.
 
 from __future__ import annotations
 
+import ctypes
 import sys
 
 from woof.discovery import is_pid_alive
 
 
 def main() -> None:
+    # Detach from any console this process was given -- the parent's
+    # creation flags alone aren't a reliable guarantee (Windows can still
+    # hand a console to a "detached" process; cpython issue #85785 /
+    # bpo-41619), so make the no-console precondition true here instead.
+    ctypes.windll.kernel32.FreeConsole()
+
     target_pid, out_path = int(sys.argv[1]), sys.argv[2]
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(str(is_pid_alive(target_pid)))
