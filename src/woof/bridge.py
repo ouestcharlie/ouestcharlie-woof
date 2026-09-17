@@ -185,7 +185,6 @@ async def run_bridge() -> None:
         streamable_http_client(f"{info.server_url}/mcp/", http_client=http_client) as (
             woof_read,
             woof_write,
-            _get_session_id,
         ),
         anyio.create_task_group() as tg,
     ):
@@ -238,7 +237,7 @@ def _print_lock_diagnosis() -> None:
 
 
 def main() -> None:
-    setup_logging("woof-bridge", log_file_env_var="WOOF_BRIDGE_LOG_FILE", level=logging.DEBUG)
+    setup_logging("woof-bridge", log_file_env_var="WOOF_BRIDGE_LOG_FILE", level=logging.INFO)
     # filelock logs every ~0.05s poll retry at DEBUG while contended, which
     # drowns out the rest of a bridge's log during a slow/contended startup.
     logging.getLogger("filelock").setLevel(logging.WARNING)
