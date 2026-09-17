@@ -185,7 +185,6 @@ async def run_bridge() -> None:
         streamable_http_client(f"{info.server_url}/mcp/", http_client=http_client) as (
             woof_read,
             woof_write,
-            _get_session_id,
         ),
         anyio.create_task_group() as tg,
     ):

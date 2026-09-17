@@ -155,7 +155,7 @@ class _WallySidecar:
             # entered and exited in LIFO order within the same asyncio task.
             async with (
                 httpx.AsyncClient(headers=headers, timeout=None) as http_client,
-                streamable_http_client(url, http_client=http_client) as (read, write, _),
+                streamable_http_client(url, http_client=http_client) as (read, write),
                 ClientSession(read, write) as session,
             ):
                 try:
@@ -278,7 +278,7 @@ class AgentClient:
     ) -> Any:
         sidecar = await self._get_wally_sidecar(library)
         result = await sidecar.call_tool(tool_name, args, progress_cb)
-        if result.isError:
+        if result.is_error:
             content = _extract_text(result.content)
             raise AgentError(f"wally.{tool_name} failed: {content}")
         raw = _extract_text(result.content)
@@ -390,7 +390,7 @@ class AgentClient:
             await session.initialize()
             result = await session.call_tool(tool_name, args, progress_callback=progress_cb)
 
-        if result.isError:
+        if result.is_error:
             content = _extract_text(result.content)
             raise AgentError(f"{module}.{tool_name} failed: {content}")
 
