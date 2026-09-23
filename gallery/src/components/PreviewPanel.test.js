@@ -393,3 +393,29 @@ describe('PreviewPanel — spinner delay', () => {
     expect(container.querySelector('.spinner')).toBeNull();
   });
 });
+
+describe('PreviewPanel — playback follows active view', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('autoplays a video when active and pauses when the preview is left', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const { rerender } = render(PreviewPanel, {
+      matches: [VIDEO_MATCH], selectedIndex: 0, onNavigate: vi.fn(), previewUrl, videoUrl, active: true,
+    });
+    await Promise.resolve();
+    expect(play).toHaveBeenCalled();
+    pause.mockClear();
+    await rerender({ active: false });
+    expect(pause).toHaveBeenCalled();
+  });
+
+  it('does not call play() for a photo', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    render(PreviewPanel, {
+      matches: [MATCH], selectedIndex: 0, onNavigate: vi.fn(), previewUrl, videoUrl, active: true,
+    });
+    await Promise.resolve();
+    expect(play).not.toHaveBeenCalled();
+  });
+});

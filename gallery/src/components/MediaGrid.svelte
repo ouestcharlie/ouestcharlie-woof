@@ -1,5 +1,6 @@
 <script>
   import * as m from '../paraglide/messages.js';
+  import { formatShortDate } from '../lib/format.js';
   import { absolutePageFromMap, totalDisplayPages } from '../lib/pagination.js';
 
   /**
@@ -26,6 +27,21 @@
     onSelect,
     onPageSelect,
   } = $props();
+
+  // Short datetime describes a tile better than the filename; filename is the fallback.
+  function tileDescription(match) {
+    const date = formatShortDate(match.dateTaken);
+    if (!date) return match.filename;
+    return match.mediaType === 'video'
+      ? m.grid_alt_video({ date })
+      : m.grid_alt_photo({ date });
+  }
+
+  // Hover tooltip: the description, plus the filename when the description replaced it.
+  function tileTitle(match) {
+    const alt = tileDescription(match);
+    return alt === match.filename ? alt : `${alt}\n${match.filename}`;
+  }
 
   const DISPLAY_SIZE = 160; // CSS pixels for each displayed tile
   const TILE_STRIDE = DISPLAY_SIZE + 4; // tile width + gap
@@ -96,7 +112,7 @@
       tabindex="0"
       class="tile"
       onclick={() => onSelect(localPage * displayPageSize + i)}
-      title={match.filename}
+      title={tileTitle(match)}
     >
       {#if tile}
         <!--

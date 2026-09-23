@@ -56,5 +56,7 @@
   "indexing_no_summary": "利用可能な概要はありません。",
   "indexing_stopped": "インデックスを停止しました",
   "indexing_failed_title": "インデックス失敗",
-  "error_unknown": "不明なエラー"
+  "error_unknown": "不明なエラー",
+  "grid_alt_photo": "写真、{date}",
+  "grid_alt_video": "動画、{date}"
 }

@@ -178,3 +178,14 @@ describe('itemCountLabel', () => {
     expect(itemCountLabel(42)).toBe('42 items');
   });
 });
+
+import { formatShortDate } from './format.js';
+describe('formatShortDate', () => {
+  it('returns null for empty and raw for invalid input', () => {
+    expect(formatShortDate(null)).toBeNull();
+    expect(formatShortDate('nope')).toBe('nope');
+  });
+  it('formats a valid date compactly', () => {
+    expect(formatShortDate('2026-03-12T14:32:00')).toMatch(/2026/);
+  });
+});

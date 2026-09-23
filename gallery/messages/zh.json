@@ -56,5 +56,7 @@
   "indexing_no_summary": "无可用摘要。",
   "indexing_stopped": "索引已停止",
   "indexing_failed_title": "索引失败",
-  "error_unknown": "未知错误"
+  "error_unknown": "未知错误",
+  "grid_alt_photo": "照片，{date}",
+  "grid_alt_video": "视频，{date}"
 }
