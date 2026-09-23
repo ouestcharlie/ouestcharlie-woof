@@ -25,6 +25,14 @@ export function formatDate(raw) {
   });
 }
 
+/** Compact locale datetime (e.g. "12 Mar 2026, 14:32"); raw string if unparseable, null if absent. */
+export function formatShortDate(raw) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d)) return raw;
+  return d.toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 export function formatDimensions(m) {
   return m?.width && m?.height ? `${m.width} × ${m.height}` : null;
 }

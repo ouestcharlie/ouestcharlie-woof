@@ -56,5 +56,7 @@
   "indexing_no_summary": "No hay resumen disponible.",
   "indexing_stopped": "Indexación detenida",
   "indexing_failed_title": "Error de indexación",
-  "error_unknown": "Error desconocido"
+  "error_unknown": "Error desconocido",
+  "grid_alt_photo": "Foto, {date}",
+  "grid_alt_video": "Vídeo, {date}"
 }

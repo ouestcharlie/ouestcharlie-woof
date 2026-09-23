@@ -56,5 +56,7 @@
   "indexing_no_summary": "Keine Zusammenfassung verfügbar.",
   "indexing_stopped": "Indizierung gestoppt",
   "indexing_failed_title": "Indizierung fehlgeschlagen",
-  "error_unknown": "Unbekannter Fehler"
+  "error_unknown": "Unbekannter Fehler",
+  "grid_alt_photo": "Foto, {date}",
+  "grid_alt_video": "Video, {date}"
 }

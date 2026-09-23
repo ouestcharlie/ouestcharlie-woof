@@ -71,6 +71,15 @@
   // off-screen after navigation.
   function pauseVideo() { videoEl?.pause(); }
 
+  // The panel stays mounted while hidden: stop playback when the preview is left,
+  // and start it when a video is shown (blocked autoplay just leaves poster + controls).
+  $effect(() => {
+    videoSrc; // re-run when navigating between videos
+    if (!videoEl) return;
+    if (active) videoEl.play()?.catch(() => {});
+    else videoEl.pause();
+  });
+
   function prev() { if (hasPrev) { pauseVideo(); onNavigate(selectedIndex - 1); } }
   function next() { if (hasNext) { pauseVideo(); onNavigate(selectedIndex + 1); } }
 
@@ -104,8 +113,8 @@
       {#if isVideo}
         <!--
           Video: <video> with the cover-frame JPEG as poster so the panel shows
-          an image instantly while the stream buffers. No autoplay —
-          user-initiated playback only.
+          an image instantly while the stream buffers. Playback starts
+          automatically when the preview is active (see the effect above).
         -->
         <!-- svelte-ignore a11y_media_has_caption -->
         <video

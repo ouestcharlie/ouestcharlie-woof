@@ -248,3 +248,20 @@ describe('MediaGrid — pageMap pagination', () => {
   // The cases kept above only verify that absolutePage / displayPageTotal are
   // wired into the rendered counter and the fetch/disable controls.
 });
+
+describe('MediaGrid — tile tooltip', () => {
+  it('keeps the filename as image alt and falls back to it in the title without dateTaken', () => {
+    const tile = { url: 'http://x/t', col: 0, row: 0, cols: 4 };
+    const matches = [{ contentHash: 'a', filename: 'IMG_1.jpg' }];
+    const { container } = render(MediaGrid, makeProps({ matches, thumbnailTile: () => tile }));
+    expect(container.querySelector('.tile img').getAttribute('alt')).toBe('IMG_1.jpg');
+    expect(container.querySelector('.tile').getAttribute('title')).toBe('IMG_1.jpg');
+  });
+
+  it('shows the description and filename in the title', () => {
+    const matches = [{ contentHash: 'a', filename: 'IMG_1.jpg', dateTaken: '2026-03-12T14:32:00' }];
+    const { container } = render(MediaGrid, makeProps({ matches }));
+    const title = container.querySelector('.tile').getAttribute('title');
+    expect(title).toMatch(/^Photo, .*2026.*\nIMG_1\.jpg$/);
+  });
+});
