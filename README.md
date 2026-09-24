@@ -20,14 +20,14 @@ Woof is the **MCP App** frontend to **"Où est Charlie ?"**  ("Where is Wally?" 
 
 Most photo managers lock your library into a cloud service (Google Photos, iCloud) or require a database server that becomes a single point of failure. Woof takes a different approach:
 
-- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, ChatGPT, Goose, VS Code / GitHub Copilot…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
+- **Conversation as your gallery.** Woof connects to your AI assistant (Claude Desktop, Goose, VS Code / GitHub Copilot…) and turns it into a full photo browser. Ask in plain language, get results inline. No separate app to learn.
 - **Privacy by design.** Only metadata travels to your AI assistant — your actual photos are served locally by Woof. Your pictures are never uploaded to any AI service unless you explicitly ask.
 - **No database lock-in.** Metadata lives as XMP sidecar files right next to your photos, plus lightweight JSON manifests. Move a drive, copy a folder — your entire organization travels with your photos.
 - **Open formats, forever.** XMP is an ISO standard. JSON is universal. AVIF is royalty-free. Every tool you already use — Lightroom, darktable, ExifTool — can read your metadata today and long after OuEstCharlie is gone.
 - **Your photos are never touched.** Woof reads your library as-is. It never modifies, moves, or deletes your original files. It also honors existing XMP metadata from Lightroom, darktable, or any other tool — rather than overwriting it.
 - **Works with your existing folder structure.** Just point Woof at your photos folder. No migration, no reorganization required.
 
-> **More about OuEstCharlie and Woof on the [OuEstCharlie Blog](https://ouestcharlie.github.io/ouestcharlie/)**
+> **More about OuEstCharlie and Woof on the [OuEstCharlie Blog](https://ouestcharlie.github.io)**
 
 ---
 
@@ -44,7 +44,7 @@ Download the latest `ouestcharlie-woof.mcpb` from the [Releases](https://github.
 
 ##### See also in Woof Blog:
 
->  **[Step by Step install of OuEstCharlie Woof in Claude Desktop](https://ouestcharlie.github.io/ouestcharlie/2026/05/13/claude-how-to-step-by-step/)** 
+>  **[Step by Step install of OuEstCharlie Woof in Claude Desktop](https://ouestcharlie.github.io/2026/05/13/claude-how-to-step-by-step/)** 
 
 ### Option B — Manual `uvx` configuration
 
@@ -190,9 +190,9 @@ The gallery panel will appear inline in your conversation with matching results.
 
 ## More tutorials
 
-- [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof - Prompt version](https://ouestcharlie.github.io/ouestcharlie/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharly-Woof/)
-- [Use an AI workflow to sort and enrich photos by grouping them into clusters](https://ouestcharlie.github.io/ouestcharlie/2026/08/26/ai-workflow-sort-photos-by-grouping-clusters/)
-- [Use an AI workflow to sort and enrich photos using your Strava activity log - Skill version](https://ouestcharlie.github.io/ouestcharlie/2026/08/27/ai-workflow-sort-photos-using-strava-activity-log/)
+- [Create your personal photo gallery with Claude, Strava and OuEstCharlie Woof - Prompt version](https://ouestcharlie.github.io/2026/07/31/personal-photo-gallery-Claude-Strava-OuEstCharlie-Woof/)
+- [Use an AI workflow to sort and enrich photos by grouping them into clusters](https://ouestcharlie.github.io/2026/08/26/ai-workflow-sort-photos-by-grouping-clusters/)
+- [Use an AI workflow to sort and enrich photos using your Strava activity log - Skill version](https://ouestcharlie.github.io/2026/08/27/ai-workflow-sort-photos-using-strava-activity-log/)
 ---
 
 ## Storage

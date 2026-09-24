@@ -19,7 +19,7 @@ photo server for Claude Desktop.
 ### Install Woof first
 
 This plugin ships skills, not the server. Install Woof by following
-[Step by Step Install of OuEstCharlie Woof in Claude Desktop](https://ouestcharlie.github.io/ouestcharlie/2026/05/13/claude-how-to-step-by-step/)
+[Step by Step Install of OuEstCharlie Woof in Claude Desktop](https://ouestcharlie.github.io/2026/05/13/claude-how-to-step-by-step/)
 — the `.mcpb` bundle from the
 [Woof releases](https://github.com/ouestcharlie/ouestcharlie-woof/releases),
 installed through Claude Desktop's Extensions tab.
@@ -78,7 +78,7 @@ With Woof installed and a library indexed, ask Claude in ordinary language:
 > Sort the photos in my camera roll folder.
 
 Step-by-step walkthroughs live on the
-[Ouestcharlie blog](https://ouestcharlie.github.io/ouestcharlie/) — one for
+[Ouestcharlie blog](https://ouestcharlie.github.io) — one for
 sorting against a Strava activity log, one for grouping by day when there's no
 log to match against.
 
