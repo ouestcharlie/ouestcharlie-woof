@@ -63,6 +63,13 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v
 
+      # Checks src/ against the installed package's dependencies (strict
+      # mode, config in pyproject.toml).
+      - name: Type check
+        run: |
+          pip install "mypy>=2.3"
+          mypy src
+
       - uses: actions/upload-artifact@v6
         with:
           name: dist

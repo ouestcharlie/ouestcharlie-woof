@@ -23,11 +23,11 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any
+from collections.abc import AsyncIterable
+from typing import Any, Protocol
 
 import anyio
-import httpx
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+import httpx2
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
@@ -135,10 +135,11 @@ async def ensure_woof_running() -> DiscoveryInfo:
         return await _wait_for_discovery(_SPAWN_WAIT_SECONDS)
 
 
-async def _pump(
-    src: MemoryObjectReceiveStream[SessionMessage | Exception],
-    dst: MemoryObjectSendStream[SessionMessage],
-) -> None:
+class _MessageSink(Protocol):
+    async def send(self, item: SessionMessage, /) -> None: ...
+
+
+async def _pump(src: AsyncIterable[SessionMessage | Exception], dst: _MessageSink) -> None:
     async for message in src:
         if isinstance(message, Exception):
             # A malformed/unparseable message at the transport layer — not a
@@ -150,12 +151,12 @@ async def _pump(
         await dst.send(message)
 
 
-async def _keepalive_loop(client: httpx.AsyncClient) -> None:
+async def _keepalive_loop(client: httpx2.AsyncClient) -> None:
     while True:
         await asyncio.sleep(_KEEPALIVE_INTERVAL_SECONDS)
         try:
             await client.post("/keepalive")
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             _log.debug("Keepalive ping failed (Woof may be restarting): %s", exc)
 
 
@@ -164,18 +165,18 @@ async def run_bridge() -> None:
     headers = {"Authorization": f"Bearer {info.token}"}
 
     async with (
-        httpx.AsyncClient(
+        httpx2.AsyncClient(
             base_url=info.server_url,
             headers=headers,
             follow_redirects=True,
             # streamable_http_client() would normally build its own client with
             # generous MCP-appropriate timeouts (30s connect, 5min read) — but
             # passing our own httpx_client (below, so /keepalive can share it)
-            # opts out of that and falls back to httpx's bare 5s-everything
+            # opts out of that and falls back to httpx2's bare 5s-everything
             # default, which cuts off any tool call slower than 5s (e.g. a
             # lazily-spawned Wally sidecar taking ~20s to come up). Match the
-            # SDK's own recommended defaults instead of inheriting httpx's.
-            timeout=httpx.Timeout(30.0, read=300.0),
+            # SDK's own recommended defaults instead of inheriting httpx2's.
+            timeout=httpx2.Timeout(30.0, read=300.0),
         ) as http_client,
         stdio_server() as (host_read, host_write),
         # Trailing slash: Woof mounts its MCP app at "/mcp" via Starlette's
@@ -207,12 +208,12 @@ async def stop_running_instance() -> bool:
         remove_discovery()
         return False
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx2.AsyncClient(timeout=5.0) as client:
             await client.post(
                 f"{info.server_url}/shutdown",
                 headers={"Authorization": f"Bearer {info.token}"},
             )
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         _log.warning("Shutdown request failed (%s); removing discovery file anyway", exc)
     remove_discovery()
     return True

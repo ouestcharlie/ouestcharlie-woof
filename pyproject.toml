@@ -28,6 +28,7 @@ dependencies = [
     "filelock>=3.13",
     "ouestcharlie-whitebeard>=0.16.0",
     "ouestcharlie-wally>=0.16.0",
+    "httpx2>=2.13",
 ]
 
 [project.urls]
@@ -75,6 +76,7 @@ strict = true
 [dependency-groups]
 dev = [
     "mcp[cli]>=2.0,<3.0.0",
+    "mypy>=2.3",
     "pre-commit>=4.5.1",
     "pytest>=9.0",
     "pytest-asyncio>=1.0",

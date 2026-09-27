@@ -8,7 +8,7 @@ import os
 import sys
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from woof import bridge, discovery
@@ -226,13 +226,13 @@ async def test_run_bridge_uses_generous_read_timeout_not_httpx_default() -> None
 
     with (
         patch("woof.bridge.ensure_woof_running", new=AsyncMock(return_value=info)),
-        patch("httpx.AsyncClient", side_effect=fake_async_client),
+        patch("httpx2.AsyncClient", side_effect=fake_async_client),
         pytest.raises(_StopTest) as exc_info,
     ):
         await bridge.run_bridge()
 
     timeout = exc_info.value.args[0]
-    assert isinstance(timeout, httpx.Timeout)
+    assert isinstance(timeout, httpx2.Timeout)
     assert timeout.connect >= 30.0
     assert timeout.read >= 300.0
 
@@ -245,7 +245,7 @@ async def test_stop_running_instance_returns_false_when_no_discovery_file() -> N
 @pytest.mark.asyncio
 async def test_stop_running_instance_cleans_up_stale_pid_without_http_call() -> None:
     discovery.write_discovery(discovery.DiscoveryInfo(pid=2**30, port=1, token="t"))
-    with patch("httpx.AsyncClient.post") as post:
+    with patch("httpx2.AsyncClient.post") as post:
         result = await bridge.stop_running_instance()
     assert result is False
     post.assert_not_called()
@@ -257,7 +257,7 @@ async def test_stop_running_instance_posts_shutdown_and_removes_file() -> None:
     info = discovery.DiscoveryInfo(pid=os.getpid(), port=1234, token="tok")
     discovery.write_discovery(info)
     mock_response = AsyncMock()
-    with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_response)) as post:
+    with patch("httpx2.AsyncClient.post", new=AsyncMock(return_value=mock_response)) as post:
         result = await bridge.stop_running_instance()
     assert result is True
     post.assert_called_once()

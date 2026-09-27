@@ -13,7 +13,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-import httpx
+import httpx2
 from fastmcp import Context
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -60,8 +60,8 @@ class _WallySidecar:
     """
 
     def __init__(self) -> None:
-        self._task: asyncio.Task | None = None
-        self._call_queue: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task[None] | None = None
+        self._call_queue: asyncio.Queue[Any] = asyncio.Queue()
         self._ready_event: asyncio.Event = asyncio.Event()
         self._start_error: BaseException | None = None
         self.alive = False
@@ -154,7 +154,7 @@ class _WallySidecar:
             # All three context managers stay in this task — cancel scopes are
             # entered and exited in LIFO order within the same asyncio task.
             async with (
-                httpx.AsyncClient(headers=headers, timeout=None) as http_client,
+                httpx2.AsyncClient(headers=headers, timeout=None) as http_client,
                 streamable_http_client(url, http_client=http_client) as (read, write),
                 ClientSession(read, write) as session,
             ):
@@ -327,8 +327,8 @@ class AgentClient:
         *,
         on_progress: Callable[[float, float, str], None] | None = None,
         on_complete: Callable[[Any], None] | None = None,
-        on_error: Callable[[Exception], None] | None = None,
-    ) -> asyncio.Task:
+        on_error: Callable[[BaseException], None] | None = None,
+    ) -> asyncio.Task[None]:
         """Spawn *module.tool_name* as a background asyncio Task and return immediately.
 
         Callbacks are invoked on the MCP event loop (the same loop the HTTP
@@ -406,7 +406,7 @@ def _extract_text(content: list[Any]) -> str:
     """Return the text from the first text content block."""
     for block in content:
         if hasattr(block, "text"):
-            return block.text
+            return str(block.text)
     return str(content)
 
 

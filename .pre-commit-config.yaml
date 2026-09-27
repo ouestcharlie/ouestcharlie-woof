@@ -2,7 +2,7 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.9
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
@@ -13,4 +13,13 @@ repos:
         entry: bash -c 'cd gallery && npm run lint'
         language: system
         files: ^gallery/src/.*\.(js|svelte)$
+        pass_filenames: false
+      # Runs in the project venv (uv sync first): strict mode needs the real
+      # dependencies, which an isolated mirrors-mypy environment would lack.
+      # --no-sync: never re-sync (or rebuild) the venv from a commit hook.
+      - id: mypy
+        name: mypy
+        entry: uv run --no-sync mypy src
+        language: system
+        files: ^src/.*\.py$
         pass_filenames: false
