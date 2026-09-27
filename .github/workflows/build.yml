@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - uses: actions/download-artifact@v8
         with:
@@ -37,7 +37,10 @@ jobs:
       - name: Install packages
         working-directory: dist
         shell: bash
-        run: pip install ouestcharlie_woof-*.whl pytest pytest-asyncio httpx
+        # --only-binary: fail rather than build image-proc from its sdist, which
+        # silently drops HEIC/RAW support when no published wheel matches this
+        # OS/Python combination (OEC-61).
+        run: pip install --only-binary ouestcharlie-imageproc ouestcharlie_woof-*.whl pytest pytest-asyncio httpx
 
       - name: Run integration tests
         run: python -m pytest tests_integration/ -v

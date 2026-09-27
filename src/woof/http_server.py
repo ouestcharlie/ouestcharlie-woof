@@ -153,7 +153,7 @@ def build_gallery_app(
         session_id = request.path_params["session_id"]
         try:
             page = int(request.path_params["page"])
-        except (ValueError, KeyError):
+        except ValueError, KeyError:
             return JSONResponse({"error": "invalid page"}, status_code=400)
 
         session = session_manager.get(session_id)

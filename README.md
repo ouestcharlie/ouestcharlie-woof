@@ -68,7 +68,7 @@ Open (or create) `~/Library/Application Support/Claude/claude_desktop_config.jso
   "mcpServers": {
     "woof": {
       "command": "uvx",
-      "args": ["--python", "3.13", "--from", "ouestcharlie-woof", "woof-bridge"]
+      "args": ["--python", "3.14", "--from", "ouestcharlie-woof", "woof-bridge"]
     }
   }
 }
@@ -98,7 +98,7 @@ extensions:
   woof:
     type: stdio
     cmd: uvx
-    args: ["--python", "3.13", "--from", "ouestcharlie-woof", "woof-bridge"]
+    args: ["--python", "3.14", "--from", "ouestcharlie-woof", "woof-bridge"]
     enabled: true
 ```
 
@@ -119,7 +119,7 @@ The composed configuration should be:
 			"command": "uvx",
 			"args": [
 				"--python",
-				"3.13",
+				"3.14",
 				"--from",
 				"ouestcharlie-woof",
 				"woof-bridge"

@@ -1,8 +1,8 @@
 [project]
 name = "ouestcharlie-woof"
-version = "0.15.2"
+version = "0.16.0"
 description = "The MCP-App Photo Gallery"
-requires-python = "==3.13.*"
+requires-python = "==3.14.*"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE*"]
@@ -11,6 +11,7 @@ authors = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -21,8 +22,8 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-whitebeard>=0.15.0",
-    "ouestcharlie-wally>=0.15.0",
+    "ouestcharlie-whitebeard>=0.16.0",
+    "ouestcharlie-wally>=0.16.0",
 ]
 
 [project.urls]

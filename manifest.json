@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "ouestcharlie-woof",
   "display_name": "OuEstCharlie Woof",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "description": "OuEstCharlie Woof — AI native photo gallery based on MCP Apps and skills",
   "author": {
     "name": "Antoine Hue"
@@ -13,13 +13,13 @@
     "entry_point": "pyproject_packaging.toml",
     "mcp_config": {
       "command": "uv",
-      "args": ["tool", "run", "--python", "3.13", "--from", "ouestcharlie-woof==0.15.2", "woof-bridge"]
+      "args": ["tool", "run", "--python", "3.14", "--from", "ouestcharlie-woof==0.16.0", "woof-bridge"]
     }
   },
   "compatibility": {
     "platforms": ["darwin", "linux", "win32"],
     "runtimes": {
-      "python": "3.13"
+      "python": "3.14"
     }
   },
   "keywords": ["photos", "mcp", "ouestcharlie"],

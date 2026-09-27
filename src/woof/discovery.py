@@ -124,7 +124,7 @@ def lock_owner_path() -> Path:
 
 
 @contextlib.contextmanager
-def acquire_startup_lock(timeout: float) -> Generator[None, None, None]:
+def acquire_startup_lock(timeout: float) -> Generator[None]:
     """Acquire the startup lock for *timeout* seconds, recording this process as owner.
 
     Raises `LockTimeout` if the lock isn't acquired in time. Only the caller
@@ -162,7 +162,7 @@ def read_discovery() -> DiscoveryInfo | None:
     try:
         data = json.loads(raw)
         return DiscoveryInfo(pid=int(data["pid"]), port=int(data["port"]), token=str(data["token"]))
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+    except json.JSONDecodeError, KeyError, TypeError, ValueError:
         _log.warning("Discovery file %s is corrupt; treating as absent", _DISCOVERY_FILE)
         return None
 
@@ -277,7 +277,7 @@ def describe_lock_state() -> LockState:
     owner_pid: int | None
     try:
         owner_pid = int(lock_owner_path().read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError, ValueError:
         owner_pid = None
     holder_alive = is_pid_alive(owner_pid) if owner_pid is not None else None
 
