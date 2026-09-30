@@ -33,6 +33,8 @@ Two properties make this safe to run on a thousand files:
 An existing dc:description is never overwritten.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime as dt
 import os
@@ -61,11 +63,11 @@ MEDIA_EXT = (
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
 
 
-def xml_escape(s):
+def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def valid(text):
+def valid(text: str) -> bool:
     try:
         xml.dom.minidom.parseString(text.split("?>", 1)[-1].rsplit("<?xpacket", 1)[0])
         return True
@@ -73,7 +75,7 @@ def valid(text):
         return False
 
 
-def sidecar_for(folder, media):
+def sidecar_for(folder: str, media: str) -> str | None:
     """Locate a sidecar. Current convention first, legacy fallback second.
 
         photo.jpg.xmp   full filename + .xmp   <- current, preferred
@@ -89,7 +91,7 @@ def sidecar_for(folder, media):
     return None
 
 
-def _insert(text, block):
+def _insert(text: str, block: str) -> str | None:
     if "</rdf:Description>" in text:
         return text.replace("</rdf:Description>", block + "</rdf:Description>", 1)
     # a sidecar with no EXIF has a self-closing <rdf:Description/>; expand it,
@@ -100,9 +102,9 @@ def _insert(text, block):
     return text[: m.start()] + m.group(1) + ">" + block + "</rdf:Description>" + text[m.end() :]
 
 
-def apply(text, tags, desc=None):
+def apply(text: str, tags: list[str], desc: str | None = None) -> tuple[str | None, str]:
     """Return (new_text, note). new_text None means no change needed/possible."""
-    notes = []
+    notes: list[str] = []
     out = text
 
     if desc:
@@ -151,13 +153,13 @@ def apply(text, tags, desc=None):
     return out, "; ".join(notes)
 
 
-def collect_folders(lib, folder_args, regex):
+def collect_folders(lib: str, folder_args: list[str], regex: str | None) -> list[str]:
     if folder_args:
         return [os.path.join(lib, *f.split("/")) for f in folder_args]
     if not regex:
         sys.exit("give --folder or --folder-regex")
     pat = re.compile(regex)
-    out = []
+    out: list[str] = []
     for parent, dirs, _files in os.walk(lib):
         for d in dirs:
             if pat.match(d):
@@ -165,7 +167,7 @@ def collect_folders(lib, folder_args, regex):
     return sorted(out)
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lib", required=True)
     ap.add_argument(
@@ -191,13 +193,16 @@ def main():
     print(f"folders: {len(folders)}")
     print("=" * 78)
 
-    todo, skipped, problems, nosidecar = [], 0, [], []
+    todo: list[tuple[str, str]] = []
+    skipped = 0
+    problems: list[tuple[str, str]] = []
+    nosidecar: list[str] = []
 
     for d in folders:
         if not os.path.isdir(d):
             problems.append((d, "folder not found"))
             continue
-        rows = []
+        rows: list[tuple[str, str]] = []
         for media in sorted(os.listdir(d)):
             if not media.lower().endswith(MEDIA_EXT):
                 continue

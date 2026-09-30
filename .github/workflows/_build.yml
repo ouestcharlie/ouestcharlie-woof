@@ -69,6 +69,11 @@ jobs:
         run: |
           pip install "mypy>=2.3"
           mypy src
+          # Skill scripts run under the sandbox's python3 (Claude Cowork: 3.10);
+          # one run per skill, since the skills ship same-named scripts.
+          for d in plugins/*/skills/*/scripts; do
+            mypy --python-version 3.10 "$d"
+          done
 
       - uses: actions/upload-artifact@v6
         with:

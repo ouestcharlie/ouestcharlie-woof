@@ -27,6 +27,8 @@ WHAT IT WRITES
     carry a description or subject are left alone and reported.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime as dt
 import os
@@ -34,6 +36,7 @@ import re
 import shutil
 import sys
 import tarfile
+from typing import Any
 
 # ============================================================================
 # CONFIG
@@ -41,7 +44,7 @@ import tarfile
 
 DRY_RUN = True
 
-LIB = None  # None -> parent of this script's directory
+LIB: str | None = None  # None -> parent of this script's directory
 SRC = "CameraRoll"
 
 TOLERANCE_MIN = 30  # slack before an activity starts / after it ends
@@ -59,7 +62,7 @@ SIDECAR_STYLE = "double"
 #           were actually doing. A climbing day logged as a Hike wants both,
 #           and searching either finds it.
 #   people  first names appended to the folder name and added as tags
-OUTINGS = [
+OUTINGS: list[dict[str, Any]] = [
     # {
     #     "start":  "2026-07-15T07:46:41",
     #     "end":    "2026-07-15T09:37:05",
@@ -80,7 +83,7 @@ OUTINGS = [
 ]
 
 # Whole-day buckets. desc may be None, in which case only tags are written.
-MANUAL_GROUPS = [
+MANUAL_GROUPS: list[dict[str, Any]] = [
     # {
     #     "dates":  ["2026-07-12", "2026-07-13", "2026-07-14"],
     #     "folder": "2026/2026-07-12+13+14_WillowLake",
@@ -91,7 +94,7 @@ MANUAL_GROUPS = [
 
 # Files that can't be matched by timestamp (stripped EXIF, odd filename).
 # date_taken is optional and stamps ext1:DateTimeOriginal when the file has none.
-FILE_OVERRIDES = {
+FILE_OVERRIDES: dict[str, dict[str, Any]] = {
     # "IMG-20250727-WA0008.jpg": {
     #     "folder":     "2025/2025-07-27_RidgeTrail_John",
     #     "tags":       ["TrailRun", "John"],
@@ -128,11 +131,11 @@ DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
 EXIF_NS = "http://ns.adobe.com/exif/1.0/"
 
 
-def xml_escape(s):
+def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def photo_time(fname):
+def photo_time(fname: str) -> dt.datetime | None:
     m = NAME_RE.match(fname)
     if not m:
         return None
@@ -142,7 +145,7 @@ def photo_time(fname):
         return None
 
 
-def find_sidecar(src, f):
+def find_sidecar(src: str, f: str) -> str | None:
     """Locate a sidecar. Current convention first, legacy fallback second.
 
         photo.jpg.xmp   full filename + .xmp   <- current, preferred
@@ -158,7 +161,7 @@ def find_sidecar(src, f):
     return None
 
 
-def sidecar_target_name(f, side):
+def sidecar_target_name(f: str, side: str) -> str:
     """What the sidecar should be called in the destination."""
     if SIDECAR_STYLE == "double":
         return f + ".xmp"
@@ -167,7 +170,7 @@ def sidecar_target_name(f, side):
     return os.path.basename(side)
 
 
-def match(ts, fname):
+def match(ts: dt.datetime | None, fname: str) -> dict[str, Any] | None:
     """Return {folder, desc, tags, date_taken} or None. Outings beat buckets."""
     if fname in FILE_OVERRIDES:
         o = dict(FILE_OVERRIDES[fname])
@@ -201,7 +204,7 @@ def match(ts, fname):
     return None
 
 
-def set_date_taken(xml, iso):
+def set_date_taken(xml: str, iso: str) -> tuple[str, str]:
     """Add ext1:DateTimeOriginal, declaring the exif namespace if absent.
 
     Needed for WhatsApp images and anything else that arrived with its EXIF
@@ -222,7 +225,7 @@ def set_date_taken(xml, iso):
     )
 
 
-def enrich_sidecar(path, o, dry):
+def enrich_sidecar(path: str, o: dict[str, Any], dry: bool) -> str:
     """Insert dc:description / dc:subject. Never overwrite what's already there."""
     with open(path, encoding="utf-8") as fh:
         xml = fh.read()
@@ -264,7 +267,7 @@ def enrich_sidecar(path, o, dry):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(xml)
 
-    note = []
+    note: list[str] = []
     if o.get("desc"):
         note.append("description")
     if o.get("tags"):
@@ -274,7 +277,7 @@ def enrich_sidecar(path, o, dry):
     return " + ".join(note) if note else "nothing to write"
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lib", default=LIB)
     ap.add_argument("--src", default=SRC)
@@ -299,7 +302,10 @@ def main():
     print("=" * 78)
 
     files = sorted(f for f in os.listdir(src) if f.lower().endswith(MEDIA_EXT))
-    plan, unmatched, unparseable, no_sidecar = [], [], [], []
+    plan: list[tuple[str, str | None, dict[str, Any]]] = []
+    unmatched: list[str] = []
+    unparseable: list[str] = []
+    no_sidecar: list[str] = []
 
     for f in files:
         if f.lower().endswith((".mp4", ".mov")) and not MOVE_VIDEOS:

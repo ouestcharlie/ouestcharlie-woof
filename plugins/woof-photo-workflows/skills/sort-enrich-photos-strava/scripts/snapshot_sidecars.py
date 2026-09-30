@@ -22,6 +22,8 @@ was lost. The operation is checked for reversibility before it is applied: after
 removing the reinserted block the file must equal the current one byte for byte.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime as dt
 import os
@@ -34,7 +36,7 @@ import xml.dom.minidom
 DC_RE = re.compile(r"<dc:(?:description|subject)\b.*?</dc:(?:description|subject)>", re.S)
 
 
-def canonical(text):
+def canonical(text: str) -> str:
     """Text with dc: blocks removed and rdf:Description normalised to one form.
 
     Restoring into a sidecar that has no EXIF means expanding its self-closing
@@ -49,8 +51,8 @@ def canonical(text):
     return t
 
 
-def enriched_files(lib):
-    out = []
+def enriched_files(lib: str) -> list[str]:
+    out: list[str] = []
     for parent, dirs, files in os.walk(lib):
         dirs[:] = [d for d in dirs if d not in (".dtrash", ".ouestcharlie")]
         for f in files:
@@ -66,7 +68,7 @@ def enriched_files(lib):
     return sorted(out)
 
 
-def valid(text):
+def valid(text: str) -> bool:
     try:
         xml.dom.minidom.parseString(text.split("?>", 1)[-1].rsplit("<?xpacket", 1)[0])
         return True
@@ -74,7 +76,7 @@ def valid(text):
         return False
 
 
-def cmd_snapshot(args):
+def cmd_snapshot(args: argparse.Namespace) -> None:
     files = enriched_files(args.lib)
     if not files:
         sys.exit("no sidecars carry dc: metadata — nothing to snapshot")
@@ -108,17 +110,20 @@ def cmd_snapshot(args):
     print(f"  {len(files)} sidecars, {min(200, len(files))} spot-checked, {bad} mismatches")
 
 
-def _archive_map(archive):
-    out = {}
+def _archive_map(archive: str) -> dict[str, str]:
+    out: dict[str, str] = {}
     with tarfile.open(archive) as tar:
         for m in tar.getmembers():
             if not m.isfile():
                 continue
-            out[m.name] = tar.extractfile(m).read().decode("utf-8", errors="replace")
+            fh = tar.extractfile(m)
+            if fh is None:  # only for non-regular members, already skipped above
+                continue
+            out[m.name] = fh.read().decode("utf-8", errors="replace")
     return out
 
 
-def cmd_diff(args):
+def cmd_diff(args: argparse.Namespace) -> None:
     arc = _archive_map(args.archive)
     lost = kept = gone = 0
     for rel, old in sorted(arc.items()):
@@ -140,10 +145,12 @@ def cmd_diff(args):
     )
 
 
-def cmd_restore(args):
+def cmd_restore(args: argparse.Namespace) -> None:
     arc = _archive_map(args.archive)
     dry = not args.go
-    todo, skipped, problems = [], 0, []
+    todo: list[tuple[str, str, str]] = []
+    skipped = 0
+    problems: list[tuple[str, str]] = []
 
     for rel, old in sorted(arc.items()):
         cur_p = os.path.join(args.lib, rel)
@@ -196,7 +203,7 @@ def cmd_restore(args):
     print("DRY RUN - nothing was written" if dry else "*** WRITTEN ***")
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lib", required=True)
     sub = ap.add_subparsers(dest="cmd", required=True)
