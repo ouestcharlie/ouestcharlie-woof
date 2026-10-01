@@ -181,14 +181,9 @@ def test_activity_tracker_touched_on_request() -> None:
 # ---------------------------------------------------------------------------
 # make_uvicorn_server
 #
-# Note: current uvicorn (0.49) has no overridable `install_signal_handlers`
-# method at all — signal capture happens via `Server.capture_signals()`,
-# which already detects non-main-thread and skips real registration on its
-# own. `install_signal_handlers=False` is a compatibility no-op for older
-# uvicorn releases where that method existed and mattered (see docstring),
-# so there's nothing observable to assert against the installed version —
-# covered instead by confirming construction succeeds and wires the app/config
-# through correctly.
+# Signal handling is uvicorn's own (`Server.capture_signals()` skips
+# registration off the main thread), so these tests cover construction and
+# app/config wiring only.
 # ---------------------------------------------------------------------------
 
 

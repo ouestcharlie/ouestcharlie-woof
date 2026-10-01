@@ -113,7 +113,7 @@ def _json_coercer(expected_type: type, param_name: str) -> Callable[[Any], Any]:
 # Callers supply a matching literal default (``= []`` / ``= {}``); a mutable default is
 # safe here because the tool bodies only read these arguments, never mutate them.
 JsonStrList = Annotated[list[str], BeforeValidator(_json_coercer(list, "argument"))]
-JsonDict = Annotated[dict, BeforeValidator(_json_coercer(dict, "argument"))]
+JsonDict = Annotated[dict[str, Any], BeforeValidator(_json_coercer(dict, "argument"))]
 
 
 class McpServer:
@@ -168,7 +168,7 @@ class McpServer:
     def _register_tools(self) -> None:
         mcp = self.mcp
 
-        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
+        @mcp.tool(annotations=ToolAnnotations(destructive_hint=True))
         async def register_library(
             name: str,
             path: str,
@@ -189,7 +189,7 @@ class McpServer:
             _log.info("Library %r added at %s (type=%s)", name, path, library_type)
             return {**library.to_dict(), "status": "added"}
 
-        @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
+        @mcp.tool(annotations=ToolAnnotations(destructive_hint=True))
         async def unregister_library(
             library_name: str,
             purge_metadata: bool = False,
@@ -224,13 +224,13 @@ class McpServer:
             _log.info("Library %r removed (purge_metadata=%s)", library_name, purge_metadata)
             return {"name": library_name, "status": "removed", "metadataPurged": purge_metadata}
 
-        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+        @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
         async def list_libraries() -> dict[str, Any]:
             """List all registered photo libraries."""
             return {"libraries": [b.to_dict() for b in self.config.libraries]}
 
-        @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-        async def list_search_fields(library_name: str = "") -> dict:
+        @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+        async def list_search_fields(library_name: str = "") -> dict[str, Any]:
             """List all searchable photo fields with their types and filter formats.
 
             Returns a ``fields`` list of descriptors. Use the field names and formats
@@ -275,7 +275,10 @@ class McpServer:
             if library_name:
                 library = self._require_library(library_name)
                 try:
-                    return await self._agent.call_tool("wally", "get_summary", args, library)
+                    summary: dict[str, Any] = await self._agent.call_tool(
+                        "wally", "get_summary", args, library
+                    )
+                    return summary
                 except AgentError as exc:
                     _log.error("get_summary(%r) failed: %s", library_name, exc)
                     return {"error": str(exc)}
@@ -332,12 +335,12 @@ class McpServer:
                 Results reflect the *index*, not the files on disk. Editing an XMP
                 sidecar does not reflect in the index until next re-index.
             """
-        mcp.tool(name="get_summary", annotations=ToolAnnotations(readOnlyHint=True))(
+        mcp.tool(name="get_summary", annotations=ToolAnnotations(read_only_hint=True))(
             _get_summary_tool
         )
 
         @mcp.tool(
-            annotations=ToolAnnotations(destructiveHint=True),
+            annotations=ToolAnnotations(destructive_hint=True),
             app=AppConfig(resource_uri=_GALLERY_URI),
         )
         async def index_library(
@@ -399,7 +402,7 @@ class McpServer:
             def _on_complete(result: Any) -> None:
                 self._indexing_sessions.complete(session_id, result)
 
-            def _on_error(exc: Exception) -> None:
+            def _on_error(exc: BaseException) -> None:
                 if isinstance(exc, asyncio.CancelledError):
                     self._indexing_sessions.cancelled(session_id)
                 else:
@@ -464,7 +467,7 @@ class McpServer:
                 return {"error": str(exc)}
             # Store matches server-side; return only a session id so Claude never
             # echoes the full payload back as browse_gallery arguments.
-            matches: list[Any] = result.get("matches", [])  # type: ignore[union-attr]
+            matches: list[Any] = result.get("matches", [])
             session_id = self._sessions.create(
                 library=library,
                 agent=self._agent,
@@ -506,12 +509,13 @@ class McpServer:
                 ``errors`` — count of read failures.
                 ``errorDetails`` — per-failure error messages.
             """
-        mcp.tool(name="search_photos", annotations=ToolAnnotations(readOnlyHint=True))(
+        mcp.tool(name="search_photos", annotations=ToolAnnotations(read_only_hint=True))(
             _search_photos_tool
         )
 
         @mcp.tool(
-            annotations=ToolAnnotations(readOnlyHint=True), app=AppConfig(resource_uri=_GALLERY_URI)
+            annotations=ToolAnnotations(read_only_hint=True),
+            app=AppConfig(resource_uri=_GALLERY_URI),
         )
         async def browse_gallery(
             session_ids: JsonStrList,
@@ -586,7 +590,7 @@ class McpServer:
         if library.name not in self._library_fields:
             try:
                 result = await self._agent.call_tool("wally", "list_search_fields", {}, library)
-                self._library_fields[library.name] = result or {}  # type: ignore[assignment]
+                self._library_fields[library.name] = result or {}
             except AgentError as exc:
                 _log.warning(
                     "list_search_fields failed for %r: %s",

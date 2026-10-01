@@ -139,7 +139,6 @@ def make_uvicorn_server(
     *,
     log_level: str = "warning",
     access_log: bool = False,
-    install_signal_handlers: bool = True,
     ready: threading.Event | None = None,
 ) -> uvicorn.Server:
     """Build a ``uvicorn.Server`` for *app*, bound to *endpoint*, without starting it.
@@ -149,19 +148,11 @@ def make_uvicorn_server(
     socket/port stays owned by the server rather than threaded through by
     each caller.
 
-    ``install_signal_handlers=False`` preserves a compatibility override for
-    uvicorn releases where ``Server.install_signal_handlers()`` was a real
-    overridable method controlling whether SIGINT/SIGTERM get registered —
-    needed when uvicorn shares an event loop or daemon thread it doesn't own
-    (the test-only standalone gallery server,
-    ``tests/http_test_server.py::start_http_server``), so the main thread
-    retains control. On current uvicorn (>=0.29ish), signal
-    capture instead happens via ``Server.capture_signals()``, which already
-    checks ``threading.current_thread() is threading.main_thread()`` itself
-    and skips real registration off the main thread automatically — so this
-    flag is inert there, but harmless, and keeps the same call shape if an
-    older uvicorn is ever installed. Production's combined server runs on the
-    main thread via ``asyncio.run`` and keeps the default ``True``.
+    Signal handling is uvicorn's own: ``Server.capture_signals()`` registers
+    SIGINT/SIGTERM only on the main thread, so a server run on a daemon thread
+    or a shared event loop (the test-only standalone gallery server) leaves the
+    main thread in control. uvicorn removed the overridable
+    ``install_signal_handlers()`` in 0.29, below this package's minimum.
 
     ``ready``, if given, is set once uvicorn's ``startup()`` completes —
     useful for a caller on another thread waiting for the socket to actually
@@ -169,10 +160,6 @@ def make_uvicorn_server(
     """
 
     class _Server(uvicorn.Server):
-        def install_signal_handlers(self) -> None:
-            if install_signal_handlers:
-                super().install_signal_handlers()
-
         async def startup(self, sockets: list[socket.socket] | None = None) -> None:
             await super().startup(sockets=sockets or [endpoint.sock])
             if ready is not None:
@@ -192,9 +179,9 @@ async def serve_with_ready(
 ) -> None:
     """Serve *app* on *endpoint*'s pre-bound socket until cancelled or stopped.
 
-    Never installs its own signal handlers — intended for a server sharing an
-    event loop or daemon thread it doesn't own (the test-only standalone
-    gallery server), where the main thread must retain control of
+    Intended for a server sharing an event loop or daemon thread it doesn't own
+    (the test-only standalone gallery server): off the main thread, uvicorn
+    registers no signal handlers, so the main thread keeps control of
     SIGINT/SIGTERM.
     """
     server = make_uvicorn_server(
@@ -202,7 +189,6 @@ async def serve_with_ready(
         endpoint,
         log_level=log_level,
         access_log=access_log,
-        install_signal_handlers=False,
         ready=ready,
     )
     await server.serve()

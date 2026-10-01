@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ouestcharlie-woof"
 version = "0.15.2"
 description = "The MCP-App Photo Gallery"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE*"]
@@ -15,6 +15,7 @@ authors = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -25,8 +26,9 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-whitebeard>=0.15.0",
-    "ouestcharlie-wally>=0.15.0",
+    "ouestcharlie-whitebeard>=0.16.0",
+    "ouestcharlie-wally>=0.16.0",
+    "httpx2>=2.13",
 ]
 
 [project.urls]
@@ -58,8 +60,11 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
+# Skill scripts run under the sandbox's own python3 (Claude Cowork VM: Ubuntu
+# 22.04, Python 3.10), not Woof's venv: lint and format them for 3.10.
+per-file-target-version = { "plugins/**/*.py" = "py310" }
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
@@ -68,12 +73,13 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 "src/woof/__main__.py" = ["E402"]  # logging must be configured before woof modules are imported
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 
 [dependency-groups]
 dev = [
     "mcp[cli]>=2.0,<3.0.0",
+    "mypy>=2.3",
     "pre-commit>=4.5.1",
     "pytest>=9.0",
     "pytest-asyncio>=1.0",

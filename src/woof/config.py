@@ -8,6 +8,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from platformdirs import user_config_dir
 
@@ -147,7 +148,7 @@ class WoofConfig:
         """Persist config to disk."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         config_file = self.config_dir / "config.json"
-        data: dict = {"libraries": [asdict(b) for b in self.libraries]}
+        data: dict[str, Any] = {"libraries": [asdict(b) for b in self.libraries]}
         config_file.write_text(json.dumps(data, indent=2))
         _log.debug("Config saved to %s", config_file)
 

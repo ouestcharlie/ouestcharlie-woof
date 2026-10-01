@@ -18,6 +18,8 @@ Checks, in order of how likely they are to catch a real problem:
 Exit code is non-zero if anything failed, so it can gate a workflow.
 """
 
+from __future__ import annotations
+
 import argparse
 import glob
 import os
@@ -45,14 +47,14 @@ MEDIA_EXT = (
 )
 
 
-def recent(path, window_s):
+def recent(path: str, window_s: int) -> bool:
     try:
         return os.path.getmtime(path) >= time.time() - window_s
     except OSError:
         return False
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lib", required=True)
     ap.add_argument("--src", default="")
@@ -65,8 +67,8 @@ def main():
     )
     args = ap.parse_args()
 
-    problems = []  # fail the run
-    notes = []  # worth saying, not worth failing over
+    problems: list[str] = []  # fail the run
+    notes: list[str] = []  # worth saying, not worth failing over
 
     # 1 + 2: validity and metadata actually present
     checked = 0
@@ -114,13 +116,13 @@ def main():
     if args.src:
         s = args.src if os.path.isabs(args.src) else os.path.join(args.lib, args.src)
         if os.path.isdir(s):
-            names = set(os.listdir(s))
+            src_names = set(os.listdir(s))
             orphans = []
-            for x in (n for n in names if n.lower().endswith(".xmp")):
+            for x in (n for n in src_names if n.lower().endswith(".xmp")):
                 stem = x[:-4]  # photo.jpg.xmp -> photo.jpg
-                if stem in names:
+                if stem in src_names:
                     continue
-                if any(stem + e in names or stem + e.upper() in names for e in MEDIA_EXT):
+                if any(stem + e in src_names or stem + e.upper() in src_names for e in MEDIA_EXT):
                     continue  # photo.xmp -> photo.jpg
                 orphans.append(x)
             print(f"\norphaned sidecars in source   : {len(orphans)}")

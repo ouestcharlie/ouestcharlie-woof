@@ -23,7 +23,7 @@ class IndexingSessionManager:
 
     def __init__(self, max_sessions: int = _DEFAULT_MAX_SESSIONS) -> None:
         self._sessions: dict[str, dict[str, Any]] = {}
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, asyncio.Task[None]] = {}
         self._max_sessions = max_sessions
 
     def start(self, library_name: str, partition_scope: list[str]) -> str:
@@ -79,7 +79,7 @@ class IndexingSessionManager:
         _log.debug(f"Session '{session_id} has failed")
         return True
 
-    def register_task(self, session_id: str, task: asyncio.Task) -> None:
+    def register_task(self, session_id: str, task: asyncio.Task[None]) -> None:
         """Associate an asyncio Task with a session so it can be cancelled."""
         self._tasks[session_id] = task
 
