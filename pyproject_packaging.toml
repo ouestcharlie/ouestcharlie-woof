@@ -23,8 +23,8 @@ dependencies = [
     "uvicorn>=0.40",
     "platformdirs>=4.0",
     "filelock>=3.13",
-    "ouestcharlie-whitebeard>=0.15.0",
-    "ouestcharlie-wally>=0.15.0",
+    "ouestcharlie-whitebeard>=0.16.0",
+    "ouestcharlie-wally>=0.16.0",
 ]
 
 [project.urls]
