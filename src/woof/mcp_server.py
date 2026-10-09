@@ -61,7 +61,8 @@ filters: Filter expression. Three forms are accepted:
 
     Tags are hierarchical paths separated by "|" (e.g. "Places|Europe|France").
     A path matches that tag and everything below it; a bare name matches that
-    name at any level of the hierarchy. Tags are cumulative (AND relationship):
+    name at any level of the hierarchy. Matching ignores case ("paris" finds
+    "Paris"). Tags are cumulative (AND relationship):
         # everything tagged Famille AND Vacances
         {"tags": ["Famille", "Vacances"]}
         # everything under Places > Europe, at any depth
@@ -196,8 +197,8 @@ class McpServer:
                     searchable, not in facets or the gallery; left untouched
                     in the XMP sidecars). Tags are ``|``-separated paths; a tag
                     is excluded when it equals a prefix or sits below it, by
-                    whole levels: ``"darktable"`` excludes
-                    ``darktable|format|jpg`` but not ``darktable-fans``.
+                    whole levels, ignoring case: ``"darktable"`` excludes
+                    ``Darktable|format|jpg`` but not ``darktable-fans``.
                     Example: ``["darktable", "Lightroom|Internal"]``. ``[]``
                     disables the filter. Omitted: ``["darktable"]`` (darktable's
                     automatic tags) for a new library; the current value for a
@@ -368,7 +369,8 @@ class McpServer:
                 ``{{"type": "string_facets"|"tag_facets", "counts": {{value: count}}}}``.
                 ``tags`` counts are per hierarchy node: keys are tag paths including
                 their ancestors (``"Places"``, ``"Places|Europe"``, …), and each item
-                counts once per node.
+                counts once per node. Spellings that differ only by case are merged
+                under the most frequent one.
                 Boolean counts (``hasAudio``) —
                 ``{{"type": "bool_counts", "true": N, "false": M}}``.
                 Each stat is present only when the matching set has values for it —

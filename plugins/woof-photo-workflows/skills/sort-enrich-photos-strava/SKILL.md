@@ -33,7 +33,8 @@ Everything else comes from looking at the library:
 **Tags can be hierarchical**: levels separated by `|`, e.g. `Places|Canada|Ontario`
 or `Activities|Hiking` — the darktable and Lightroom convention. A search for
 `Places|Canada` finds everything below it, and a search for `Ontario` finds it at
-any level. Facet keys are paths, ancestors included, so the facets show which
+any level. Matching ignores case, and the scripts never add a tag the sidecar
+already has in another case: they keep the existing spelling. Facet keys are paths, ancestors included, so the facets show which
 hierarchy the library already uses. Put a new tag under an existing root rather
 than starting a parallel tree; keep hierarchies short and stable, and don't
 invent deep trees nobody asked for. A flat tag is fine when the library has no
@@ -44,8 +45,8 @@ concrete shapes with examples and confirming once. It's the hardest decision to
 undo: a thousand files under a disliked scheme is a thousand files to move again.
 
 **Near-duplicate tags** accumulate: `Oliv` beside `Olivier`, an accented and
-unaccented spelling. The tell is a pair differing by case, accent or prefix with
-lopsided counts — the rare one is usually the mistake. Ask which is canonical,
+unaccented spelling. The tell is a pair differing by accent or prefix with
+lopsided counts (case differences are already merged in search and facets) — the rare one is usually the mistake. Ask which is canonical,
 then *retag the smaller set* rather than remembering an alias. A correction in a
 config file must be re-read forever; one applied to the photos is simply true.
 

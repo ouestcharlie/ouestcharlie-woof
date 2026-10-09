@@ -40,6 +40,7 @@ import re
 import shutil
 import sys
 import tarfile
+import unicodedata
 from typing import Any
 
 # ============================================================================
@@ -140,22 +141,31 @@ def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def fold(s: str) -> str:
+    """Case-insensitive comparison key, as OuEstCharlie matches tags."""
+    return unicodedata.normalize("NFC", s).lower()
+
+
 def normalize_tags(tags: list[str]) -> list[str]:
-    """Trim each "|"-separated level, drop empty levels and tags, dedupe."""
+    """Trim each "|"-separated level, drop empty levels and tags, dedupe (any case, first kept)."""
     out: list[str] = []
+    seen: set[str] = set()
     for t in tags:
         path = "|".join(p.strip() for p in t.split("|") if p.strip())
-        if path and path not in out:
+        if path and fold(path) not in seen:
+            seen.add(fold(path))
             out.append(path)
     return out
 
 
 def flatten(paths: list[str]) -> list[str]:
-    """Every level of every path, deduplicated, in first-seen order (dc:subject)."""
+    """Every level of every path, deduplicated (any case), in first-seen order (dc:subject)."""
     out: list[str] = []
+    seen: set[str] = set()
     for path in paths:
         for level in path.split("|"):
-            if level not in out:
+            if fold(level) not in seen:
+                seen.add(fold(level))
                 out.append(level)
     return out
 

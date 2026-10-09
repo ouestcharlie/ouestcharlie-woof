@@ -41,6 +41,11 @@ dc:subject.
               second run reports zero changes and an interrupted run can just
               be repeated. Always verify by running twice.
 
+Tags are compared regardless of case: a requested tag that the sidecar already
+holds with another case is not added again, and a requested path reuses the
+spelling of the levels the sidecar already has ("places|europe|France" on a
+sidecar with "Places|Europe" adds "Places|Europe|France").
+
 An existing dc:description is never overwritten.
 """
 
@@ -52,6 +57,7 @@ import os
 import re
 import sys
 import tarfile
+import unicodedata
 import xml.dom.minidom
 
 MEDIA_EXT = (
@@ -119,24 +125,52 @@ def _insert(text: str, block: str) -> str | None:
     return text[: m.start()] + m.group(1) + ">" + block + "</rdf:Description>" + text[m.end() :]
 
 
+def fold(s: str) -> str:
+    """Case-insensitive comparison key, as OuEstCharlie matches tags."""
+    return unicodedata.normalize("NFC", s).lower()
+
+
 def normalize_tags(tags: list[str]) -> list[str]:
-    """Trim each "|"-separated level, drop empty levels and tags, dedupe."""
+    """Trim each "|"-separated level, drop empty levels and tags, dedupe (any case, first kept)."""
     out: list[str] = []
+    seen: set[str] = set()
     for t in tags:
         path = "|".join(p.strip() for p in t.split("|") if p.strip())
-        if path and path not in out:
+        if path and fold(path) not in seen:
+            seen.add(fold(path))
             out.append(path)
     return out
 
 
 def flatten(paths: list[str]) -> list[str]:
-    """Every level of every path, deduplicated, in first-seen order (dc:subject)."""
+    """Every level of every path, deduplicated (any case), in first-seen order (dc:subject)."""
     out: list[str] = []
+    seen: set[str] = set()
     for path in paths:
         for level in path.split("|"):
-            if level not in out:
+            if fold(level) not in seen:
+                seen.add(fold(level))
                 out.append(level)
     return out
+
+
+def adopt_spelling(paths: list[str], existing: list[str]) -> list[str]:
+    """Respell each level of *paths* the way *existing* spells the same prefix (any case).
+
+    "places|europe|France" with existing "Places|Europe" -> "Places|Europe|France".
+    """
+    spelled: dict[str, str] = {}
+    for path in existing:
+        levels = path.split("|")
+        for i in range(len(levels)):
+            spelled.setdefault(fold("|".join(levels[: i + 1])), levels[i])
+    out: list[str] = []
+    for path in paths:
+        levels = path.split("|")
+        for i, level in enumerate(levels):
+            levels[i] = spelled.get(fold("|".join(levels[: i + 1])), level)
+        out.append("|".join(levels))
+    return normalize_tags(out)
 
 
 def _find_block(text: str, element: str) -> re.Match[str] | None:
@@ -165,8 +199,8 @@ def _merge_bag(text: str, element: str, ns: str, items: list[str]) -> tuple[str,
             return "!! no rdf:Description anchor"
         return new, list(items)
     block = m.group(0)
-    present = [xml_unescape(li) for li in LI_RE.findall(block)]
-    missing = [i for i in items if i not in present]
+    present = {fold(xml_unescape(li)) for li in LI_RE.findall(block)}
+    missing = [i for i in items if fold(i) not in present]
     if not missing:
         return text, []
     add = "".join(f"<rdf:li>{xml_escape(i)}</rdf:li>" for i in missing)
@@ -206,6 +240,8 @@ def apply(text: str, tags: list[str], desc: str | None = None) -> tuple[str | No
         current = normalize_tags(
             hierarchical if hierarchical is not None else _bag_items(out, "dc:subject") or []
         )
+        # Existing spellings first, then the first requested one.
+        paths = adopt_spelling(paths, current + paths)
         # darktable reads lr:hierarchicalSubject alone when present: when creating
         # it, carry over the flat tags dc:subject already holds.
         wanted = paths if hierarchical is not None else normalize_tags(current + paths)
@@ -218,7 +254,8 @@ def apply(text: str, tags: list[str], desc: str | None = None) -> tuple[str | No
             if isinstance(merged, str):
                 return None, merged
             out = merged[0]
-        new_tags = [p for p in paths if p not in current]
+        current_keys = {fold(c) for c in current}
+        new_tags = [p for p in paths if fold(p) not in current_keys]
         if new_tags:
             notes.append(f"tags {new_tags} added to {current}")
         elif out != before:
