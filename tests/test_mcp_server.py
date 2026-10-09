@@ -89,6 +89,61 @@ async def test_register_library(server: McpServer, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_register_library_default_excluded_tag_prefixes(
+    server: McpServer, tmp_path: Path
+) -> None:
+    tool_fn = await _get_tool(server, "register_library")
+    result = await tool_fn(name="newlib", path=str(tmp_path / "new"))
+    assert result["excluded_tag_prefixes"] == ["darktable"]
+    assert "reindexRequired" not in result
+
+
+@pytest.mark.asyncio
+async def test_register_library_custom_excluded_tag_prefixes(
+    server: McpServer, tmp_path: Path
+) -> None:
+    tool_fn = await _get_tool(server, "register_library")
+    result = await tool_fn(
+        name="newlib", path=str(tmp_path / "new"), excluded_tag_prefixes=["darktable", "a | b"]
+    )
+    assert result["excluded_tag_prefixes"] == ["darktable", "a|b"]
+    lib = server.config.get_library("newlib")
+    assert lib is not None and lib.excluded_tag_prefixes == ["darktable", "a|b"]
+
+    result = await tool_fn(name="other", path=str(tmp_path / "o"), excluded_tag_prefixes=[])
+    assert result["excluded_tag_prefixes"] == []
+
+
+@pytest.mark.asyncio
+async def test_register_library_again_keeps_excluded_tag_prefixes_when_omitted(
+    server: McpServer, tmp_path: Path
+) -> None:
+    tool_fn = await _get_tool(server, "register_library")
+    await tool_fn(name="newlib", path=str(tmp_path / "a"), excluded_tag_prefixes=["x"])
+    result = await tool_fn(name="newlib", path=str(tmp_path / "b"))
+    assert result["path"] == str(tmp_path / "b")
+    assert result["excluded_tag_prefixes"] == ["x"]
+    assert "reindexRequired" not in result
+
+
+@pytest.mark.asyncio
+async def test_register_library_again_with_changed_prefixes_requires_reindex(
+    server: McpServer, tmp_path: Path
+) -> None:
+    tool_fn = await _get_tool(server, "register_library")
+    path = str(tmp_path / "a")
+    await tool_fn(name="newlib", path=path)
+    result = await tool_fn(name="newlib", path=path, excluded_tag_prefixes=[])
+    assert result["excluded_tag_prefixes"] == []
+    assert result["reindexRequired"] is True
+    assert "force_full_index" in result["message"]
+
+    # Same value again (after normalization): nothing to reindex.
+    result = await tool_fn(name="newlib", path=path, excluded_tag_prefixes=[" "])
+    assert "reindexRequired" not in result
+
+
+@pytest.mark.asyncio
 async def test_unregister_library_forgets_only(server: McpServer) -> None:
     mock = AsyncMock()
     with patch.object(server._agent, "call_tool", new=mock):

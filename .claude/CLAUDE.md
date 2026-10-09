@@ -33,7 +33,14 @@ Woof runs as a stdio MCP server — unlogged exceptions are invisible.
 
 ### Linting
 
-Use `uv tool run ruff check ...` (not bare `ruff` or `uv run ruff`) to lint Python files.
+Ruff is a dev dependency, pinned in `pyproject.toml` (locked in `uv.lock`) — the same version the pre-commit hook runs. Use the venv's copy, never `uvx ruff` / `uv tool run ruff` or a global `ruff` (unpinned version, results may differ from the hook):
+
+```
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+```
+
+To upgrade it, change the pin with `uv add --dev ruff==<version>`.
 
 ### JavaScript / Svelte (gallery)
 ```

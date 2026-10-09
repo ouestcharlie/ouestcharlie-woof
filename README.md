@@ -53,6 +53,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Gallery view as grid or preview | Photo details on preview |
 | Image thumbnails and previews | Optimized for display |
 | Search description, tags, rating, date, partition | full text search on description |
+| Hierarchical tags (`Places\|Europe\|France`), shared with darktable and Lightroom | search a whole branch or a tag at any level; darktable's own tags are left out |
 | Search photo features (date, dimensions, GPS bounding box) |  |
 | Search video features (duration, dimensions, GPS bounding box) |  |
 | Search camera features (make, model, aperture, lens) | | 

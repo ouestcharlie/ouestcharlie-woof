@@ -59,9 +59,14 @@ filters: Filter expression. Three forms are accepted:
             {"any": [{"make": "nikon"}, {"make": "canon"}]}
         ]}
 
-    Tags are cumulative (AND relationship):
+    Tags are hierarchical paths separated by "|" (e.g. "Places|Europe|France").
+    A path matches that tag and everything below it; a bare name matches that
+    name at any level of the hierarchy. Matching ignores case ("paris" finds
+    "Paris"). Tags are cumulative (AND relationship):
         # everything tagged Famille AND Vacances
         {"tags": ["Famille", "Vacances"]}
+        # everything under Places > Europe, at any depth
+        {"tags": ["Places|Europe"]}
 full_text_filter: Full-text search over one or more TEXT-typed
     fields. Schema::
 
@@ -173,8 +178,13 @@ class McpServer:
             name: str,
             path: str,
             library_type: str = "filesystem",
+            excluded_tag_prefixes: list[str] | None = None,
         ) -> dict[str, Any]:
-            """Register a photo library.
+            """Register a photo library, or update a registered one.
+
+            Registering again under an existing ``name`` replaces that
+            library's configuration — use it to change its path, type or
+            excluded tag prefixes.
 
             Args:
                 name: Unique label for this library (e.g. "kDrive Photos").
@@ -183,11 +193,47 @@ class McpServer:
                     local folder (default) or ``"cloud_mount"`` for a
                     FUSE/Windows-CF-API cloud-sync folder (kDrive, OneDrive,
                     Google Drive, Dropbox).
+                excluded_tag_prefixes: Tags kept out of the index (not
+                    searchable, not in facets or the gallery; left untouched
+                    in the XMP sidecars). Tags are ``|``-separated paths; a tag
+                    is excluded when it equals a prefix or sits below it, by
+                    whole levels, ignoring case: ``"darktable"`` excludes
+                    ``Darktable|format|jpg`` but not ``darktable-fans``.
+                    Example: ``["darktable", "Lightroom|Internal"]``. ``[]``
+                    disables the filter. Omitted: ``["darktable"]`` (darktable's
+                    automatic tags) for a new library; the current value for a
+                    registered one.
+
+            Returns:
+                The library configuration (``name``, ``path``, ``type``,
+                ``excluded_tag_prefixes``, …) and ``status``. When the
+                excluded tag prefixes of a registered library change, also
+                ``reindexRequired: true`` and a ``message``: tags already
+                indexed only change after a full reindex
+                (``index_library`` with ``force_full_index=True``).
             """
-            library = LibraryConfig.create(name=name, path=path, library_type=library_type)
+            existing = self.config.get_library(name)
+            if excluded_tag_prefixes is None and existing is not None:
+                excluded_tag_prefixes = existing.excluded_tag_prefixes
+            library = LibraryConfig.create(
+                name=name,
+                path=path,
+                library_type=library_type,
+                excluded_tag_prefixes=excluded_tag_prefixes,
+            )
             self.config.add_library(library)
             _log.info("Library %r added at %s (type=%s)", name, path, library_type)
-            return {**library.to_dict(), "status": "added"}
+            result: dict[str, Any] = {**library.to_dict(), "status": "added"}
+            if (
+                existing is not None
+                and existing.excluded_tag_prefixes != library.excluded_tag_prefixes
+            ):
+                result["reindexRequired"] = True
+                result["message"] = (
+                    "Excluded tag prefixes changed. Run index_library with "
+                    "force_full_index=True for the indexed tags to reflect it."
+                )
+            return result
 
         @mcp.tool(annotations=ToolAnnotations(destructive_hint=True))
         async def unregister_library(
@@ -321,6 +367,10 @@ class McpServer:
                 ``{{"type": "date_range"|"int_range"|"float_range", "min", "max"}}``.
                 Categorical facets (``mediaType``, ``videoCodec``, ``tags``) —
                 ``{{"type": "string_facets"|"tag_facets", "counts": {{value: count}}}}``.
+                ``tags`` counts are per hierarchy node: keys are tag paths including
+                their ancestors (``"Places"``, ``"Places|Europe"``, …), and each item
+                counts once per node. Spellings that differ only by case are merged
+                under the most frequent one.
                 Boolean counts (``hasAudio``) —
                 ``{{"type": "bool_counts", "true": N, "false": M}}``.
                 Each stat is present only when the matching set has values for it —

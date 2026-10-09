@@ -171,6 +171,14 @@ describe('PreviewPanel — caption bar', () => {
     expect(pills[4].textContent).toBe('e');
   });
 
+  it('shows the leaf of a hierarchical tag, with the full path as tooltip', () => {
+    const match = { ...MATCH, tags: ['Places|Europe|France|Paris', 'Family'] };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    const pills = [...container.querySelectorAll('.caption .pill')];
+    expect(pills.map((p) => p.textContent)).toEqual(['Paris', 'Family']);
+    expect(pills[0].getAttribute('title')).toBe('Places|Europe|France|Paris');
+  });
+
   it('truncates the caption description to 100 characters', () => {
     const long = 'x'.repeat(150);
     const match = { ...MATCH, description: long };
@@ -185,6 +193,29 @@ describe('PreviewPanel — details side panel', () => {
     const toggle = container.querySelector('.info-toggle');
     return fireEvent.click(toggle);
   }
+
+  it('groups hierarchical tags by parent, ancestors muted', async () => {
+    const match = {
+      ...MATCH,
+      tags: ['Places|Europe|France|Paris', 'Family', 'Places|Europe|France|Lyon'],
+    };
+    const { container } = render(PreviewPanel, makeProps([match]));
+    await openPanel(container);
+    const pills = [...container.querySelectorAll('.details .pill')];
+    expect(pills.map((p) => p.textContent)).toEqual(['Places›Europe›France›Paris·Lyon', 'Family']);
+    expect([...pills[0].querySelectorAll('.tag-ancestor')].map((e) => e.textContent)).toEqual([
+      'Places',
+      'Europe',
+      'France',
+    ]);
+    expect([...pills[0].querySelectorAll('.tag-leaf')].map((e) => e.textContent)).toEqual([
+      'Paris',
+      'Lyon',
+    ]);
+    expect(pills[0].getAttribute('title')).toBe(
+      'Places|Europe|France|Paris\nPlaces|Europe|France|Lyon',
+    );
+  });
 
   it('is collapsed by default', () => {
     const { container } = render(PreviewPanel, makeProps([MATCH]));
