@@ -34,13 +34,19 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: deps-dist
+          path: deps-dist/
+
       - name: Install packages
-        working-directory: dist
         shell: bash
         # --only-binary: fail rather than build image-proc from its sdist, which
         # silently drops HEIC/RAW support when no published wheel matches this
         # OS/Python combination (OEC-61).
-        run: pip install --only-binary ouestcharlie-imageproc ouestcharlie_woof-*.whl pytest pytest-asyncio httpx
+        # deps-dist: toolkit, Whitebeard and Wally built from their default
+        # branch, so the tests run against them rather than their PyPI release.
+        run: pip install --only-binary ouestcharlie-imageproc dist/ouestcharlie_woof-*.whl deps-dist/*.whl pytest pytest-asyncio httpx
 
       - name: Run integration tests
         run: python -m pytest tests_integration/ -v

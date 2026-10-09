@@ -79,3 +79,17 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # Wheels of the agents' default branch, for the integration tests: without
+      # them pip would resolve Woof's agent dependencies from PyPI (the last
+      # release). Kept out of `dist`, which publish.yml uploads to PyPI as is.
+      - name: Build agent wheels
+        run: |
+          for d in deps/ouestcharlie-py-toolkit deps/ouestcharlie-whitebeard deps/ouestcharlie-wally; do
+            (cd "$d" && hatch build -t wheel "$GITHUB_WORKSPACE/deps-dist")
+          done
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: deps-dist
+          path: deps-dist/
