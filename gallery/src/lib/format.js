@@ -112,3 +112,48 @@ export function truncate(text, max) {
   if (!text) return null;
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
+
+// Hierarchical tags are "|"-separated paths ("Places|Europe|France"), the
+// darktable/Lightroom convention; a flat tag is a one-level path.
+
+/** Levels of a tag path: "Places|Europe" → ["Places", "Europe"]; empty levels dropped. */
+export function tagLevels(path) {
+  if (!path) return [];
+  return String(path).split('|').map((l) => l.trim()).filter(Boolean);
+}
+
+/** Last level of a tag path ("Places|Europe|Paris" → "Paris"), or null if empty. */
+export function tagLeaf(path) {
+  const levels = tagLevels(path);
+  return levels.length ? levels[levels.length - 1] : null;
+}
+
+/**
+ * Group tag paths sharing the same parent, in first-seen order, so siblings
+ * render as one pill: "Places|France|Paris" + "Places|France|Lyon" →
+ * { parent: ["Places", "France"], leaves: ["Paris", "Lyon"], paths: [...] }.
+ * Flat (one-level) tags stay one group each.
+ */
+export function groupTagPaths(paths) {
+  const groups = [];
+  const byParent = new Map();
+  for (const path of paths ?? []) {
+    const levels = tagLevels(path);
+    if (!levels.length) continue;
+    const parent = levels.slice(0, -1);
+    const leaf = levels[levels.length - 1];
+    const key = parent.join('|');
+    const existing = parent.length ? byParent.get(key) : undefined;
+    if (existing) {
+      if (!existing.leaves.includes(leaf)) {
+        existing.leaves.push(leaf);
+        existing.paths.push(levels.join('|'));
+      }
+      continue;
+    }
+    const group = { parent, leaves: [leaf], paths: [levels.join('|')] };
+    groups.push(group);
+    if (parent.length) byParent.set(key, group);
+  }
+  return groups;
+}

@@ -17,14 +17,25 @@ folders, which is a different job from sorting a camera roll.
         --folder '2026/2026-06-20_LakeCabin' \
         --tags Cabin Lake --desc "Second visit to the cabin"
 
+    # hierarchical tags: levels separated by "|" (darktable/Lightroom convention)
+    python tag_files.py --lib ~/Photos \
+        --folder '2026/2026-06-20_LakeCabin' \
+        --tags "Places|Canada|Ontario" "Activities|Hiking" Family
+
     # write for real
     ... --go
 
 Two properties make this safe to run on a thousand files:
 
-  MERGE       a sidecar that already has dc:subject keeps its existing tags;
-              only the missing ones are added, inside the same rdf:Bag. There
-              is never a second dc:subject block.
+  MERGE       a sidecar that already has tags keeps them; only the missing
+              ones are added, inside the same rdf:Bag. There is never a second
+              lr:hierarchicalSubject or dc:subject block.
+
+Tags are written the way darktable writes them: each tag path goes to
+lr:hierarchicalSubject (flat tags too, as one-level paths), and every level of
+every path goes to dc:subject. darktable reads only lr:hierarchicalSubject when
+it exists, so when this script creates it, it also carries the tags already in
+dc:subject.
 
   IDEMPOTENT  files already carrying every requested tag are skipped, so a
               second run reports zero changes and an interrupted run can just
@@ -61,10 +72,16 @@ MEDIA_EXT = (
     ".mov",
 )
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
+LR_NS = 'xmlns:lr="http://ns.adobe.com/lightroom/1.0/"'
+LI_RE = re.compile(r"<rdf:li(?:\s[^>]*)?>(.*?)</rdf:li>", re.S)
 
 
 def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def xml_unescape(s: str) -> str:
+    return s.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 
 
 def valid(text: str) -> bool:
@@ -102,6 +119,66 @@ def _insert(text: str, block: str) -> str | None:
     return text[: m.start()] + m.group(1) + ">" + block + "</rdf:Description>" + text[m.end() :]
 
 
+def normalize_tags(tags: list[str]) -> list[str]:
+    """Trim each "|"-separated level, drop empty levels and tags, dedupe."""
+    out: list[str] = []
+    for t in tags:
+        path = "|".join(p.strip() for p in t.split("|") if p.strip())
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def flatten(paths: list[str]) -> list[str]:
+    """Every level of every path, deduplicated, in first-seen order (dc:subject)."""
+    out: list[str] = []
+    for path in paths:
+        for level in path.split("|"):
+            if level not in out:
+                out.append(level)
+    return out
+
+
+def _find_block(text: str, element: str) -> re.Match[str] | None:
+    """The <element ...>...</element> or self-closing <element .../> block."""
+    return re.search(rf"<{element}\b(?:[^>]*?/>|.*?</{element}>)", text, re.S)
+
+
+def _bag_items(text: str, element: str) -> list[str] | None:
+    """Unescaped rdf:li texts of *element*, or None when the element is absent."""
+    m = _find_block(text, element)
+    if m is None:
+        return None
+    return [xml_unescape(li) for li in LI_RE.findall(m.group(0))]
+
+
+def _merge_bag(text: str, element: str, ns: str, items: list[str]) -> tuple[str, list[str]] | str:
+    """Add the missing *items* to the rdf:Bag of *element*, creating it if absent.
+
+    Returns (new_text, added items), or an error note starting with "!!".
+    """
+    m = _find_block(text, element)
+    if m is None:
+        bag = "".join(f"<rdf:li>{xml_escape(i)}</rdf:li>" for i in items)
+        new = _insert(text, f"<{element} {ns}><rdf:Bag>{bag}</rdf:Bag></{element}>")
+        if new is None:
+            return "!! no rdf:Description anchor"
+        return new, list(items)
+    block = m.group(0)
+    present = [xml_unescape(li) for li in LI_RE.findall(block)]
+    missing = [i for i in items if i not in present]
+    if not missing:
+        return text, []
+    add = "".join(f"<rdf:li>{xml_escape(i)}</rdf:li>" for i in missing)
+    if "</rdf:Bag>" in block:
+        block = block.replace("</rdf:Bag>", add + "</rdf:Bag>", 1)
+    elif "<rdf:Bag/>" in block:
+        block = block.replace("<rdf:Bag/>", f"<rdf:Bag>{add}</rdf:Bag>", 1)
+    else:
+        return f"!! {element} has no rdf:Bag"
+    return text[: m.start()] + block + text[m.end() :], missing
+
+
 def apply(text: str, tags: list[str], desc: str | None = None) -> tuple[str | None, str]:
     """Return (new_text, note). new_text None means no change needed/possible."""
     notes: list[str] = []
@@ -121,32 +198,33 @@ def apply(text: str, tags: list[str], desc: str | None = None) -> tuple[str | No
             out = new
             notes.append("description added")
 
-    if tags:
-        m = re.search(r"<dc:subject\b.*?</dc:subject>", out, re.S)
-        if m:
-            block = m.group(0)
-            present = re.findall(r"<rdf:li>(.*?)</rdf:li>", block)
-            missing = [t for t in tags if t not in present]
-            if missing:
-                if "</rdf:Bag>" not in block:
-                    return None, "!! dc:subject has no rdf:Bag"
-                add = "".join(f"<rdf:li>{xml_escape(t)}</rdf:li>" for t in missing)
-                out = (
-                    out[: m.start()]
-                    + block.replace("</rdf:Bag>", add + "</rdf:Bag>", 1)
-                    + out[m.end() :]
-                )
-                notes.append(f"merged {missing} into {present}")
-            else:
-                notes.append("tags already present")
+    paths = normalize_tags(tags)
+    if paths:
+        # The sidecar's current tags, read the way darktable and OuEstCharlie do:
+        # lr:hierarchicalSubject when present, else dc:subject.
+        hierarchical = _bag_items(out, "lr:hierarchicalSubject")
+        current = normalize_tags(
+            hierarchical if hierarchical is not None else _bag_items(out, "dc:subject") or []
+        )
+        # darktable reads lr:hierarchicalSubject alone when present: when creating
+        # it, carry over the flat tags dc:subject already holds.
+        wanted = paths if hierarchical is not None else normalize_tags(current + paths)
+        before = out
+        for element, ns, items in (
+            ("lr:hierarchicalSubject", LR_NS, wanted),
+            ("dc:subject", DC_NS, flatten(paths)),
+        ):
+            merged = _merge_bag(out, element, ns, items)
+            if isinstance(merged, str):
+                return None, merged
+            out = merged[0]
+        new_tags = [p for p in paths if p not in current]
+        if new_tags:
+            notes.append(f"tags {new_tags} added to {current}")
+        elif out != before:
+            notes.append("tags completed for darktable")
         else:
-            tags_xml = "".join(f"<rdf:li>{xml_escape(t)}</rdf:li>" for t in tags)
-            blk = f"<dc:subject {DC_NS}><rdf:Bag>{tags_xml}</rdf:Bag></dc:subject>"
-            new = _insert(out, blk)
-            if new is None:
-                return None, "!! no rdf:Description anchor"
-            out = new
-            notes.append(f"tags {tags} added")
+            notes.append("tags already present")
 
     if out == text:
         return None, "; ".join(notes) or "nothing to do"

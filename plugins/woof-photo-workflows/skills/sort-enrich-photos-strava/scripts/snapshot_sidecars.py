@@ -2,8 +2,9 @@
 """
 Protect and recover XMP descriptions and tags.
 
-Reindexing with EXIF extraction regenerates sidecars and drops every dc: block,
-silently. This script is the insurance policy and the repair kit.
+Reindexing with EXIF extraction regenerates sidecars and drops every dc: block
+(and lr:hierarchicalSubject, the hierarchical tags), silently. This script is
+the insurance policy and the repair kit.
 
     # before any reindex
     python snapshot_sidecars.py --lib ~/Photos snapshot
@@ -15,7 +16,7 @@ silently. This script is the insurance policy and the repair kit.
     python snapshot_sidecars.py --lib ~/Photos restore --archive <tgz>
     python snapshot_sidecars.py --lib ~/Photos restore --archive <tgz> --go
 
-Restore reinserts the archived dc: blocks into the *current* sidecars rather
+Restore reinserts the archived description and tag blocks into the *current* sidecars rather
 than overwriting the files. That keeps whatever the reindex legitimately
 improved — fresher EXIF, new content hashes — and touches only the metadata that
 was lost. The operation is checked for reversibility before it is applied: after
@@ -33,20 +34,23 @@ import tarfile
 import tempfile
 import xml.dom.minidom
 
-DC_RE = re.compile(r"<dc:(?:description|subject)\b.*?</dc:(?:description|subject)>", re.S)
+# Description and tag blocks: dc:description, dc:subject and lr:hierarchicalSubject
+# (darktable-style hierarchical tags).
+_META_TAGS = r"(?:dc:description|dc:subject|lr:hierarchicalSubject)"
+META_RE = re.compile(rf"<{_META_TAGS}\b.*?</{_META_TAGS}>", re.S)
 
 
 def canonical(text: str) -> str:
-    """Text with dc: blocks removed and rdf:Description normalised to one form.
+    """Text with description and tag blocks removed and rdf:Description normalised to one form.
 
     Restoring into a sidecar that has no EXIF means expanding its self-closing
     <rdf:Description/> so the metadata has somewhere to live. That expansion is
     a legitimate part of the restore, so a byte comparison would flag it as
     corruption and refuse to write. Normalising both forms lets the safety check
-    ask the question it actually means: is anything *other* than the dc: blocks
+    ask the question it actually means: is anything *other* than those blocks
     different?
     """
-    t = DC_RE.sub("", text)
+    t = META_RE.sub("", text)
     t = re.sub(r"(<rdf:Description\b[^>]*?)\s*(?:/>|></rdf:Description>)", r"\1/>", t, flags=re.S)
     return t
 
@@ -61,7 +65,7 @@ def enriched_files(lib: str) -> list[str]:
             p = os.path.join(parent, f)
             try:
                 with open(p, encoding="utf-8", errors="replace") as fh:
-                    if DC_RE.search(fh.read()):
+                    if META_RE.search(fh.read()):
                         out.append(p)
             except OSError:
                 pass
@@ -79,7 +83,7 @@ def valid(text: str) -> bool:
 def cmd_snapshot(args: argparse.Namespace) -> None:
     files = enriched_files(args.lib)
     if not files:
-        sys.exit("no sidecars carry dc: metadata — nothing to snapshot")
+        sys.exit("no sidecars carry descriptions or tags — nothing to snapshot")
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     outdir = os.path.join(args.lib, "_sorting")
     os.makedirs(outdir, exist_ok=True)
@@ -133,9 +137,9 @@ def cmd_diff(args: argparse.Namespace) -> None:
             continue
         with open(cur_p, encoding="utf-8", errors="replace") as fh:
             cur = fh.read()
-        if DC_RE.search(cur):
+        if META_RE.search(cur):
             kept += 1
-        elif DC_RE.search(old):
+        elif META_RE.search(old):
             lost += 1
             if lost <= 20:
                 print(f"  LOST  {rel}")
@@ -159,10 +163,10 @@ def cmd_restore(args: argparse.Namespace) -> None:
             continue
         with open(cur_p, encoding="utf-8", errors="replace") as fh:
             cur = fh.read()
-        if DC_RE.search(cur):
+        if META_RE.search(cur):
             skipped += 1
             continue
-        blocks = "".join(DC_RE.findall(old))
+        blocks = "".join(META_RE.findall(old))
         if not blocks:
             continue
         if "</rdf:Description>" in cur:
@@ -178,9 +182,9 @@ def cmd_restore(args: argparse.Namespace) -> None:
         if not valid(new):
             problems.append((rel, "would produce invalid XML"))
             continue
-        # nothing but the dc: blocks (and any necessary tag expansion) may differ
+        # nothing but the restored blocks (and any necessary tag expansion) may differ
         if canonical(new) != canonical(cur):
-            problems.append((rel, "changes more than the dc: blocks — refusing"))
+            problems.append((rel, "changes more than the tag/description blocks — refusing"))
             continue
         todo.append((cur_p, new, rel))
 

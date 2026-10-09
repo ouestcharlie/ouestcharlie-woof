@@ -189,3 +189,47 @@ describe('formatShortDate', () => {
     expect(formatShortDate('2026-03-12T14:32:00')).toMatch(/2026/);
   });
 });
+
+import { tagLevels, tagLeaf, groupTagPaths } from './format.js';
+describe('hierarchical tags', () => {
+  it('splits a path into trimmed levels', () => {
+    expect(tagLevels(' Places | Europe ||France ')).toEqual(['Places', 'Europe', 'France']);
+    expect(tagLevels('Family')).toEqual(['Family']);
+    expect(tagLevels('')).toEqual([]);
+    expect(tagLevels(null)).toEqual([]);
+  });
+
+  it('returns the leaf of a path', () => {
+    expect(tagLeaf('Places|Europe|Paris')).toBe('Paris');
+    expect(tagLeaf('Family')).toBe('Family');
+    expect(tagLeaf('')).toBeNull();
+  });
+
+  it('groups siblings under their shared parent, in first-seen order', () => {
+    expect(
+      groupTagPaths([
+        'Places|Europe|France|Paris',
+        'Family',
+        'Places|Europe|France|Lyon',
+        'Places|Europe|Italy',
+        'Alpinism',
+      ]),
+    ).toEqual([
+      {
+        parent: ['Places', 'Europe', 'France'],
+        leaves: ['Paris', 'Lyon'],
+        paths: ['Places|Europe|France|Paris', 'Places|Europe|France|Lyon'],
+      },
+      { parent: [], leaves: ['Family'], paths: ['Family'] },
+      { parent: ['Places', 'Europe'], leaves: ['Italy'], paths: ['Places|Europe|Italy'] },
+      { parent: [], leaves: ['Alpinism'], paths: ['Alpinism'] },
+    ]);
+  });
+
+  it('skips empty paths and duplicate leaves', () => {
+    expect(groupTagPaths(['', 'a|b', 'a|b'])).toEqual([
+      { parent: ['a'], leaves: ['b'], paths: ['a|b'] },
+    ]);
+    expect(groupTagPaths(undefined)).toEqual([]);
+  });
+});

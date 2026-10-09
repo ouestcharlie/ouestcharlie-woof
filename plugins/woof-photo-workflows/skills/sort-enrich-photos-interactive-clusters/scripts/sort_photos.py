@@ -22,9 +22,13 @@ MATCHING PRECEDENCE
     outing claims its photos and the bucket picks up the remainder.
 
 WHAT IT WRITES
-    dc:description and dc:subject inside <rdf:Description>, and optionally
+    dc:description and tags inside <rdf:Description>, and optionally
     ext1:DateTimeOriginal for files whose EXIF was stripped. Files that already
-    carry a description or subject are left alone and reported.
+    carry a description or tags are left alone and reported.
+
+    Tags are written the way darktable writes them: each tag path ("|"-separated
+    levels, e.g. "Activities|Hiking"; flat tags are one-level paths) goes to
+    lr:hierarchicalSubject, and every level of every path to dc:subject.
 """
 
 from __future__ import annotations
@@ -128,11 +132,32 @@ MEDIA_EXT = (
     ".mov",
 )
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
+LR_NS = 'xmlns:lr="http://ns.adobe.com/lightroom/1.0/"'
 EXIF_NS = "http://ns.adobe.com/exif/1.0/"
 
 
 def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def normalize_tags(tags: list[str]) -> list[str]:
+    """Trim each "|"-separated level, drop empty levels and tags, dedupe."""
+    out: list[str] = []
+    for t in tags:
+        path = "|".join(p.strip() for p in t.split("|") if p.strip())
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def flatten(paths: list[str]) -> list[str]:
+    """Every level of every path, deduplicated, in first-seen order (dc:subject)."""
+    out: list[str] = []
+    for path in paths:
+        for level in path.split("|"):
+            if level not in out:
+                out.append(level)
+    return out
 
 
 def photo_time(fname: str) -> dt.datetime | None:
@@ -226,11 +251,11 @@ def set_date_taken(xml: str, iso: str) -> tuple[str, str]:
 
 
 def enrich_sidecar(path: str, o: dict[str, Any], dry: bool) -> str:
-    """Insert dc:description / dc:subject. Never overwrite what's already there."""
+    """Insert dc:description and tags. Never overwrite what's already there."""
     with open(path, encoding="utf-8") as fh:
         xml = fh.read()
 
-    if "<dc:description" in xml or "<dc:subject" in xml:
+    if "<dc:description" in xml or "<dc:subject" in xml or "<lr:hierarchicalSubject" in xml:
         return "already enriched, left alone"
 
     date_note = ""
@@ -243,9 +268,15 @@ def enrich_sidecar(path: str, o: dict[str, Any], dry: bool) -> str:
             f'<dc:description {DC_NS}><rdf:Alt><rdf:li xml:lang="x-default">'
             f"{xml_escape(o['desc'])}</rdf:li></rdf:Alt></dc:description>"
         )
-    if o.get("tags"):
-        tags_xml = "".join(f"<rdf:li>{xml_escape(t)}</rdf:li>" for t in o["tags"])
-        block += f"<dc:subject {DC_NS}><rdf:Bag>{tags_xml}</rdf:Bag></dc:subject>"
+    paths = normalize_tags(o.get("tags") or [])
+    if paths:
+        paths_xml = "".join(f"<rdf:li>{xml_escape(p)}</rdf:li>" for p in paths)
+        block += (
+            f"<lr:hierarchicalSubject {LR_NS}><rdf:Bag>{paths_xml}</rdf:Bag>"
+            "</lr:hierarchicalSubject>"
+        )
+        levels_xml = "".join(f"<rdf:li>{xml_escape(t)}</rdf:li>" for t in flatten(paths))
+        block += f"<dc:subject {DC_NS}><rdf:Bag>{levels_xml}</rdf:Bag></dc:subject>"
 
     if block:
         if "</rdf:Description>" in xml:
@@ -270,8 +301,8 @@ def enrich_sidecar(path: str, o: dict[str, Any], dry: bool) -> str:
     note: list[str] = []
     if o.get("desc"):
         note.append("description")
-    if o.get("tags"):
-        note.append(f"subject {o['tags']}")
+    if paths:
+        note.append(f"tags {paths}")
     if date_note:
         note.append(date_note)
     return " + ".join(note) if note else "nothing to write"

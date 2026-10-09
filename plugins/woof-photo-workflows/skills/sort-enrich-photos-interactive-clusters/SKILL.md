@@ -33,6 +33,15 @@ Everything else comes from looking at the library:
 - **Read the tag facets** before inventing a tag, to avoid `Holidays` next to an
   established `Holiday`.
 
+**Tags can be hierarchical**: levels separated by `|`, e.g. `Places|Canada|Ontario`
+or `Activities|Hiking` — the darktable and Lightroom convention. A search for
+`Places|Canada` finds everything below it, and a search for `Ontario` finds it at
+any level. Facet keys are paths, ancestors included, so the facets show which
+hierarchy the library already uses. Put a new tag under an existing root rather
+than starting a parallel tree; keep hierarchies short and stable, and don't
+invent deep trees nobody asked for. A flat tag is fine when the library has no
+hierarchy for it.
+
 **Nothing to copy** — empty library, first sort — means proposing two or three
 concrete shapes with examples and confirming once. It's the hardest decision to
 undo: a thousand files under a disliked scheme is a thousand files to move again.
@@ -130,7 +139,9 @@ by browsing anyway. Offer to stop rather than grinding to completion.
 Use `scripts/tag_files.py` — no moves, sidecars edited in place.
 
 **Merge, never replace.** Add only what's missing to the existing `rdf:Bag`;
-never write a second `dc:subject` or drop what's there.
+never write a second `lr:hierarchicalSubject` or `dc:subject`, or drop what's
+there. The script also adds `lr:hierarchicalSubject` to sidecars that only had
+`dc:subject`, carrying their existing tags over, so darktable still sees them.
 
 **Be idempotent.** Skip files already carrying everything requested, so a second
 run is a no-op and an interrupted run can be repeated. Verify by running twice
@@ -146,10 +157,19 @@ readings before touching a thousand files.
 <dc:description xmlns:dc="http://purl.org/dc/elements/1.1/">
   <rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>
 </dc:description>
+<lr:hierarchicalSubject xmlns:lr="http://ns.adobe.com/lightroom/1.0/">
+  <rdf:Bag><rdf:li>Family</rdf:li><rdf:li>Places|Canada|Ontario</rdf:li></rdf:Bag>
+</lr:hierarchicalSubject>
 <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <rdf:Bag><rdf:li>Family</rdf:li><rdf:li>Holiday</rdf:li></rdf:Bag>
+  <rdf:Bag><rdf:li>Family</rdf:li><rdf:li>Places</rdf:li><rdf:li>Canada</rdf:li>
+    <rdf:li>Ontario</rdf:li></rdf:Bag>
 </dc:subject>
 ```
+
+Tags are written the way darktable writes them, by the scripts: each tag path in
+`lr:hierarchicalSubject` (flat tags too), every level of every path in
+`dc:subject`. darktable reads only `lr:hierarchicalSubject` once it exists, so
+never edit `dc:subject` alone.
 
 - **Tags** reuse what the library already has; descriptions are whatever the
   person says, with no template to apply.
@@ -160,15 +180,15 @@ readings before touching a thousand files.
 
 ## Snapshot before anything destructive
 
-Reindexing can regenerate sidecars and discard `dc:` metadata silently while
-reporting success.
+Reindexing can regenerate sidecars and discard descriptions and tags (`dc:` and
+`lr:hierarchicalSubject`) silently while reporting success.
 
 ```
 python scripts/snapshot_sidecars.py --lib <library> snapshot
 ```
 
-To recover: `diff` to see what was lost, then `restore`, which reinserts `dc:`
-blocks into the *current* sidecars rather than overwriting files.
+To recover: `diff` to see what was lost, then `restore`, which reinserts the
+description and tag blocks into the *current* sidecars rather than overwriting files.
 
 **Distinguish lost from never written.** Files with no sidecar at the time never
 received anything — no backup will restore it.

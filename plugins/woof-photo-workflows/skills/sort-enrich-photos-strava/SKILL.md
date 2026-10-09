@@ -30,6 +30,15 @@ Everything else comes from looking at the library:
 - **Read the tag facets** before inventing a tag. This is how you avoid
   `Climbing` next to an established `RockClimbing`.
 
+**Tags can be hierarchical**: levels separated by `|`, e.g. `Places|Canada|Ontario`
+or `Activities|Hiking` — the darktable and Lightroom convention. A search for
+`Places|Canada` finds everything below it, and a search for `Ontario` finds it at
+any level. Facet keys are paths, ancestors included, so the facets show which
+hierarchy the library already uses. Put a new tag under an existing root rather
+than starting a parallel tree; keep hierarchies short and stable, and don't
+invent deep trees nobody asked for. A flat tag is fine when the library has no
+hierarchy for it.
+
 **Nothing to copy** — empty library, first sort — means proposing two or three
 concrete shapes with examples and confirming once. It's the hardest decision to
 undo: a thousand files under a disliked scheme is a thousand files to move again.
@@ -150,16 +159,25 @@ so edits stay invisible to search until reindexed.
 <dc:description xmlns:dc="http://purl.org/dc/elements/1.1/">
   <rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>
 </dc:description>
+<lr:hierarchicalSubject xmlns:lr="http://ns.adobe.com/lightroom/1.0/">
+  <rdf:Bag><rdf:li>RockClimbing</rdf:li><rdf:li>Hike</rdf:li></rdf:Bag>
+</lr:hierarchicalSubject>
 <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">
   <rdf:Bag><rdf:li>RockClimbing</rdf:li><rdf:li>Hike</rdf:li></rdf:Bag>
 </dc:subject>
 ```
 
+Tags are written the way darktable writes them, by the scripts: each tag path in
+`lr:hierarchicalSubject` (flat tags too), every level of every path in
+`dc:subject`. darktable reads only `lr:hierarchicalSubject` once it exists, so
+never edit `dc:subject` alone.
+
 - **Description**: activity title, its own description if any, then stats —
   `Trail run below Eagle Ridge (15.5 km, 482 m D+, 1h45)`. Match the library's
   existing format.
 - **Tags**: sport types in PascalCase plus first names. `"sports"` is always a
-  list. **A day often deserves more than one** — trackers record what they can
+  list. If the library files sports under a root (facet keys such as
+  `Activities|Hike`), use that path instead of the bare name. **A day often deserves more than one** — trackers record what they can
   measure, so a climbing day is logged as a Hike. Tag both and either search
   finds it.
 - **Nicknames** map to the library's spelling; check the tag counts first.
@@ -170,8 +188,8 @@ so edits stay invisible to search until reindexed.
 
 ## Snapshot before anything destructive
 
-Reindexing can regenerate sidecars and discard `dc:` metadata silently while
-reporting success. Check the indexer's docs for which flags do that.
+Reindexing can regenerate sidecars and discard descriptions and tags (`dc:` and
+`lr:hierarchicalSubject`) silently while reporting success. Check the indexer's docs for which flags do that.
 
 ```
 python scripts/snapshot_sidecars.py --lib <library> snapshot
@@ -180,8 +198,8 @@ python scripts/snapshot_sidecars.py --lib <library> snapshot
 Thousands of sidecars compress to a couple of hundred kilobytes — no reason to
 skip it, including when you believe the flags are safe.
 
-To recover: `diff` to see what was lost, then `restore`, which reinserts `dc:`
-blocks into the *current* sidecars rather than overwriting files. A regeneration
+To recover: `diff` to see what was lost, then `restore`, which reinserts the
+description and tag blocks into the *current* sidecars rather than overwriting files. A regeneration
 usually improved them, so keep the new sidecar and put the metadata back.
 
 **Distinguish lost from never written.** Files with no sidecar at the time never

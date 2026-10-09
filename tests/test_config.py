@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -169,12 +170,22 @@ def test_get_library_missing_returns_none() -> None:
 
 def test_to_dict() -> None:
     b = LibraryConfig(name="x", type="filesystem", path="/mnt/photos")
-    assert b.to_dict() == {"name": "x", "type": "filesystem", "path": "/mnt/photos"}
+    assert b.to_dict() == {
+        "name": "x",
+        "type": "filesystem",
+        "path": "/mnt/photos",
+        "excluded_tag_prefixes": ["darktable"],
+    }
 
 
 def test_to_dict_cloud_mount() -> None:
     b = LibraryConfig(name="kdrive", type="cloud_mount", path="/mnt/kdrive")
-    assert b.to_dict() == {"name": "kdrive", "type": "cloud_mount", "path": "/mnt/kdrive"}
+    assert b.to_dict() == {
+        "name": "kdrive",
+        "type": "cloud_mount",
+        "path": "/mnt/kdrive",
+        "excluded_tag_prefixes": ["darktable"],
+    }
 
 
 # ------------------------------------------------------------------
@@ -260,3 +271,55 @@ def test_resolve_to_unc_mapped_drive_wnet_failure_returns_none() -> None:
         mock_path_cls.return_value.resolve.return_value = resolved
         result = _resolve_to_unc("Z:\\photos")
     assert result is None
+
+
+# ------------------------------------------------------------------
+# excluded_tag_prefixes
+# ------------------------------------------------------------------
+
+
+def test_excluded_tag_prefixes_default() -> None:
+    assert LibraryConfig(name="x", type="filesystem", path="/p").excluded_tag_prefixes == [
+        "darktable"
+    ]
+    assert LibraryConfig.create(name="x", path="/p").excluded_tag_prefixes == ["darktable"]
+
+
+def test_excluded_tag_prefixes_default_for_config_without_key(config_dir: Path) -> None:
+    """A config.json saved before the setting existed gets the default."""
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        json.dumps({"libraries": [{"name": "old", "type": "filesystem", "path": "/p"}]})
+    )
+    lib = WoofConfig.load(config_dir=config_dir).get_library("old")
+    assert lib is not None
+    assert lib.excluded_tag_prefixes == ["darktable"]
+
+
+def test_excluded_tag_prefixes_round_trip(config_dir: Path) -> None:
+    WoofConfig(
+        libraries=[
+            LibraryConfig(
+                name="a", type="filesystem", path="/a", excluded_tag_prefixes=["x|y", "z"]
+            ),
+            LibraryConfig(name="b", type="filesystem", path="/b", excluded_tag_prefixes=[]),
+        ],
+        config_dir=config_dir,
+    ).save()
+    loaded = WoofConfig.load(config_dir=config_dir)
+    assert loaded.get_library("a").excluded_tag_prefixes == ["x|y", "z"]  # type: ignore[union-attr]
+    assert loaded.get_library("b").excluded_tag_prefixes == []  # type: ignore[union-attr]
+
+
+def test_excluded_tag_prefixes_normalized() -> None:
+    lib = LibraryConfig.create(
+        name="x",
+        path="/p",
+        excluded_tag_prefixes=[" Lightroom | Internal ", "", "darktable", "darktable"],
+    )
+    assert lib.excluded_tag_prefixes == ["Lightroom|Internal", "darktable"]
+
+
+def test_to_dict_includes_excluded_tag_prefixes() -> None:
+    lib = LibraryConfig.create(name="x", path="/p", excluded_tag_prefixes=[])
+    assert lib.to_dict()["excluded_tag_prefixes"] == []

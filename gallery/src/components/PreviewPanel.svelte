@@ -13,6 +13,8 @@
     codecUnplayable,
     formatGps,
     truncate,
+    tagLeaf,
+    groupTagPaths,
   } from '../lib/format.js';
 
   /**
@@ -96,7 +98,10 @@
   const CAPTION_MAX = 100;
 
   let captionDescription = $derived(truncate(match?.description, CAPTION_MAX));
+  // Tags are "|"-separated paths; the caption shows only the leaf (full path in
+  // the tooltip), the details panel the whole hierarchy grouped by parent.
   let captionTags = $derived(match?.tags?.slice(0, 5) ?? []);
+  let tagGroups = $derived(groupTagPaths(match?.tags));
   let cameraLine = $derived(formatCamera(match));
   let gpsLine = $derived(formatGps(match?.gps));
   let durationLine = $derived(isVideo ? formatDuration(match?.durationSeconds) : null);
@@ -178,7 +183,7 @@
         {#if captionTags.length}
           <div class="pills">
             {#each captionTags as tag (tag)}
-              <span class="pill">{tag}</span>
+              <span class="pill" title={tag}>{tagLeaf(tag)}</span>
             {/each}
           </div>
         {/if}
@@ -212,10 +217,19 @@
             {#if match.description}
               <div class="field"><span class="field-val desc">{match.description}</span></div>
             {/if}
-            {#if match.tags?.length}
+            {#if tagGroups.length}
               <div class="pills tags">
-                {#each match.tags as tag (tag)}
-                  <span class="pill">{tag}</span>
+                {#each tagGroups as group (group.paths[0])}
+                  <!-- No whitespace between segments: spacing comes from .tag-sep margins. -->
+                  <span class="pill tag-path" title={group.paths.join('\n')}
+                    >{#each group.parent as level, i (i)}<span class="tag-ancestor">{level}</span
+                      ><span class="tag-sep" aria-hidden="true">›</span
+                    >{/each}{#each group.leaves as leaf, i (leaf)}{#if i > 0}<span
+                          class="tag-sep"
+                          aria-hidden="true">·</span
+                        >{/if}<span class="tag-leaf">{leaf}</span
+                      >{/each}</span
+                  >
                 {/each}
               </div>
             {/if}
@@ -603,6 +617,25 @@
   .pills.tags {
     margin-top: 0.75rem;
     margin-bottom: 0.5rem;
+  }
+
+  /* Hierarchical tag pill: ancestors muted, leaves emphasized. Wraps inside the
+     pill when a path is longer than the panel. */
+  .pill.tag-path {
+    white-space: normal;
+  }
+
+  .tag-ancestor {
+    opacity: 0.6;
+  }
+
+  .tag-sep {
+    opacity: 0.45;
+    margin: 0 0.25em;
+  }
+
+  .tag-leaf {
+    font-weight: var(--font-weight-medium, 500);
   }
 
   /* Narrow screens: side panel becomes a full-width bottom sheet. */

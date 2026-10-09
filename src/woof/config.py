@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,25 @@ from platformdirs import user_config_dir
 _log = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_DIR = Path(user_config_dir("ouestcharlie"))
+
+# Tag paths kept out of the index by default: darktable's automatic tags
+# (darktable|format|jpg, …). Same default as ouestcharlie_toolkit.tags.
+DEFAULT_EXCLUDED_TAG_PREFIXES: tuple[str, ...] = ("darktable",)
+
+
+def normalize_tag_prefixes(prefixes: Iterable[str]) -> list[str]:
+    """Normalize tag path prefixes the way tags are normalized.
+
+    Trims each ``|``-separated level, drops empty levels and entries, and
+    dedupes in first-seen order. Mirrors ``ouestcharlie_toolkit.tags.normalize_path``:
+    Woof does not depend on the toolkit.
+    """
+    out: list[str] = []
+    for raw in prefixes:
+        path = "|".join(p.strip() for p in str(raw).split("|") if p.strip())
+        if path and path not in out:
+            out.append(path)
+    return out
 
 
 def _resolve_to_unc(path: str) -> str | None:
@@ -90,23 +110,51 @@ class LibraryConfig:
     """Absolute path to the photo root directory."""
     lancedb_index_path: str | None = None
     """Optional override for the LanceDB index location."""
+    excluded_tag_prefixes: list[str] = field(
+        default_factory=lambda: list(DEFAULT_EXCLUDED_TAG_PREFIXES)
+    )
+    """Tag paths kept out of the index: a path equal to or below one of these
+    ("|"-separated) prefixes. Libraries saved before this setting get the default."""
+
+    def __post_init__(self) -> None:
+        self.excluded_tag_prefixes = normalize_tag_prefixes(self.excluded_tag_prefixes)
 
     @classmethod
-    def create(cls, name: str, path: str, library_type: str = "filesystem") -> LibraryConfig:
+    def create(
+        cls,
+        name: str,
+        path: str,
+        library_type: str = "filesystem",
+        excluded_tag_prefixes: Iterable[str] | None = None,
+    ) -> LibraryConfig:
         """Create a LibraryConfig, auto-detecting a local LanceDB path for UNC roots.
 
         On Windows, when *path* resolves to a UNC share (explicit ``\\\\server\\share``
         or a mapped drive letter), ``lancedb_index_path`` is set to a local NTFS
         location so object_store can operate reliably.
+
+        *excluded_tag_prefixes* defaults to ``DEFAULT_EXCLUDED_TAG_PREFIXES``.
         """
         lance_path = get_local_lance_index_path(name) if _resolve_to_unc(path) is not None else None
-        return cls(name=name, type=library_type, path=path, lancedb_index_path=lance_path)
+        prefixes = (
+            DEFAULT_EXCLUDED_TAG_PREFIXES
+            if excluded_tag_prefixes is None
+            else excluded_tag_prefixes
+        )
+        return cls(
+            name=name,
+            type=library_type,
+            path=path,
+            lancedb_index_path=lance_path,
+            excluded_tag_prefixes=list(prefixes),
+        )
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict of all non-None fields."""
-        result: dict[str, str] = {"name": self.name, "path": self.path, "type": self.type}
+        result: dict[str, Any] = {"name": self.name, "path": self.path, "type": self.type}
         if self.lancedb_index_path is not None:
             result["lancedb_index_path"] = self.lancedb_index_path
+        result["excluded_tag_prefixes"] = list(self.excluded_tag_prefixes)
         return result
 
 

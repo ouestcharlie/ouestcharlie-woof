@@ -1,13 +1,20 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
-
   - repo: local
     hooks:
+      # Ruff runs from the project venv: its version is pinned once, in the dev
+      # dependency group (uv.lock), and matches what `uv run ruff` gives by hand.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --no-sync ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --no-sync ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: eslint
         name: ESLint (gallery)
         entry: bash -c 'cd gallery && npm run lint'
