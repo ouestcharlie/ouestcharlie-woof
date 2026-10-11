@@ -83,7 +83,7 @@ Woof is designed with privacy as a core principle.
 
 - **Data collected**: Only photo metadata (EXIF, GPS coordinates, camera make/model, dates, file paths) is read and indexed. No account or personal information is collected.
 - **Data storage**: All metadata is stored locally on your own device as XMP sidecar files and JSON manifests alongside your photos. No data is stored on any remote server.
-- **AI assistant**: Only metadata and thumbnail images are sent to your AI assistant (Claude, ChatGPT, Goose…) when you perform a search. Your original photo files are never uploaded to any AI service unless you explicitly share them.
+- **AI assistant**: Only metadata is sent to your AI assistant (Claude, ChatGPT, Goose…) when you perform a search. Thumbnails and previews remain in the MCP App gallery widgets: they are served by Woof from your machine (loopback only) and never pass through the assistant. Your original photo files are never uploaded to any AI service unless you explicitly share them.
 - **Third parties**: No metadata or usage data is shared with any third party.
 - **Retention**: All data remains under your full control. Deleting the XMP sidecars and `.ouestcharlie/` folders from your photo library completely removes all Woof metadata.
 
