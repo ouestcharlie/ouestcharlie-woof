@@ -86,6 +86,27 @@ describe('IndexingProgress — completed state', () => {
     });
   });
 
+  it('shows changed sidecar count', async () => {
+    mockFetch(completedSession({
+      totalPhotosProcessed: 10,
+      totalSidecarsCreated: 0,
+      totalSidecarsChanged: 7,
+      totalDurationMs: 1000,
+    }));
+    const { getByText } = render(IndexingProgress, { props: baseProps });
+    await waitFor(() => {
+      const label = getByText(/Sidecars changed/);
+      expect(label.querySelector('strong').textContent).toBe('7');
+    });
+  });
+
+  it('hides changed sidecar row when totalSidecarsChanged is absent', async () => {
+    mockFetch(completedSession({ totalPhotosProcessed: 10, totalSidecarsCreated: 1, totalDurationMs: 1000 }));
+    const { getByText, queryByText } = render(IndexingProgress, { props: baseProps });
+    await waitFor(() => expect(getByText(/Sidecars created/)).toBeTruthy());
+    expect(queryByText(/Sidecars changed/)).toBeNull();
+  });
+
   it('does not show errors row when totalErrors is 0', async () => {
     mockFetch(completedSession({ totalErrors: 0, totalPhotosProcessed: 10, totalDurationMs: 1000 }));
     const { queryByText } = render(IndexingProgress, { props: baseProps });

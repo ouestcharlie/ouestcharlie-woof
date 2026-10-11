@@ -51,6 +51,7 @@
   "indexing_complete_in": "in {seconds}s",
   "indexing_items_processed": "Items processed:",
   "indexing_sidecars_created": "Sidecars created:",
+  "indexing_sidecars_changed": "Sidecars changed:",
   "indexing_thumbnails_rebuilt": "Thumbnail batches rebuilt:",
   "indexing_errors": "Errors:",
   "indexing_no_summary": "No summary available.",
