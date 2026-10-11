@@ -51,6 +51,7 @@
   "indexing_complete_in": "in {seconds} s",
   "indexing_items_processed": "Verarbeitete Elemente:",
   "indexing_sidecars_created": "Erstellte Sidecar-Dateien:",
+  "indexing_sidecars_changed": "Geänderte Sidecar-Dateien:",
   "indexing_thumbnails_rebuilt": "Neu erstellte Miniaturbild-Stapel:",
   "indexing_errors": "Fehler:",
   "indexing_no_summary": "Keine Zusammenfassung verfügbar.",

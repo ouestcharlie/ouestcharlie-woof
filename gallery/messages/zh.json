@@ -51,6 +51,7 @@
   "indexing_complete_in": "耗时 {seconds} 秒",
   "indexing_items_processed": "已处理项目：",
   "indexing_sidecars_created": "已创建 sidecar 文件：",
+  "indexing_sidecars_changed": "已更改的 sidecar 文件：",
   "indexing_thumbnails_rebuilt": "已重建缩略图批次：",
   "indexing_errors": "错误：",
   "indexing_no_summary": "无可用摘要。",

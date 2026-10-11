@@ -126,6 +126,7 @@
     const lines = [`Indexing complete for **${scopeLabel}**.`];
     if (s?.totalPhotosProcessed !== undefined) lines.push(`- Items processed: ${s.totalPhotosProcessed}`);
     if (s?.totalSidecarsCreated !== undefined) lines.push(`- Sidecars created: ${s.totalSidecarsCreated}`);
+    if (s?.totalSidecarsChanged !== undefined) lines.push(`- Sidecars changed: ${s.totalSidecarsChanged}`);
     if (s?.totalThumbnailsRebuilt !== undefined) lines.push(`- Thumbnail batches rebuilt: ${s.totalThumbnailsRebuilt}`);
     if (s?.totalErrors !== undefined && s.totalErrors > 0) lines.push(`- Errors: ${s.totalErrors}`);
     if (s?.totalDurationMs !== undefined) lines.push(`- Duration: ${(s.totalDurationMs / 1000).toFixed(1)}s`);
@@ -189,6 +190,9 @@
           {/if}
           {#if summary.totalSidecarsCreated !== undefined}
             <li>{m.indexing_sidecars_created()} <strong>{summary.totalSidecarsCreated}</strong></li>
+          {/if}
+          {#if summary.totalSidecarsChanged !== undefined}
+            <li>{m.indexing_sidecars_changed()} <strong>{summary.totalSidecarsChanged}</strong></li>
           {/if}
           {#if summary.totalThumbnailsRebuilt !== undefined}
             <li>{m.indexing_thumbnails_rebuilt()} <strong>{summary.totalThumbnailsRebuilt}</strong></li>

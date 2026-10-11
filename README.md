@@ -58,7 +58,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Search video features (duration, dimensions, GPS bounding box) |  |
 | Search camera features (make, model, aperture, lens) | | 
 | Sort ascending or descending on any field |  |
-| Change detection / automatic re-indexing | Partial — added and removed pictures |
+| Change detection / automatic re-indexing | Partial — added and removed pictures, and sidecars edited by other tools (darktable, digiKam…); indexing is not yet triggered automatically |
 
 ### Planned features
 

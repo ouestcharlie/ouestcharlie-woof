@@ -51,6 +51,7 @@
   "indexing_complete_in": "en {seconds} s",
   "indexing_items_processed": "Elementos procesados:",
   "indexing_sidecars_created": "Archivos sidecar creados:",
+  "indexing_sidecars_changed": "Archivos sidecar modificados:",
   "indexing_thumbnails_rebuilt": "Lotes de miniaturas reconstruidos:",
   "indexing_errors": "Errores:",
   "indexing_no_summary": "No hay resumen disponible.",
