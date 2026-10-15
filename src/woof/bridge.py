@@ -237,6 +237,19 @@ def _print_lock_diagnosis() -> None:
         print("discovery file: none")
 
 
+def _print_server_diagnosis() -> None:
+    """Woof's HTTP server URL and whether it passes an authenticated health check (``--diagnose``).
+
+    The probe counts as activity on the server, so it resets Woof's idle-shutdown timer.
+    """
+    info = read_discovery()
+    if info is None or not is_pid_alive(info.pid):
+        print("woof http server: not running")
+        return
+    health = "healthy" if asyncio.run(probe_alive(info)) else "NOT responding to /healthz"
+    print(f"woof http server: {info.server_url} ({health})")
+
+
 def main() -> None:
     setup_logging("woof-bridge", log_file_env_var="WOOF_BRIDGE_LOG_FILE", level=logging.INFO)
     # filelock logs every ~0.05s poll retry at DEBUG while contended, which
@@ -249,6 +262,7 @@ def main() -> None:
         return
     if "--diagnose" in argv:
         _print_lock_diagnosis()
+        _print_server_diagnosis()
         return
     try:
         asyncio.run(run_bridge())

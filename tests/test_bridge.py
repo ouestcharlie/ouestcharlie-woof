@@ -195,6 +195,7 @@ def test_main_diagnose_flag_prints_state_without_running_bridge(monkeypatch, cap
     captured = capsys.readouterr()
     assert "startup lock: free" in captured.out
     assert "discovery file: none" in captured.out
+    assert "woof http server: not running" in captured.out
 
 
 def test_diagnose_reports_live_discovery_pid(capsys) -> None:
@@ -203,6 +204,29 @@ def test_diagnose_reports_live_discovery_pid(capsys) -> None:
     captured = capsys.readouterr()
     assert f"pid={os.getpid()}" in captured.out
     assert "NOT running" not in captured.out
+
+
+def test_diagnose_reports_healthy_woof_server(capsys) -> None:
+    discovery.write_discovery(discovery.DiscoveryInfo(pid=os.getpid(), port=1234, token="tok"))
+    with patch("woof.bridge.probe_alive", new=AsyncMock(return_value=True)):
+        bridge._print_server_diagnosis()
+    captured = capsys.readouterr()
+    assert "woof http server: http://127.0.0.1:1234 (healthy)" in captured.out
+
+
+def test_diagnose_reports_unresponsive_woof_server(capsys) -> None:
+    discovery.write_discovery(discovery.DiscoveryInfo(pid=os.getpid(), port=1234, token="tok"))
+    with patch("woof.bridge.probe_alive", new=AsyncMock(return_value=False)):
+        bridge._print_server_diagnosis()
+    captured = capsys.readouterr()
+    assert "woof http server: http://127.0.0.1:1234 (NOT responding to /healthz)" in captured.out
+
+
+def test_diagnose_reports_woof_not_running_for_stale_discovery(capsys) -> None:
+    discovery.write_discovery(discovery.DiscoveryInfo(pid=2**30, port=1234, token="tok"))
+    bridge._print_server_diagnosis()
+    captured = capsys.readouterr()
+    assert "woof http server: not running" in captured.out
 
 
 @pytest.mark.asyncio
