@@ -82,16 +82,16 @@ async def test_probe_alive_true_when_healthz_responds_ok() -> None:
     info = discovery.DiscoveryInfo(pid=os.getpid(), port=1, token="t")
     mock_response = AsyncMock()
     mock_response.status_code = 200
-    with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
+    with patch("httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
         assert await discovery.probe_alive(info) is True
 
 
 @pytest.mark.asyncio
 async def test_probe_alive_false_when_healthz_errors() -> None:
-    import httpx
+    import httpx2
 
     info = discovery.DiscoveryInfo(pid=os.getpid(), port=1, token="t")
-    with patch("httpx.AsyncClient.get", side_effect=httpx.ConnectError("refused")):
+    with patch("httpx2.AsyncClient.get", side_effect=httpx2.ConnectError("refused")):
         assert await discovery.probe_alive(info) is False
 
 

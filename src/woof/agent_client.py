@@ -13,8 +13,8 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-import httpx2
 from fastmcp import Context
+from httpx2 import AsyncClient
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -154,7 +154,7 @@ class _WallySidecar:
             # All three context managers stay in this task — cancel scopes are
             # entered and exited in LIFO order within the same asyncio task.
             async with (
-                httpx2.AsyncClient(headers=headers, timeout=None) as http_client,
+                AsyncClient(headers=headers, timeout=None) as http_client,
                 streamable_http_client(url, http_client=http_client) as (read, write),
                 ClientSession(read, write) as session,
             ):

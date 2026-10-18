@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ouestcharlie-woof"
 version = "0.15.2"
 description = "The MCP-App Photo Gallery"
-requires-python = ">=3.14"
+requires-python = "==3.14.*"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE*"]
@@ -21,7 +21,6 @@ classifiers = [
 dependencies = [
     "mcp>=2.0,<3.0.0",
     "fastmcp>=3.2",
-    "httpx>=0.27",
     "starlette>=1.0",
     "uvicorn>=0.40",
     "platformdirs>=4.0",
@@ -83,5 +82,5 @@ dev = [
     "pre-commit>=4.5.1",
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
-    "ruff==0.16.9",
+    "ruff==0.17",
 ]

@@ -6,7 +6,7 @@ import asyncio
 import threading
 import time
 
-import httpx
+import httpx2
 import pytest
 import uvicorn
 from starlette.applications import Starlette
@@ -215,7 +215,7 @@ async def test_serve_with_ready_sets_event_and_serves_requests() -> None:
             await asyncio.sleep(0.02)
         assert ready.is_set()
 
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             resp = await client.get(f"http://127.0.0.1:{endpoint.port}/thing")
             assert resp.status_code == 200
     finally:
