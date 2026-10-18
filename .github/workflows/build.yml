@@ -46,7 +46,7 @@ jobs:
         # OS/Python combination (OEC-61).
         # deps-dist: toolkit, Whitebeard and Wally built from their default
         # branch, so the tests run against them rather than their PyPI release.
-        run: pip install --only-binary ouestcharlie-imageproc dist/ouestcharlie_woof-*.whl deps-dist/*.whl pytest pytest-asyncio httpx
+        run: pip install --only-binary ouestcharlie-imageproc dist/ouestcharlie_woof-*.whl deps-dist/*.whl pytest pytest-asyncio httpx2
 
       - name: Run integration tests
         run: python -m pytest tests_integration/ -v

@@ -250,7 +250,7 @@ async def test_run_bridge_uses_generous_read_timeout_not_httpx_default() -> None
 
     with (
         patch("woof.bridge.ensure_woof_running", new=AsyncMock(return_value=info)),
-        patch("httpx2.AsyncClient", side_effect=fake_async_client),
+        patch("woof.bridge.AsyncClient", side_effect=fake_async_client),
         pytest.raises(_StopTest) as exc_info,
     ):
         await bridge.run_bridge()

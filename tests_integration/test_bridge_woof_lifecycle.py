@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
-import httpx
+import httpx2
 import pytest
 
 from woof import bridge, discovery
@@ -93,7 +93,7 @@ async def test_ensure_woof_running_spawns_and_discovers_real_process(
     assert info.token == _TOKEN
     assert discovery.is_pid_alive(info.pid)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         resp = await client.get(
             f"{info.server_url}/healthz",
             headers={"Authorization": f"Bearer {info.token}"},
@@ -122,6 +122,6 @@ async def test_stop_running_instance_terminates_real_process(spawn_fake_woof: Mo
     assert discovery.read_discovery() is None
     assert await _wait_until(lambda: not discovery.is_pid_alive(info.pid))
 
-    with pytest.raises(httpx.HTTPError):
-        async with httpx.AsyncClient(timeout=2.0) as client:
+    with pytest.raises(httpx2.HTTPError):
+        async with httpx2.AsyncClient(timeout=2.0) as client:
             await client.get(f"{info.server_url}/healthz")

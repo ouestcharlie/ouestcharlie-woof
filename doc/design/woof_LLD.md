@@ -252,7 +252,7 @@ Woof acts as an MCP client to agents. Each agent is an MCP server exposing its c
 | Whitebeard | Ephemeral — spawned per tool call, exits on completion | Indexing is infrequent; no persistent server needed |
 | Wally | Persistent sidecar — started on first search, kept alive for the Woof session | Wally's HTTP preview server must stay up to serve media between tool calls |
 
-`AgentClient` manages the Wally sidecar via a dedicated `asyncio` session task backed by an `asyncio.Queue`. All tool calls to Wally are posted to this queue and executed serially inside the session task, which owns all context managers (`httpx`, `streamable_http_client`, `ClientSession`). This avoids "exit cancel scope in different task" errors from `anyio`. The sidecar is started lazily on the first tool call for a given backend.
+`AgentClient` manages the Wally sidecar via a dedicated `asyncio` session task backed by an `asyncio.Queue`. All tool calls to Wally are posted to this queue and executed serially inside the session task, which owns all context managers (`httpx2`, `streamable_http_client`, `ClientSession`). This avoids "exit cancel scope in different task" errors from `anyio`. The sidecar is started lazily on the first tool call for a given backend.
 
 ### 5.3 Background agent tasks
 

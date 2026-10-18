@@ -27,7 +27,7 @@ from collections.abc import AsyncIterable
 from typing import Any, Protocol
 
 import anyio
-import httpx2
+from httpx2 import AsyncClient, HTTPError, Timeout
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
@@ -151,12 +151,12 @@ async def _pump(src: AsyncIterable[SessionMessage | Exception], dst: _MessageSin
         await dst.send(message)
 
 
-async def _keepalive_loop(client: httpx2.AsyncClient) -> None:
+async def _keepalive_loop(client: AsyncClient) -> None:
     while True:
         await asyncio.sleep(_KEEPALIVE_INTERVAL_SECONDS)
         try:
             await client.post("/keepalive")
-        except httpx2.HTTPError as exc:
+        except HTTPError as exc:
             _log.debug("Keepalive ping failed (Woof may be restarting): %s", exc)
 
 
@@ -165,7 +165,7 @@ async def run_bridge() -> None:
     headers = {"Authorization": f"Bearer {info.token}"}
 
     async with (
-        httpx2.AsyncClient(
+        AsyncClient(
             base_url=info.server_url,
             headers=headers,
             follow_redirects=True,
@@ -176,7 +176,7 @@ async def run_bridge() -> None:
             # default, which cuts off any tool call slower than 5s (e.g. a
             # lazily-spawned Wally sidecar taking ~20s to come up). Match the
             # SDK's own recommended defaults instead of inheriting httpx2's.
-            timeout=httpx2.Timeout(30.0, read=300.0),
+            timeout=Timeout(30.0, read=300.0),
         ) as http_client,
         stdio_server() as (host_read, host_write),
         # Trailing slash: Woof mounts its MCP app at "/mcp" via Starlette's
@@ -208,12 +208,12 @@ async def stop_running_instance() -> bool:
         remove_discovery()
         return False
     try:
-        async with httpx2.AsyncClient(timeout=5.0) as client:
+        async with AsyncClient(timeout=5.0) as client:
             await client.post(
                 f"{info.server_url}/shutdown",
                 headers={"Authorization": f"Bearer {info.token}"},
             )
-    except httpx2.HTTPError as exc:
+    except HTTPError as exc:
         _log.warning("Shutdown request failed (%s); removing discovery file anyway", exc)
     remove_discovery()
     return True

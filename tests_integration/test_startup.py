@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from http_test_server import start_http_server
 
@@ -110,7 +110,7 @@ class TestWallySidecar:
         """The HTTP port announced by Wally must accept connections."""
         sidecar = await agent_client._get_wally_sidecar(library)  # type: ignore[attr-defined]
 
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             try:
                 resp = await client.get(
                     f"http://127.0.0.1:{sidecar.http_port}/mcp",
@@ -118,7 +118,7 @@ class TestWallySidecar:
                 )
                 # Any valid HTTP response (even 4xx) confirms the server is up.
                 assert resp.status_code < 600
-            except httpx.ConnectError as exc:
+            except httpx2.ConnectError as exc:
                 pytest.fail(f"Could not connect to Wally HTTP port {sidecar.http_port}: {exc}")
 
     @pytest.mark.asyncio

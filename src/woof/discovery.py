@@ -25,9 +25,9 @@ from collections.abc import Callable, Generator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import httpx
 from filelock import FileLock
 from filelock import Timeout as LockTimeout
+from httpx2 import AsyncClient, HTTPError
 from platformdirs import user_config_dir
 
 __all__ = [
@@ -236,12 +236,12 @@ async def probe_alive(info: DiscoveryInfo, *, timeout: float = _PROBE_TIMEOUT_SE
     if not is_pid_alive(info.pid):
         return False
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with AsyncClient(timeout=timeout) as client:
             resp = await client.get(
                 f"{info.server_url}/healthz",
                 headers={"Authorization": f"Bearer {info.token}"},
             )
-    except httpx.HTTPError:
+    except HTTPError:
         return False
     return resp.status_code == 200
 

@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-import httpx
+from httpx2 import AsyncClient, Timeout
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -203,7 +203,7 @@ def build_gallery_app(
         # Stream the body rather than buffering it: video responses can be
         # GB-scale, and buffering would defeat Range support. read=None disables
         # the read timeout so long streams are not truncated mid-body.
-        client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=None))
+        client = AsyncClient(timeout=Timeout(120.0, read=None))
         try:
             req = client.build_request("GET", url, headers=headers)
             upstream = await client.send(req, stream=True)
