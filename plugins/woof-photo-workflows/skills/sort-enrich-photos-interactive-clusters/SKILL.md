@@ -52,7 +52,7 @@ undo: a thousand files under a disliked scheme is a thousand files to move again
 **Near-duplicate tags** accumulate: `Oliv` beside `Olivier`, an accented and
 unaccented spelling. The tell is a pair differing by accent or prefix with
 lopsided counts (case differences are already merged in search and facets) — the rare one is usually the mistake. Ask which is canonical,
-then *retag the smaller set* rather than remembering an alias. A correction in a
+then *retag the smaller set* (see Renaming a tag) rather than remembering an alias. A correction in a
 config file must be re-read forever; one applied to the photos is simply true.
 
 ## 1. Index and size up
@@ -130,8 +130,11 @@ validity, orphans, legacy-named sidecars. A sidecar with no EXIF has a
 self-closing `<rdf:Description/>`; naive insertion writes nothing while the move
 still reports success.
 
-Afterwards the index is stale — sidecar edits stay invisible to search until
-reindexed.
+Then refresh the index so search sees the new folders, descriptions and tags:
+run `index_library` with `partition_scope` set to the source and destination
+folders, and no force flag. An incremental run indexes the moved photos and
+re-reads every sidecar whose modification time changed, which covers everything
+the scripts wrote. It does not rebuild thumbnails.
 
 **Stopping early is a legitimate outcome.** Filing the five biggest clusters and
 leaving forty strays is a good result; those forty were never going to be found
@@ -150,9 +153,42 @@ there. The script also adds `lr:hierarchicalSubject` to sidecars that only had
 run is a no-op and an interrupted run can be repeated. Verify by running twice
 and confirming zero changes — the cheapest check there is.
 
+**Refresh the index afterwards.** Run `index_library` with `partition_scope`
+set to the tagged folders, no force flag: the incremental run re-reads exactly
+the sidecars the script rewrote, so the new tags are searchable right away.
+
 **Confirm scope before bulk operations.** "Tag all the holiday folders" can mean
 four folders or forty. Enumerate, show the count, offer the narrower and wider
 readings before touching a thousand files.
+
+## Renaming a tag
+
+Use `scripts/retag_files.py` to merge a near-duplicate into the canonical tag,
+move a flat tag under an existing hierarchy, or fix a spelling. No moves; each
+sidecar is edited in place.
+
+```
+python scripts/retag_files.py --lib <library> \
+    --old-tag BackcountrySki --new-tag 'Activities|Ski|Backcountry' \
+    [--folder 2024 --folder 2025/2025-02_Alps]
+```
+
+- **Dry run first**, then add `--go`. The live run backs up every sidecar it
+  changes into `_sorting/xmp_backup_retagging_<stamp>.tar.gz`.
+- **Scope**: without `--folder`, the whole library. Each `--folder` is relative
+  to the library and includes its subfolders. Confirm the scope as for any bulk
+  operation: show the dry-run count before `--go`.
+- **One exact path per run.** `--old-tag Places|France` doesn't touch
+  `Places|France|Paris`; renaming a branch means one run per path under it.
+  Matching ignores case and spaces around `|`.
+- The old path's levels leave `dc:subject` unless another path still uses them,
+  the new path takes the spelling the sidecar already has, and a sidecar with
+  only `dc:subject` gets `lr:hierarchicalSubject` too.
+- A second run reports zero to change.
+
+Then run `index_library` incrementally, with no force flag. Scoping isn't
+recursive, so list every changed folder, or omit `partition_scope`: unchanged
+sidecars are skipped at the cost of a directory listing.
 
 ## What gets written
 
@@ -183,8 +219,17 @@ never edit `dc:subject` alone.
 
 ## Snapshot before anything destructive
 
-Reindexing can regenerate sidecars and discard descriptions and tags (`dc:` and
-`lr:hierarchicalSubject`) silently while reporting success.
+`index_library` with `force_extract_exif=True` regenerates sidecars from the
+media files and can discard descriptions and tags (`dc:` and
+`lr:hierarchicalSubject`) silently while reporting success. A plain incremental
+run or `force_full_index=True` only reads sidecars; the one exception is a
+deleted sidecar, which is re-created without its metadata.
+
+Another tool can also drop them: darktable rewrites the sidecar at every sync,
+and if it never imported the description and tags, it writes the sidecar
+without them. The next incremental index follows the sidecar, so they vanish
+from search too. Restore from the snapshot if that happens. Take the snapshot
+before any `force_extract_exif` run or before opening the folders in darktable.
 
 ```
 python scripts/snapshot_sidecars.py --lib <library> snapshot
@@ -192,6 +237,8 @@ python scripts/snapshot_sidecars.py --lib <library> snapshot
 
 To recover: `diff` to see what was lost, then `restore`, which reinserts the
 description and tag blocks into the *current* sidecars rather than overwriting files.
+A plain incremental `index_library` afterwards makes the restored metadata
+searchable again.
 
 **Distinguish lost from never written.** Files with no sidecar at the time never
 received anything — no backup will restore it.

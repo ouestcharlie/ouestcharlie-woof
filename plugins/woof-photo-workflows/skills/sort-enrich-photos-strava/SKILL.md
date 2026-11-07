@@ -153,8 +153,11 @@ XML validity, orphaned sidecars, legacy-named sidecars.
 Not ceremony — a sidecar with no EXIF has a self-closing `<rdf:Description/>`,
 and naive insertion writes nothing while the move still reports success.
 
-Afterwards the index is stale: editing a sidecar doesn't change its media file,
-so edits stay invisible to search until reindexed.
+Then refresh the index so search sees the new folders, descriptions and tags:
+run `index_library` with `partition_scope` set to the source and destination
+folders, and no force flag. An incremental run indexes the moved photos and
+re-reads every sidecar whose modification time changed, which covers everything
+the scripts wrote. It does not rebuild thumbnails.
 
 ## What gets written
 
@@ -191,19 +194,30 @@ never edit `dc:subject` alone.
 
 ## Snapshot before anything destructive
 
-Reindexing can regenerate sidecars and discard descriptions and tags (`dc:` and
-`lr:hierarchicalSubject`) silently while reporting success. Check the indexer's docs for which flags do that.
+`index_library` with `force_extract_exif=True` regenerates sidecars from the
+media files and can discard descriptions and tags (`dc:` and
+`lr:hierarchicalSubject`) silently while reporting success. A plain incremental
+run or `force_full_index=True` only reads sidecars; the one exception is a
+deleted sidecar, which is re-created without its metadata.
+
+Another tool can also drop them: darktable rewrites the sidecar at every sync,
+and if it never imported the description and tags, it writes the sidecar
+without them. The next incremental index follows the sidecar, so they vanish
+from search too. Restore from the snapshot if that happens.
 
 ```
 python scripts/snapshot_sidecars.py --lib <library> snapshot
 ```
 
 Thousands of sidecars compress to a couple of hundred kilobytes — no reason to
-skip it, including when you believe the flags are safe.
+skip it before any `force_extract_exif` run or before opening the folders in
+darktable, including when you believe the flags are safe.
 
 To recover: `diff` to see what was lost, then `restore`, which reinserts the
 description and tag blocks into the *current* sidecars rather than overwriting files. A regeneration
 usually improved them, so keep the new sidecar and put the metadata back.
+A plain incremental `index_library` afterwards makes the restored metadata
+searchable again.
 
 **Distinguish lost from never written.** Files with no sidecar at the time never
 received anything — no backup will restore it.

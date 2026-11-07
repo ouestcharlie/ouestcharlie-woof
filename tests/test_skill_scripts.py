@@ -7,9 +7,11 @@ import re
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 from ouestcharlie_toolkit.media import PHOTO_SUFFIXES, VIDEO_SUFFIXES
+from ouestcharlie_toolkit.xmp.parse import parse_xmp
 
 _SKILLS = Path(__file__).parent.parent / "plugins" / "woof-photo-workflows" / "skills"
 _SCRIPTS = sorted(_SKILLS.glob("*/scripts/tag_files.py"))
@@ -235,6 +237,157 @@ def test_sort_photos_leaves_hierarchical_subject_alone(
     note = sort_photos.enrich_sidecar(str(side), {"tags": ["Family"]}, dry=False)
     assert note == "already enriched, left alone"
     assert side.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# retag_files.py — replace one tag path
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def retag_files() -> ModuleType:
+    module = _load(
+        _SKILLS / "sort-enrich-photos-interactive-clusters" / "scripts" / "retag_files.py"
+    )
+    sys.modules.pop("tag_files", None)  # imported by retag_files from its own folder
+    return module
+
+
+def _sidecar(hierarchical: list[str] | None, subject: list[str]) -> str:
+    h = "" if hierarchical is None else _bag("lr:hierarchicalSubject", hierarchical)
+    return _HEAD + h + _bag("dc:subject", subject) + _TAIL
+
+
+def test_retag_removes_old_levels_from_dc_subject(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["Places|France|Paris", "Family"], ["Places", "France", "Paris", "Family"])
+    new, note = retag_files.retag(sidecar, "Places|France|Paris", "Places|France|Lyon")
+    assert note == "hierarchical tag replaced"
+    assert _items(new, "lr:hierarchicalSubject") == ["Family", "Places|France|Lyon"]
+    assert _items(new, "dc:subject") == ["Places", "France", "Family", "Lyon"]
+    # the indexer reads a dc:subject term outside every path as a flat tag
+    assert sorted(parse_xmp(new).tags) == ["Family", "Places|France|Lyon"]
+
+
+def test_retag_keeps_levels_still_used_by_other_paths(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["Sport|Ski|Touring", "Sport|Ski|Race"], ["Sport", "Ski", "Touring", "Race"])
+    new, _note = retag_files.retag(sidecar, "Sport|Ski|Race", "Sport|Race")
+    assert _items(new, "lr:hierarchicalSubject") == ["Sport|Ski|Touring", "Sport|Race"]
+    assert _items(new, "dc:subject") == ["Sport", "Ski", "Touring", "Race"]
+
+
+def test_retag_ignores_old_tag_that_is_only_a_level(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["Sport|Ski"], ["Sport", "Ski"])
+    assert retag_files.retag(sidecar, "Ski", "Skiing") == (None, "old tag not present")
+
+
+def test_retag_migrates_flat_dc_subject_tag(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["Sport|Ski"], ["Sport", "Ski", "Kayak"])
+    new, note = retag_files.retag(sidecar, "kayak", "Sport|Kayak")
+    assert note == "legacy dc:subject tag migrated"
+    assert _items(new, "lr:hierarchicalSubject") == ["Sport|Ski", "Sport|Kayak"]
+    assert _items(new, "dc:subject") == ["Sport", "Ski", "Kayak"]
+
+
+def test_retag_matches_stored_path_with_spaces(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["Sport | Ski"], ["Sport", "Ski"])
+    new, note = retag_files.retag(sidecar, "Sport|Ski", "Activities|Ski")
+    assert note == "hierarchical tag replaced"
+    assert _items(new, "lr:hierarchicalSubject") == ["Activities|Ski"]
+    assert _items(new, "dc:subject") == ["Ski", "Activities"]
+
+
+def test_retag_reuses_existing_spelling(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(
+        ["Sport|Ski|Touring", "BackcountrySki"], ["Sport", "Ski", "Touring", "BackcountrySki"]
+    )
+    new, _note = retag_files.retag(sidecar, "BackcountrySki", "sport|ski|backcountry")
+    assert _items(new, "lr:hierarchicalSubject") == [
+        "Sport|Ski|Touring",
+        "Sport|Ski|backcountry",
+    ]
+    assert _items(new, "dc:subject") == ["Sport", "Ski", "Touring", "backcountry"]
+
+
+def test_retag_dc_subject_only_sidecar_gets_hierarchical_subject(
+    retag_files: ModuleType,
+) -> None:
+    sidecar = _sidecar(None, ["BackcountrySki", "Family"])
+    new, note = retag_files.retag(sidecar, "BackcountrySki", "Sport|Ski")
+    assert note == "hierarchical tag added"
+    assert _items(new, "lr:hierarchicalSubject") == ["Sport|Ski", "Family"]
+    assert _items(new, "dc:subject") == ["Family", "Sport", "Ski"]
+
+
+def test_retag_is_idempotent(retag_files: ModuleType) -> None:
+    sidecar = _sidecar(["BackcountrySki"], ["BackcountrySki"])
+    new, _note = retag_files.retag(sidecar, "BackcountrySki", "Sport|Ski")
+    assert retag_files.retag(new, "BackcountrySki", "Sport|Ski") == (
+        None,
+        "old tag not present",
+    )
+
+
+def _library(tmp_path: Path) -> Path:
+    """Three photos tagged BackcountrySki, in 2024/Alps, 2024/Alps/Day2 and 2025."""
+    for folder in ("2024/Alps", "2024/Alps/Day2", "2025"):
+        directory = tmp_path / folder
+        directory.mkdir(parents=True)
+        (directory / "a.jpg").write_bytes(b"")
+        (directory / "a.jpg.xmp").write_text(
+            _sidecar(["BackcountrySki"], ["BackcountrySki"]), encoding="utf-8"
+        )
+    return tmp_path
+
+
+def _changed(found: Any, lib: Path) -> list[str]:
+    """Sidecars a scan would change, relative to the library."""
+    return sorted(Path(todo[0]).relative_to(lib).as_posix() for todo in found.todo)
+
+
+def test_retag_scan_is_limited_to_folders_and_their_subfolders(
+    retag_files: ModuleType, tmp_path: Path
+) -> None:
+    lib = _library(tmp_path)
+    found = retag_files.scan([str(lib / "2024" / "Alps")], "BackcountrySki", "Sport|Ski")
+    assert _changed(found, lib) == ["2024/Alps/Day2/a.jpg.xmp", "2024/Alps/a.jpg.xmp"]
+
+
+def test_retag_scan_overlapping_folders_counted_once(
+    retag_files: ModuleType, tmp_path: Path
+) -> None:
+    lib = _library(tmp_path)
+    found = retag_files.scan(
+        [str(lib / "2024"), str(lib / "2024" / "Alps" / "Day2"), str(lib / "2025")],
+        "BackcountrySki",
+        "Sport|Ski",
+    )
+    assert len(found.todo) == 3
+
+
+def test_retag_main_writes_only_inside_folder(
+    retag_files: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib = _library(tmp_path)
+    argv = ["retag_files.py", "--lib", str(lib), "--folder", "2025"]
+    argv += ["--old-tag", "BackcountrySki", "--new-tag", "Sport|Ski", "--go"]
+    monkeypatch.setattr(sys, "argv", argv)
+    retag_files.main()
+    retagged = (lib / "2025" / "a.jpg.xmp").read_text(encoding="utf-8")
+    assert _items(retagged, "lr:hierarchicalSubject") == ["Sport|Ski"]
+    untouched = (lib / "2024" / "Alps" / "a.jpg.xmp").read_text(encoding="utf-8")
+    assert _items(untouched, "lr:hierarchicalSubject") == ["BackcountrySki"]
+    assert len(list((lib / "_sorting").glob("xmp_backup_retagging_*.tar.gz"))) == 1
+
+
+def test_retag_main_rejects_missing_folder(
+    retag_files: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib = _library(tmp_path)
+    argv = ["retag_files.py", "--lib", str(lib), "--folder", "2026"]
+    argv += ["--old-tag", "BackcountrySki", "--new-tag", "Sport|Ski"]
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        retag_files.main()
 
 
 # ---------------------------------------------------------------------------
