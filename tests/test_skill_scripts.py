@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from ouestcharlie_toolkit import PHOTO_SUFFIXES, VIDEO_SUFFIXES
 
 _SKILLS = Path(__file__).parent.parent / "plugins" / "woof-photo-workflows" / "skills"
 _SCRIPTS = sorted(_SKILLS.glob("*/scripts/tag_files.py"))
-_SHARED_SCRIPTS = ("tag_files.py", "sort_photos.py", "snapshot_sidecars.py")
+_SHARED_SCRIPTS = (
+    "tag_files.py",
+    "sort_photos.py",
+    "verify_sort.py",
+    "snapshot_sidecars.py",
+    "media_ext.py",
+)
 
 _HEAD = (
     '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
@@ -36,10 +44,17 @@ def _items(text: str, element: str) -> list[str] | None:
 
 
 def _load(path: Path) -> ModuleType:
+    """Load a script as `python scripts/<name>.py` would: its folder is importable,
+    so `from media_ext import ...` resolves to the skill's own copy."""
     spec = importlib.util.spec_from_file_location(f"{path.stem}_{path.parts[-3]}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+        sys.modules.pop("media_ext", None)  # the other skill must load its own copy
     return module
 
 
@@ -243,3 +258,22 @@ def test_snapshot_covers_hierarchical_subject() -> None:
         "<dc:description",
     ]
     assert snapshot.canonical(text) == snapshot.canonical(_HEAD + _TAIL)
+
+
+@pytest.mark.parametrize(
+    "path", sorted(_SKILLS.glob("*/scripts/media_ext.py")), ids=lambda p: p.parts[-3]
+)
+def test_media_extensions_match_toolkit(path: Path) -> None:
+    """The scripts run standalone, so each skill keeps its own copy of the media list."""
+    module = _load(path)
+    assert len(module.MEDIA_EXT) == len(set(module.MEDIA_EXT))
+    assert set(module.MEDIA_EXT) == PHOTO_SUFFIXES | VIDEO_SUFFIXES
+
+
+@pytest.mark.parametrize(
+    "path",
+    [p for p in sorted(_SKILLS.glob("*/scripts/*.py")) if "from media_ext import" in p.read_text()],
+    ids=lambda p: f"{p.parts[-3]}/{p.name}",
+)
+def test_scripts_use_the_skill_media_list(path: Path) -> None:
+    assert set(_load(path).MEDIA_EXT) == PHOTO_SUFFIXES | VIDEO_SUFFIXES
