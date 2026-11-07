@@ -48,7 +48,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Compatible with Claude Desktop, Goose, VS Code| Any desktop application with MCP App support|
 | Available on Macos, Windows, Linux| Python packages are built and released in Pypi|
 | Local filesystem indexing | Files must be locally synced |
-| Photos (JPEG, PNG, TIFF, HEIC, RAW) | HEIC and RAW depend on the build options |
+| Photos (JPEG, PNG, TIFF, WebP, GIF, BMP, JPEG XL, HEIC, AVIF, RAW) | See [supported formats](#supported-photo-formats) |
 | Video support (MOV, MP4) ||
 | Gallery view as grid or preview | Photo details on preview |
 | Image thumbnails and previews | Optimized for display |
@@ -69,6 +69,17 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Enrichment agents (faces, scene recognition) |
 | Mobile companion app |
 | Native cloud libraries (S3, OneDrive, GCS…) |
+
+### Supported photo formats
+
+| Group | Extensions |
+|---|---|
+| Standard | `.jpg` `.jpeg` `.png` `.tif` `.tiff` `.webp` `.gif` `.bmp` `.jxl` |
+| HEIF | `.heic` `.heif` `.hif` `.avif` |
+| RAW | `.cr2` `.cr3` `.crw` `.nef` `.nrw` `.arw` `.srf` `.sr2` `.dng` `.raf` `.orf` `.rw2` `.rwl` `.pef` `.srw` `.erf` `.3fr` `.fff` `.iiq` `.mos` |
+| Video | `.mov` `.mp4` |
+
+Animated GIF and WebP files and multi-page TIFF files show their first frame. RAW support also depends on the camera model: a few models are not recognized yet. To ask for a format or a camera, [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 
 If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 

@@ -43,6 +43,8 @@ import tarfile
 import unicodedata
 from typing import Any
 
+from media_ext import MEDIA_EXT
+
 # ============================================================================
 # CONFIG
 # ============================================================================
@@ -115,23 +117,6 @@ FILE_OVERRIDES: dict[str, dict[str, Any]] = {
 # time as the original, so they belong wherever the original goes —
 # rejecting them silently separates a crop from the shot it came from.
 NAME_RE = re.compile(r"^(\d{8})_(\d{6})[^.]*\.(jpg|jpeg|heic|mp4|mov)$", re.I)
-MEDIA_EXT = (
-    ".jpg",
-    ".jpeg",
-    ".heic",
-    ".heif",
-    ".png",
-    ".dng",
-    ".cr2",
-    ".cr3",
-    ".nef",
-    ".arw",
-    ".raf",
-    ".orf",
-    ".rw2",
-    ".mp4",
-    ".mov",
-)
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
 LR_NS = 'xmlns:lr="http://ns.adobe.com/lightroom/1.0/"'
 EXIF_NS = "http://ns.adobe.com/exif/1.0/"

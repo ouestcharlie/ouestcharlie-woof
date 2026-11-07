@@ -23,28 +23,11 @@ from __future__ import annotations
 import argparse
 import glob
 import os
-import re
 import sys
 import time
 import xml.dom.minidom
 
-MEDIA_EXT = (
-    ".jpg",
-    ".jpeg",
-    ".heic",
-    ".heif",
-    ".png",
-    ".dng",
-    ".cr2",
-    ".cr3",
-    ".nef",
-    ".arw",
-    ".raf",
-    ".orf",
-    ".rw2",
-    ".mp4",
-    ".mov",
-)
+from media_ext import MEDIA_EXT
 
 
 def recent(path: str, window_s: int) -> bool:
@@ -106,7 +89,7 @@ def main() -> None:
         # 5: legacy-named sidecars. Not a fault — photo.xmp is the older
         # convention and is still read — but worth surfacing, since a folder
         # holding both means anything globbing for one form sees half the files.
-        dbl = sum(1 for f in cars if re.search(r"\.(jpg|jpeg|heic|mp4|mov)\.xmp$", f, re.I))
+        dbl = sum(1 for f in cars if f.lower()[: -len(".xmp")].endswith(MEDIA_EXT))
         sgl = len(cars) - dbl
         if sgl:
             dbl_note = f", alongside {dbl} current (photo.ext.xmp)" if dbl else ""

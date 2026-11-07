@@ -20,6 +20,8 @@ is the `sort-enrich-photos-interactive-clusters` skill.
 No settings file. Tunable knobs and per-run decisions live in
 `scripts/sort_photos.py` — read it before filling it in; the comments explain
 each field.
+If the skill folder is read-only, copy the whole `scripts/` folder and work
+there: the scripts share `media_ext.py` (the media extensions) and fail without it.
 
 Everything else comes from looking at the library:
 

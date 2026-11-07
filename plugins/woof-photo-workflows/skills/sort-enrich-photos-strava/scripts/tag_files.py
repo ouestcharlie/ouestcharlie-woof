@@ -60,23 +60,8 @@ import tarfile
 import unicodedata
 import xml.dom.minidom
 
-MEDIA_EXT = (
-    ".jpg",
-    ".jpeg",
-    ".heic",
-    ".heif",
-    ".png",
-    ".dng",
-    ".cr2",
-    ".cr3",
-    ".nef",
-    ".arw",
-    ".raf",
-    ".orf",
-    ".rw2",
-    ".mp4",
-    ".mov",
-)
+from media_ext import MEDIA_EXT
+
 DC_NS = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
 LR_NS = 'xmlns:lr="http://ns.adobe.com/lightroom/1.0/"'
 LI_RE = re.compile(r"<rdf:li(?:\s[^>]*)?>(.*?)</rdf:li>", re.S)
