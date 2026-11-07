@@ -30,7 +30,7 @@ Everything else comes from looking at the library:
   literal relative path of any depth, so any layout works. Sample a few places;
   conventions drift over years.
 - **Read the tag facets** before inventing a tag. This is how you avoid
-  `Climbing` next to an established `RockClimbing`.
+  `Climbing` next to an established `Sport|Climbing|Rock`.
 
 **Tags can be hierarchical**: levels separated by `|`, e.g. `Places|Canada|Ontario`
 or `Activities|Hiking` — the darktable and Lightroom convention. A search for
@@ -49,7 +49,7 @@ undo: a thousand files under a disliked scheme is a thousand files to move again
 **Near-duplicate tags** accumulate: `Oliv` beside `Olivier`, an accented and
 unaccented spelling. The tell is a pair differing by accent or prefix with
 lopsided counts (case differences are already merged in search and facets) — the rare one is usually the mistake. Ask which is canonical,
-then *retag the smaller set* rather than remembering an alias. A correction in a
+then *retag the smaller set* (see Renaming a tag) rather than remembering an alias. A correction in a
 config file must be re-read forever; one applied to the photos is simply true.
 
 The library can't go stale. A settings file records what someone believed the
@@ -166,10 +166,11 @@ the scripts wrote. It does not rebuild thumbnails.
   <rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>
 </dc:description>
 <lr:hierarchicalSubject xmlns:lr="http://ns.adobe.com/lightroom/1.0/">
-  <rdf:Bag><rdf:li>RockClimbing</rdf:li><rdf:li>Hike</rdf:li></rdf:Bag>
+  <rdf:Bag><rdf:li>Sport|Climbing|Rock</rdf:li><rdf:li>Sport|Hike</rdf:li></rdf:Bag>
 </lr:hierarchicalSubject>
 <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <rdf:Bag><rdf:li>RockClimbing</rdf:li><rdf:li>Hike</rdf:li></rdf:Bag>
+  <rdf:Bag><rdf:li>Sport</rdf:li><rdf:li>Climbing</rdf:li><rdf:li>Rock</rdf:li>
+    <rdf:li>Hike</rdf:li></rdf:Bag>
 </dc:subject>
 ```
 
@@ -181,9 +182,30 @@ never edit `dc:subject` alone.
 - **Description**: activity title, its own description if any, then stats —
   `Trail run below Eagle Ridge (15.5 km, 482 m D+, 1h45)`. Match the library's
   existing format.
-- **Tags**: sport types in PascalCase plus first names. `"sports"` is always a
-  list. If the library files sports under a root (facet keys such as
-  `Activities|Hike`), use that path instead of the bare name. **A day often deserves more than one** — trackers record what they can
+- **Tags**: sport paths plus first names. `"sports"` is always a list.
+- **Sports are paths, split from the Strava type.** Strava's types are compound
+  names; split them into levels under the library's sport root, general to
+  specific, so a search for `Ski` finds every kind of ski day:
+
+  | Strava type | Tag |
+  |---|---|
+  | `BackcountrySki` | `Sport|Ski|Backcountry` |
+  | `NordicSki` | `Sport|Ski|Nordic` |
+  | `TrailRun` | `Sport|Run|Trail` |
+  | `GravelRide` | `Sport|Ride|Gravel` |
+  | `RockClimbing` | `Sport|Climbing|Rock` |
+  | `Hike`, `Run` | `Sport|Hike`, `Sport|Run` |
+
+  **The library's facets decide the root and the spelling.** If they show
+  `Activities|Ski|…` or lowercase levels, use that, not this table: matching
+  ignores case, but the scripts only reuse the spelling already in the same
+  sidecar, so a fresh sidecar gets exactly what you write. With no sport
+  hierarchy yet, propose `Sport|…` with capitalised levels, confirm it once,
+  and keep to it.
+- **Flat sport tags already in the library** (`BackcountrySki`, `TrailRun`)
+  would start a second tree next to the new paths. Offer to retag them first
+  (see Renaming a tag), one Strava type at a time.
+- **A day often deserves more than one** — trackers record what they can
   measure, so a climbing day is logged as a Hike. Tag both and either search
   finds it.
 - **Nicknames** map to the library's spelling; check the tag counts first.
@@ -191,6 +213,34 @@ never edit `dc:subject` alone.
 - The exif prefix varies (`ext0`, `ext1`, `exif`) — detect it from the namespace
   URI, not the prefix.
 - **Never overwrite an existing description.** Skip and report.
+
+## Renaming a tag
+
+Use `scripts/retag_files.py` to move flat sport tags into the hierarchy, merge
+a near-duplicate into the canonical tag, or fix a spelling. No moves; each
+sidecar is edited in place.
+
+```
+python scripts/retag_files.py --lib <library> \
+    --old-tag BackcountrySki --new-tag 'Sport|Ski|Backcountry' \
+    [--folder 2024 --folder 2025/2025-02_Alps]
+```
+
+- **Dry run first**, then add `--go`. The live run backs up every sidecar it
+  changes into `_sorting/xmp_backup_retagging_<stamp>.tar.gz`.
+- **Scope**: without `--folder`, the whole library. Each `--folder` is relative
+  to the library and includes its subfolders. Show the dry-run count and
+  confirm before `--go`.
+- **One exact path per run.** `--old-tag Sport|Ski` doesn't touch
+  `Sport|Ski|Nordic`. Matching ignores case and spaces around `|`.
+- The old path's levels leave `dc:subject` unless another path still uses them,
+  the new path takes the spelling the sidecar already has, and a sidecar with
+  only `dc:subject` gets `lr:hierarchicalSubject` too.
+- A second run reports zero to change.
+
+Then run `index_library` incrementally, with no force flag. Scoping isn't
+recursive, so list every changed folder, or omit `partition_scope`: unchanged
+sidecars are skipped at the cost of a directory listing.
 
 ## Snapshot before anything destructive
 

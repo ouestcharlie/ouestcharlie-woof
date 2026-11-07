@@ -169,7 +169,7 @@ sidecar is edited in place.
 
 ```
 python scripts/retag_files.py --lib <library> \
-    --old-tag BackcountrySki --new-tag 'Activities|Ski|Backcountry' \
+    --old-tag BackcountrySki --new-tag 'Sport|Ski|Backcountry' \
     [--folder 2024 --folder 2025/2025-02_Alps]
 ```
 

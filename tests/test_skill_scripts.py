@@ -17,6 +17,7 @@ _SKILLS = Path(__file__).parent.parent / "plugins" / "woof-photo-workflows" / "s
 _SCRIPTS = sorted(_SKILLS.glob("*/scripts/tag_files.py"))
 _SHARED_SCRIPTS = (
     "tag_files.py",
+    "retag_files.py",
     "sort_photos.py",
     "verify_sort.py",
     "snapshot_sidecars.py",
@@ -244,11 +245,9 @@ def test_sort_photos_leaves_hierarchical_subject_alone(
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def retag_files() -> ModuleType:
-    module = _load(
-        _SKILLS / "sort-enrich-photos-interactive-clusters" / "scripts" / "retag_files.py"
-    )
+@pytest.fixture(params=sorted(_SKILLS.glob("*/scripts/retag_files.py")), ids=lambda p: p.parts[-3])
+def retag_files(request: pytest.FixtureRequest) -> ModuleType:
+    module = _load(request.param)
     sys.modules.pop("tag_files", None)  # imported by retag_files from its own folder
     return module
 

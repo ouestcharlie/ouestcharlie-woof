@@ -2,11 +2,11 @@
 """Replace one hierarchical tag path in media sidecars, preserving other tags.
 
     python retag_files.py --lib ~/Photos \
-        --old-tag BackcountrySki --new-tag 'sport|ski|backcountry'
+        --old-tag BackcountrySki --new-tag 'Sport|Ski|Backcountry'
 
     # only some folders (relative to --lib, subfolders included; repeatable)
     python retag_files.py --lib ~/Photos --folder 2024 --folder 2025/2025-02_Alps \
-        --old-tag BackcountrySki --new-tag 'sport|ski|backcountry'
+        --old-tag BackcountrySki --new-tag 'Sport|Ski|Backcountry'
 
 Without --folder, the whole library is scanned.
 
