@@ -41,6 +41,7 @@ woof-bridge = "woof.bridge:main"
 [tool.uv.sources]
 ouestcharlie-whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
 ouestcharlie-wally = { path = "../ouestcharlie-wally", editable = true }
+ouestcharlie-py-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/woof"]
@@ -79,6 +80,7 @@ strict = true
 dev = [
     "mcp[cli]>=2.0,<3.0.0",
     "mypy>=2.3",
+    "ouestcharlie-py-toolkit>=0.17.0",  # tests import PHOTO_SUFFIXES/VIDEO_SUFFIXES
     "pre-commit>=4.5.1",
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
