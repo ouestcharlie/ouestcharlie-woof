@@ -18,7 +18,7 @@ _log = logging.getLogger(__name__)
 _DEFAULT_CONFIG_DIR = Path(user_config_dir("ouestcharlie"))
 
 # Tag paths kept out of the index by default: darktable's automatic tags
-# (darktable|format|jpg, …). Same default as ouestcharlie_toolkit.tags.
+# (darktable|format|jpg, …). Same default as ouestcharlie_toolkit.model.tags.
 DEFAULT_EXCLUDED_TAG_PREFIXES: tuple[str, ...] = ("darktable",)
 
 
@@ -26,7 +26,7 @@ def normalize_tag_prefixes(prefixes: Iterable[str]) -> list[str]:
     """Normalize tag path prefixes the way tags are normalized.
 
     Trims each ``|``-separated level, drops empty levels and entries, and
-    dedupes in first-seen order. Mirrors ``ouestcharlie_toolkit.tags.normalize_path``:
+    dedupes in first-seen order. Mirrors ``ouestcharlie_toolkit.model.tags.normalize_path``:
     Woof does not depend on the toolkit.
     """
     out: list[str] = []

@@ -939,7 +939,7 @@ wheels = [
 
 [[package]]
 name = "ouestcharlie-py-toolkit"
-version = "0.16.0"
+version = "0.17.0"
 source = { editable = "../ouestcharlie-py-toolkit" }
 dependencies = [
     { name = "av" },
@@ -974,7 +974,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "mypy", specifier = ">=1.0" },
+    { name = "mypy", specifier = ">=2.3" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
@@ -1060,6 +1060,7 @@ dependencies = [
 dev = [
     { name = "mcp", extra = ["cli"] },
     { name = "mypy" },
+    { name = "ouestcharlie-py-toolkit" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1083,6 +1084,7 @@ requires-dist = [
 dev = [
     { name = "mcp", extras = ["cli"], specifier = ">=2.0,<3.0.0" },
     { name = "mypy", specifier = ">=2.3" },
+    { name = "ouestcharlie-py-toolkit", editable = "../ouestcharlie-py-toolkit" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },

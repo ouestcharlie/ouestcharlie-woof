@@ -9,7 +9,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from ouestcharlie_toolkit import PHOTO_SUFFIXES, VIDEO_SUFFIXES
+from ouestcharlie_toolkit.media import PHOTO_SUFFIXES, VIDEO_SUFFIXES
 
 _SKILLS = Path(__file__).parent.parent / "plugins" / "woof-photo-workflows" / "skills"
 _SCRIPTS = sorted(_SKILLS.glob("*/scripts/tag_files.py"))
