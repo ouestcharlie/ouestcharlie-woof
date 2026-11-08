@@ -10,7 +10,7 @@
 
 mcp-name: io.github.ouestcharlie/ouestcharlie-woof
 
-Woof is the photo and video gallery companion to your **your AI assistant** (Claude Desktop, Goose, VS Code / GitHub Copilot...). It complements those powerful tools with a searchable **gallery**. Your photos and videos remain exactly where they are — on your own drives (local or mounted).
+Woof is the photo and video gallery companion to your **your AI harness** (aka. AI assistant like Claude Desktop, Goose, VS Code / GitHub Copilot...). It complements those powerful tools with a searchable **gallery**. Your photos and videos remain exactly where they are — on your own drives (local or mounted).
 
 No cloud subscription. No proprietary lock-in. Your library, your way.
 
@@ -41,14 +41,18 @@ Most photo managers lock your library into a cloud service (Google Photos, iClou
 
 Woof is an **early preview**. It works well today for browsing and searching a local photo library.
 
+<p align="center"><img src="assets/screenshot_vscode_2026-08-25.jpg" alt="Woof in VSCode" height="500"></p>
+<p align="center"><i>Ouestcharlie Woof photo gallery inside VSCode, an alternative to Claude CoWork for techies</i></p>
+
+
 ### Current features
 
 | Feature | Notes |
 |---|---|
 | Compatible with Claude Desktop, Goose, VS Code| Any desktop application with MCP App support|
-| Available on Macos, Windows, Linux| Python packages are built and released in Pypi|
+| Available on Macos, Windows, Linux| Python packages are built and released in Pypi |
 | Local filesystem indexing | Files must be locally synced |
-| Photos (JPEG, PNG, TIFF, WebP, GIF, BMP, JPEG XL, HEIC, AVIF, RAW) | See [supported formats](#supported-photo-formats) |
+| Photos (JPEG, PNG, TIFF, WebP, GIF, BMP, JPEG XL, HEIC, AVIF, RAW) | See [supported formats](#supported-photo-formats) here below |
 | Video support (MOV, MP4) ||
 | Gallery view as grid or preview | Photo details on preview |
 | Image thumbnails and previews | Optimized for display |
@@ -60,17 +64,7 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 | Sort ascending or descending on any field |  |
 | Change detection / automatic re-indexing | Partial — added and removed pictures, and sidecars edited by other tools (darktable, digiKam…); indexing is not yet triggered automatically |
 
-### Planned features
-
-| Feature |
-|---|
-| Albums and smart filters |
-| Share pictures with host (Claude Desktop, ChatGPT, Goose…) |
-| Enrichment agents (faces, scene recognition) |
-| Mobile companion app |
-| Native cloud libraries (S3, OneDrive, GCS…) |
-
-### Supported photo formats
+#### Supported photo formats
 
 | Group | Extensions |
 |---|---|
@@ -81,10 +75,15 @@ Woof is an **early preview**. It works well today for browsing and searching a l
 
 Animated GIF and WebP files and multi-page TIFF files show their first frame. RAW support also depends on the camera model: a few models are not recognized yet. To ask for a format or a camera, [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
 
-If you hit a bug or unexpected behavior, please [open an issue](https://github.com/ouestcharlie/ouestcharlie-woof/issues).
+### Planned features
 
-<p align="center"><img src="assets/screenshot_vscode_2026-08-25.jpg" alt="Woof in VSCode" height="500"></p>
-<p align="center"><i>Ouestcharlie Woof photo gallery inside VSCode, an alternative to Claude CoWork for techies</i></p>
+| Feature |
+|---|
+| Albums and smart filters |
+| Share pictures with host (Claude Desktop, ChatGPT, Goose…) |
+| Enrichment agents (faces, scene recognition) |
+| Mobile companion app |
+| Native cloud libraries (S3, OneDrive, GCS…) |
 
 ---
 
@@ -112,7 +111,7 @@ For privacy questions, please [open an issue](https://github.com/ouestcharlie/ou
 
 For developer and architecture documentation, see [README_DEV.md](README_DEV.md).
 
-### Contributing
+### Contributing
 
 See the [Contributing section in OuEstCharlie](https://github.com/ouestcharlie/ouestcharlie#contributing)
 
