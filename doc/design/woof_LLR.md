@@ -1,6 +1,6 @@
 # Woof Low-Level Requirements
 
-This document captures the requirements for Woof, the user-facing controller component of OuEstCharlie. For Woof's role in the overall architecture, see [HLD.md § Woof](../HLD.md#woof-user-facing-application-and-controller).
+This document captures the requirements for Woof, the user-facing controller component of OuEstCharlie. For Woof's role in the overall architecture, see [HLD.md § Woof](https://github.com/ouestcharlie/ouestcharlie/blob/master/design/HLD.md#woof-mcp-server-and-agent-mediator).
 
 ## Agent Lifecycle Management
 
@@ -58,7 +58,7 @@ This document captures the requirements for Woof, the user-facing controller com
 
 ## Change Detection Orchestration
 
-- Woof shall manage the change detection pipeline (triggers + sweep) as described in [HLD.md § Change detection](../HLD.md#change-detection)
+- Woof shall manage the change detection pipeline (triggers + sweep) as described in [HLD.md § Change detection](https://github.com/ouestcharlie/ouestcharlie/blob/master/design/HLD.md#change-detection-partial-implementation)
 - Woof shall maintain a dirty partition queue with debounce logic (default: 10 minutes quiet period)
 - Woof shall schedule housekeeping agents for dirty partitions after the debounce window expires
 

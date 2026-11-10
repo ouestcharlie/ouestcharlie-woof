@@ -157,7 +157,7 @@ connection lazily starts a fresh one with your changes.
 | [ouestcharlie-whitebeard](https://github.com/ouestcharlie/ouestcharlie-whitebeard) | Indexing agent |
 | [ouestcharlie-wally](https://github.com/ouestcharlie/ouestcharlie-wally) | Search/consumption agent |
 
-See [ouestcharlie/HLD.md](https://github.com/ouestcharlie/ouestcharlie/blob/master/HLD.md) for the overall system architecture.
+See [ouestcharlie/HLD.md](https://github.com/ouestcharlie/ouestcharlie/blob/master/design/HLD.md) for the overall system architecture.
 
 ## License
 
