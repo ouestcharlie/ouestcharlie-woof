@@ -98,7 +98,8 @@ rather than outings.
 
 For everything an activity log can't explain. Groups unsorted photos by day,
 shows you the biggest group first, and files each one under the name you give
-it. Also handles tagging folders that are already filed.
+it. Also handles tagging folders that are already filed, and renaming a tag
+across the library.
 
 Both carry the same safety net — snapshotting sidecars before anything
 destructive, and restoring metadata a reindex discarded.

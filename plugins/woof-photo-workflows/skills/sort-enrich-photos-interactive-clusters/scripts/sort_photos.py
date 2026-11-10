@@ -64,7 +64,9 @@ SIDECAR_STYLE = "double"
 
 # Time-window matches. start/end are local ISO timestamps; end = start + elapsed.
 #   folder  path relative to the library root
-#   sports  list of sport tags, always a list even for one. A day often
+#   sports  list of sport tags, always a list even for one. Paths in the
+#           library's sport hierarchy when it has one ("Sport|Run|Trail"
+#           for a TrailRun), spelled as its facets spell them. A day often
 #           deserves more than one: what the tracker recorded, and what you
 #           were actually doing. A climbing day logged as a Hike wants both,
 #           and searching either finds it.
@@ -73,7 +75,7 @@ OUTINGS: list[dict[str, Any]] = [
     # {
     #     "start":  "2026-07-15T07:46:41",
     #     "end":    "2026-07-15T09:37:05",
-    #     "sports": ["TrailRun"],
+    #     "sports": ["Sport|Run|Trail"],
     #     "folder": "2026/2026-07-15_EagleRidge",
     #     "people": [],
     #     "desc":   "Trail run below Eagle Ridge (15.5 km, 482 m D+, 1h45)",
@@ -82,7 +84,7 @@ OUTINGS: list[dict[str, Any]] = [
     #     # recorded as a Hike, but the day was climbing — tag both
     #     "start":  "2026-08-15T08:10:35",
     #     "end":    "2026-08-15T16:14:36",
-    #     "sports": ["RockClimbing", "Hike"],
+    #     "sports": ["Sport|Climbing|Rock", "Sport|Hike"],
     #     "folder": "2026/2026-08-15_NorthCrag_Alice",
     #     "people": ["Alice"],
     #     "desc":   "Climbing at North Crag with Alice",
@@ -104,7 +106,7 @@ MANUAL_GROUPS: list[dict[str, Any]] = [
 FILE_OVERRIDES: dict[str, dict[str, Any]] = {
     # "IMG-20250727-WA0008.jpg": {
     #     "folder":     "2025/2025-07-27_RidgeTrail_John",
-    #     "tags":       ["TrailRun", "John"],
+    #     "tags":       ["Sport|Run|Trail", "John"],
     #     "desc":       "Fox Hill trail with John (15.0 km, 1031 m D+, 2h17)",
     #     "date_taken": "2025-07-27T08:54:11+02:00",
     # },
