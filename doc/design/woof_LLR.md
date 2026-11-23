@@ -4,7 +4,7 @@ This document captures the requirements for Woof, the user-facing controller com
 
 ## Agent Lifecycle Management
 
-- Woof shall act as an MCP client, communicating with agents via the Model Context Protocol (see [controller_api.json](../controller_api.json) for tool definitions)
+- Woof shall act as an MCP client, communicating with agents via the Model Context Protocol
 - Woof shall support two MCP transports: stdio for child process agents (default), Streamable HTTP for networked agents
 - Woof shall track each agent run through a state machine: `pending → running → completed | failed | timeout`
 - Woof shall detect stuck agents via progress token timeout (default: 5 minutes without `notifications/progress`) and transition them to `timeout` state

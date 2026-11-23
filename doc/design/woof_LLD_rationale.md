@@ -57,6 +57,33 @@ If the constraints above prove unacceptable, Woof reverts to a standalone deskto
 
 ---
 
+### Decision: One daemon behind a stdio bridge
+
+**Context**: A local MCP server is normally started by the host as a stdio subprocess, one per connection. Woof first worked that way. Then Claude CoWork turned out to open more than one connection in a single session (for example one for the gallery iframe and one for tool calls). Each connection started its own Woof, with its own HTTP port. The gallery iframe's CSP named the port of the instance that was running when the iframe opened, so when a tool result came from another instance, the iframe's requests were blocked. No CSP setting can fix this: it needs one Woof process for the whole device.
+
+**Chosen approach**: one persistent Woof daemon serving MCP over Streamable HTTP on loopback, and a thin stdio `woof-bridge` that the host starts for each connection. The bridge finds the running daemon through a discovery file, or starts it, and relays MCP messages to it. See [woof_LLD.md §2](woof_LLD.md#2-process-lifecycle--bootstrap-woof-bridge--daemon) for the mechanics.
+
+**Why**:
+
+1. **One port and one set of sessions for every connection**: gallery sessions, indexing runs and Wally sidecars live in memory in the daemon. A gallery opened from one connection can be served whatever connection made the tool call.
+2. **One Wally per library, one indexer at a time**: separate Woof processes would each start their own Wally sidecars on the same library and could index it concurrently.
+3. **Work outlives a connection**: an indexing run keeps going when the host closes the connection that started it.
+4. **Hosts still get stdio**: hosts can start a local server only as a stdio command. The bridge keeps that interface, so the host configuration does not change.
+
+**Consequences accepted**:
+
+- The daemon must protect itself as a local network service: loopback only, a bearer token in a 0600 discovery file, Host header check against DNS rebinding (see [woof_LLD.md §2.3](woof_LLD.md#23-transport--authentication)).
+- Two processes can race to start the daemon, which needs a startup lock.
+- No bridge knows whether it is the last one, so the daemon shuts itself down after an idle period instead of being stopped by the bridges.
+
+**Alternatives not chosen**:
+
+- **One stdio server per connection** (the original design): breaks the gallery in hosts that open several connections, as described above.
+- **`mcp-remote` as the bridge**: an existing stdio↔HTTP bridge, but it needs Node.js on every user's device. Woof's bridge is a few hundred lines of Python on the MCP SDK it already uses.
+- **An OS service started at login** (launchd, systemd, Windows service): needs an install step for each OS and runs even when no host is open. The bridge starts the daemon when it is first needed instead.
+
+---
+
 ## Technology Stack
 
 ### Decision: Python for the Woof daemon
@@ -67,13 +94,13 @@ If the constraints above prove unacceptable, Woof reverts to a standalone deskto
 
 **Rationale**:
 
-1. **Shared codebase with agents**: Whitebeard and Wally are Python + FastMCP. Using Python for Woof allows sharing data models, storage backends, and utilities from `ouestcharlie-py-toolkit` without duplication.
+1. **Same language and MCP SDK as the agents**: Whitebeard and Wally are Python + FastMCP. Woof uses the same SDK on both sides of the protocol, and runs the agents with its own interpreter (they are installed as Woof's dependencies), so there is one Python environment to install.
 
 2. **MCP SDK parity**: The MCP Python SDK supports both server and client roles in the same process. No language boundary between Woof's Claude-facing and agent-facing roles.
 
 3. **Limited stack width**: A single language across the entire backend (Woof + agents) minimises the number of runtimes, dependency managers, and build systems to maintain. The only exception is the Rust CLI for AVIF grid assembly, which remains justified by performance requirements and has no runtime coupling with Woof.
 
-4. **Sufficient performance for the controller role**: Woof is a controller process — it coordinates I/O-bound operations (manifest reads, HTTP requests, child process management). Python's async I/O (`asyncio`, `aiohttp`) handles this comfortably. There is no CPU-intensive work in Woof itself.
+4. **Sufficient performance for the controller role**: Woof is a controller process — it coordinates I/O-bound operations (manifest reads, HTTP requests, child process management). Python's async I/O (`asyncio`, `httpx2`) handles this comfortably. There is no CPU-intensive work in Woof itself.
 
 **Alternatives not chosen**:
 - **TypeScript/Node.js**: MCP TypeScript SDK is mature but introduces a second language and runtime. The sharing benefit with agents (Python) would be lost.

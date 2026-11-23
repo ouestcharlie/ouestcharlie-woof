@@ -8,3 +8,7 @@ updates:
       - dependency-name: "ouestcharlie-py-toolkit"
       - dependency-name: "ouestcharlie-whitebeard"
       - dependency-name: "ouestcharlie-wally"
+      # Ruff patch releases come with the regular lock refresh; a minor release (0.18)
+      # still gets a PR, as it can reformat the code.
+      - dependency-name: "ruff"
+        update-types: ["version-update:semver-patch"]
