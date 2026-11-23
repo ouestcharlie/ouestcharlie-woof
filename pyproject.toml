@@ -39,9 +39,9 @@ woof = "woof.__main__:main"
 woof-bridge = "woof.bridge:main"
 
 [tool.uv.sources]
-ouestcharlie-whitebeard = { path = "../ouestcharlie-whitebeard", editable = true }
-ouestcharlie-wally = { path = "../ouestcharlie-wally", editable = true }
-ouestcharlie-py-toolkit = { path = "../ouestcharlie-py-toolkit", editable = true }
+ouestcharlie-whitebeard = { path = "../ouestcharlie/packages/whitebeard", editable = true }
+ouestcharlie-wally = { path = "../ouestcharlie/packages/wally", editable = true }
+ouestcharlie-py-toolkit = { path = "../ouestcharlie/packages/py-toolkit", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/woof"]
@@ -84,5 +84,5 @@ dev = [
     "pre-commit>=4.5.1",
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
-    "ruff==0.17.3",
+    "ruff~=0.17.0",  # patch releases allowed; a minor bump (0.18) is deliberate
 ]

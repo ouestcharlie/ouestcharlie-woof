@@ -10,9 +10,18 @@ Rules for AI coding agents working in this repo. Claude Code reads them through 
 Woof is the OuEstCharlie controller: an MCP server for the AI assistant, an MCP client that
 launches and calls the agents (Whitebeard, Wally), and the gallery UI served as an MCP App.
 
+Woof runs as two programs (see [woof_LLD.md §2](doc/design/woof_LLD.md#2-process-lifecycle--bootstrap-woof-bridge--daemon)):
+
+- `woof-bridge` (`src/woof/bridge.py`): the command the MCP host starts, one per connection.
+  It speaks stdio to the host and relays to the daemon over HTTP, starting the daemon if
+  it is not running.
+- `woof` (`python -m woof`): the single daemon that does the work. It serves MCP over
+  Streamable HTTP, the gallery and media on one loopback port, and runs in the background
+  with no terminal.
+
 | Part | Folder | Language |
 |---|---|---|
-| Woof server | `src/woof/` | Python |
+| Woof bridge and daemon | `src/woof/` | Python |
 | Gallery (MCP App) | `gallery/` | Svelte / JavaScript |
 | Claude plugin and skills | `.claude-plugin/`, `plugins/` | — |
 
@@ -39,14 +48,17 @@ Before making changes, check the design documents in [doc/design/](doc/design/):
   ```bash
   .venv/bin/pytest tests/ -v
   ```
-- **Lint**: ruff is a dev dependency, pinned in `pyproject.toml` (locked in `uv.lock`) — the
-  same version the pre-commit hook runs. Use the venv's copy, never `uvx ruff` /
-  `uv tool run ruff` or a global `ruff` (unpinned version, results may differ from the hook):
+- **Lint**: ruff is a dev dependency, `ruff~=0.17.0` in `pyproject.toml` (the same range as
+  the `ouestcharlie` repo). The exact version is locked in `uv.lock`, and it is the one the
+  pre-commit hook runs. Use the venv's copy, never `uvx ruff` / `uv tool run ruff` or a
+  global `ruff` (another version, results may differ from the hook):
   ```bash
   .venv/bin/ruff check .
   .venv/bin/ruff format --check .
   ```
-  To upgrade it, change the pin with `uv add --dev ruff==<version>`.
+  Patch releases come in with a lock refresh (`uv lock --upgrade-package ruff`). Moving to
+  a new minor version (0.18) is a deliberate change: update the range and reformat in the
+  same PR, here and in the `ouestcharlie` repo.
 
 ### Exception handling (Python)
 
@@ -61,7 +73,8 @@ Exceptions that are re-raised still need a log before the `raise`.
 
 **Do not wrap startup/subprocess exceptions as `AgentError`** — tools like `get_summary` catch `AgentError` and swallow it as a null result. Non-`AgentError` exceptions propagate to FastMCP and surface visibly in MCP inspector. Only raise `AgentError` for tool-level failures (bad result, protocol errors), not for sidecar startup failures.
 
-Woof runs as a stdio MCP server — unlogged exceptions are invisible.
+The daemon runs in the background with no terminal, and the host only sees the bridge:
+an exception that is not logged is invisible. Its log is the only record.
 
 ### JavaScript / Svelte (gallery)
 

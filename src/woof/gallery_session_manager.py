@@ -182,30 +182,33 @@ class GallerySessionManager:
         self,
         session_ids: list[str],
     ) -> tuple[str, SessionHandler]:
-        """Merge sessions from *session_ids* into a new session and return it.
+        """Merge the sessions of *session_ids* into one session to display.
 
-        Single-session merge:
-            Inherits ``queryContext`` and ``totalCount`` from the source so
-            Wally server-page navigation continues to work in the gallery.
+        One session:
+            Returned as is, under its own id; no new session is stored. Wally
+            server-page navigation keeps working through it.
 
-        Multi-session merge — small (total loaded matches < ``_SERVER_PAGE_SIZE``):
-            Flattens all matches into one session, deduplicated by
-            ``contentHash`` in first-seen order.  ``queryContext`` is ``None``
-            because there is no single Wally query to paginate further.
+        Several sessions, small (sum of ``totalCount`` <= the first session's
+            ``pageSize``):
+            All loaded matches are flattened into a new single-page
+            :class:`SessionHandler`, deduplicated by ``contentHash`` in first-seen
+            order. It has no library or query, so it cannot fetch other pages.
 
-        Multi-session merge — large (total loaded matches >= ``_SERVER_PAGE_SIZE``):
-            Chains the source sessions as server pages.  The merged session
-            starts at page 0 (first source session's matches).  ``queryContext``
-            carries ``type: "chained"`` so the HTTP server can serve subsequent
-            pages via :meth:`load_chained_page` without calling Wally.
-            ``totalCount`` is the sum of loaded matches across all sources.
+        Several sessions, large (sum of ``totalCount`` > the first session's
+            ``pageSize``):
+            A new :class:`ChainedSessionHandler` lists the source sessions in
+            order. Its server pages are the source sessions' pages one after the
+            other; :meth:`ChainedSessionHandler.fetch_page` loads each one from
+            Wally through the source session it belongs to. ``totalCount`` is the
+            sum of the sources' ``totalCount``. It starts on the first source
+            session's current matches. Matches are not deduplicated across sources.
 
         Each match already carries its ``"library"`` field from :meth:`create`.
         Assumes all *session_ids* are valid — call :meth:`unknown_session_ids` first.
 
         Returns:
-            ``(merged_session_id, session_data)`` where *session_data* has the
-            standard session shape described on this class.
+            ``(session_id, session)``: the id the gallery uses and the session
+            stored under it.
         """
         merged_session_id = secrets.token_urlsafe(16)
         if len(session_ids) == 0:

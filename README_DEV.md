@@ -47,12 +47,14 @@ pip install ouestcharlie-woof
 
 ### From source (development)
 
-Requires sibling repositories:
+Requires the [ouestcharlie](https://github.com/ouestcharlie/ouestcharlie) repository as a
+sibling: it holds the toolkit, Whitebeard and Wally packages, which `uv sync` installs as
+editable path sources:
 
 ```
-../ouestcharlie-py-toolkit/
-../ouestcharlie-whitebeard/
-../ouestcharlie-wally/
+../ouestcharlie/packages/py-toolkit/
+../ouestcharlie/packages/whitebeard/
+../ouestcharlie/packages/wally/
 ```
 
 ```bash
@@ -151,11 +153,8 @@ connection lazily starts a fresh one with your changes.
 
 | Repository | Purpose |
 |------------|---------|
-| [ouestcharlie](https://github.com/ouestcharlie/ouestcharlie/) | Architecture docs, HLR/HLD, MCP interface |
+| [ouestcharlie](https://github.com/ouestcharlie/ouestcharlie/) | Architecture docs, HLR/HLD, MCP interface, and the agent packages: [py-toolkit](https://github.com/ouestcharlie/ouestcharlie/tree/master/packages/py-toolkit) (Python toolkit for agents), [whitebeard](https://github.com/ouestcharlie/ouestcharlie/tree/master/packages/whitebeard) (indexing agent), [wally](https://github.com/ouestcharlie/ouestcharlie/tree/master/packages/wally) (search/consumption agent) |
 | [**ouestcharlie-woof** *(this repo)*](https://github.com/ouestcharlie/ouestcharlie-woof/) | Woof controller |
-| [ouestcharlie-py-toolkit](https://github.com/ouestcharlie/ouestcharlie-py-toolkit) | Python toolkit for agents |
-| [ouestcharlie-whitebeard](https://github.com/ouestcharlie/ouestcharlie-whitebeard) | Indexing agent |
-| [ouestcharlie-wally](https://github.com/ouestcharlie/ouestcharlie-wally) | Search/consumption agent |
 
 See [ouestcharlie/HLD.md](https://github.com/ouestcharlie/ouestcharlie/blob/master/design/HLD.md) for the overall system architecture.
 
