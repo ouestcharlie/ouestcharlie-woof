@@ -13,20 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The agents (toolkit, Whitebeard, Wally) live in the ouestcharlie repo,
+      # one package each under packages/.
       - uses: actions/checkout@v6
         with:
-          repository: ouestcharlie/ouestcharlie-py-toolkit
-          path: deps/ouestcharlie-py-toolkit
-
-      - uses: actions/checkout@v6
-        with:
-          repository: ouestcharlie/ouestcharlie-whitebeard
-          path: deps/ouestcharlie-whitebeard
-
-      - uses: actions/checkout@v6
-        with:
-          repository: ouestcharlie/ouestcharlie-wally
-          path: deps/ouestcharlie-wally
+          repository: ouestcharlie/ouestcharlie
+          path: deps/ouestcharlie
 
       - uses: actions/setup-node@v6
         with:
@@ -44,13 +36,13 @@ jobs:
         run: pip install hatch
 
       - name: Install toolkit (editable)
-        run: pip install -e deps/ouestcharlie-py-toolkit
+        run: pip install -e deps/ouestcharlie/packages/py-toolkit
 
       - name: Install whitebeard (editable)
-        run: pip install -e deps/ouestcharlie-whitebeard
+        run: pip install -e deps/ouestcharlie/packages/whitebeard
 
       - name: Install wally (editable)
-        run: pip install -e deps/ouestcharlie-wally
+        run: pip install -e deps/ouestcharlie/packages/wally
 
       - name: Build
         run: hatch build
@@ -85,7 +77,7 @@ jobs:
       # release). Kept out of `dist`, which publish.yml uploads to PyPI as is.
       - name: Build agent wheels
         run: |
-          for d in deps/ouestcharlie-py-toolkit deps/ouestcharlie-whitebeard deps/ouestcharlie-wally; do
+          for d in deps/ouestcharlie/packages/py-toolkit deps/ouestcharlie/packages/whitebeard deps/ouestcharlie/packages/wally; do
             (cd "$d" && hatch build -t wheel "$GITHUB_WORKSPACE/deps-dist")
           done
 
